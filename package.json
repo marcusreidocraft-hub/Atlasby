@@ -1,0 +1,19 @@
+{
+  "name": "atlasby",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot de moderação do Discord para servidores autorizados.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "main": "index.js",
+  "scripts": {
+    "setup": "node src/setup.js",
+    "start": "node index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test"
+  },
+  "dependencies": {
+    "discord.js": "14.28.1"
+  }
+}
