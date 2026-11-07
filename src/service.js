@@ -738,20 +738,35 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
       });
     },
 
-    async requestSetStyle({ guildId, actorId, input }) {
+    async requestSetStyle({ guildId, actorId, patch }) {
       const auth = await assertAdmin(guildId, actorId);
       if (!auth.ok) return { ...auth, action: "set_style" };
-      const valid = validateStyle(input);
+      const current = store.getStyle(guildId);
+      const merged = {
+        catalogHeading: current?.catalog_heading ?? null,
+        catalogEmoji: current?.catalog_emoji ?? null,
+        catalogBannerUrl: current?.catalog_banner_url ?? null,
+        ticketGreeting: current?.ticket_greeting ?? null,
+        ticketBannerUrl: current?.ticket_banner_url ?? null,
+        openEmoji: current?.open_emoji ?? null,
+        claimEmoji: current?.claim_emoji ?? null,
+        unclaimEmoji: current?.unclaim_emoji ?? null,
+        transcriptEmoji: current?.transcript_emoji ?? null,
+        closeEmoji: current?.close_emoji ?? null,
+        ...patch,
+      };
+      const valid = validateStyle(merged);
       if (!valid.ok) return deny("set_style", valid);
-      return openConfirmation({
+      const pending = openConfirmation({
         action: "set_style",
         guildId,
         actorId,
         targetId: guildId,
         reason: "Alterar a aparência do catálogo e dos tickets",
         payload: valid.style,
-        summary: `Título: ${valid.style.catalogHeading ?? "Atlas"}.`,
+        summary: "Prévia pronta. Confirme para gravar só neste servidor.",
       });
+      return { ...pending, preview: valid.style };
     },
 
     trackCatalog(post) {

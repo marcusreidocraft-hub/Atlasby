@@ -14,7 +14,10 @@ import {
   renderLogPicker,
   renderNotice,
   offerModal,
+  renderAppearance,
   renderProductAdmin,
+  renderStylePreview,
+  styleModal,
   renderTicketSettings,
   stockModal,
 } from "./ui.js";
@@ -199,6 +202,19 @@ async function handleButton(interaction, service) {
     await interaction.update(renderAdminPicker(view.admins, { update: true }));
     return;
   }
+  if (customId === "atlasby:cfg:appearance") {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.update(renderNotice(describeResult(view), { update: true }));
+      return;
+    }
+    await interaction.update(renderAppearance());
+    return;
+  }
+  if (customId === "atlasby:cfg:style:catalog" || customId === "atlasby:cfg:style:ticket" || customId === "atlasby:cfg:style:buttons") {
+    await interaction.showModal(styleModal(customId.split(":").at(-1)));
+    return;
+  }
   if (customId === "atlasby:cfg:tickets") {
     const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
     if (view.code !== "admin_panel") {
@@ -310,7 +326,33 @@ async function handleSelect(interaction, service) {
   await interaction.update(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null, { update: true }));
 }
 
+function blankToNull(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text ? text : null;
+}
+
 async function handleModal(interaction, service) {
+  const styleMatch = /^atlasby:modal:style:(catalog|ticket|buttons)$/.exec(interaction.customId ?? "");
+  if (styleMatch) {
+    const read = (id) => blankToNull(interaction.fields.getTextInputValue(id));
+    const patch = styleMatch[1] === "catalog"
+      ? { catalogEmoji: read("catalogo_emoji"), catalogBannerUrl: read("catalogo_banner"), openEmoji: read("abrir_emoji") }
+      : styleMatch[1] === "ticket"
+        ? { ticketGreeting: read("saudacao"), ticketBannerUrl: read("ticket_banner") }
+        : {
+            claimEmoji: read("assumir"),
+            unclaimEmoji: read("liberar"),
+            transcriptEmoji: read("transcricao"),
+            closeEmoji: read("fechar"),
+          };
+    const result = await service.requestSetStyle({ guildId: interaction.guildId, actorId: interaction.user.id, patch });
+    if (result.code === "confirmation_required") {
+      await interaction.reply(renderStylePreview(result.preview, result.confirmationId));
+      return;
+    }
+    await interaction.reply(renderNotice(describeResult(result)));
+    return;
+  }
   const offerMatch = /^atlasby:modal:offer:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
   if (offerMatch) {
     const availability = interaction.fields.getTextInputValue("disponibilidade").trim().toLowerCase();

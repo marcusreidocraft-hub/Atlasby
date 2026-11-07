@@ -66,7 +66,7 @@ function catalogButton(plan, emoji) {
 }
 
 export function renderCatalog(plans, style = null) {
-  const heading = style?.catalog_heading || PRODUCT_LINE;
+  const heading = `${style?.catalog_emoji ? `${style.catalog_emoji} ` : ""}${style?.catalog_heading || PRODUCT_LINE}`;
   const container = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
     .addTextDisplayComponents(
@@ -167,6 +167,7 @@ export function renderAdmin(state) {
         new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-4").setLabel("4 vCPU").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-8").setLabel("8 vCPU").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-16").setLabel("16 vCPU").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:appearance").setLabel("Aparência").setStyle(ButtonStyle.Secondary),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true }) };
@@ -187,6 +188,92 @@ export function renderProductAdmin(plans) {
     ),
   );
   return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderAppearance() {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x57f287)
+    .addTextDisplayComponents(
+      text("Aparência deste servidor. Nada é gravado até a prévia ser confirmada. Não altera o perfil do bot."),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("atlasby:cfg:style:catalog").setLabel("Visual do catálogo").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:style:ticket").setLabel("Mensagem do ticket").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:style:buttons").setLabel("Emojis dos botões").setStyle(ButtonStyle.Secondary),
+      ),
+    );
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+function optionalInput(customId, placeholder) {
+  return new TextInputBuilder().setCustomId(customId).setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(300).setPlaceholder(placeholder);
+}
+
+export function styleModal(kind) {
+  if (kind === "catalog") {
+    return new ModalBuilder()
+      .setCustomId("atlasby:modal:style:catalog")
+      .setTitle("Visual do catálogo")
+      .addLabelComponents(
+        new LabelBuilder().setLabel("Emoji do catálogo").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("catalogo_emoji", "🙂")),
+        new LabelBuilder().setLabel("Banner do catálogo").setDescription("URL HTTPS. Vazio remove.").setTextInputComponent(optionalInput("catalogo_banner", "https://")),
+        new LabelBuilder().setLabel("Emoji de abrir ticket").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("abrir_emoji", "🎫")),
+      );
+  }
+  if (kind === "ticket") {
+    return new ModalBuilder()
+      .setCustomId("atlasby:modal:style:ticket")
+      .setTitle("Mensagem do ticket")
+      .addLabelComponents(
+        new LabelBuilder()
+          .setLabel("Saudação")
+          .setDescription("Marcadores: {produto} {duracao} {preco} {usuario} {equipe}.")
+          .setTextInputComponent(
+            new TextInputBuilder().setCustomId("saudacao").setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(500).setPlaceholder("Olá {usuario}"),
+          ),
+        new LabelBuilder().setLabel("Banner do ticket").setDescription("URL HTTPS. Vazio remove.").setTextInputComponent(optionalInput("ticket_banner", "https://")),
+      );
+  }
+  return new ModalBuilder()
+    .setCustomId("atlasby:modal:style:buttons")
+    .setTitle("Emojis dos botões")
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Assumir").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("assumir", "✅")),
+      new LabelBuilder().setLabel("Liberar").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("liberar", "↩️")),
+      new LabelBuilder().setLabel("Transcrição").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("transcricao", "📄")),
+      new LabelBuilder().setLabel("Fechar").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("fechar", "🔒")),
+    );
+}
+
+export function renderStylePreview(style, confirmationId) {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x5865f2)
+    .addTextDisplayComponents(
+      text(`# ${style.catalogEmoji ? `${style.catalogEmoji} ` : ""}${style.catalogHeading || "Atlas"}\nPrévia. Nada foi gravado até confirmar.`),
+    );
+  if (style.catalogBannerUrl || style.ticketBannerUrl) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(
+        new MediaGalleryItemBuilder().setURL(style.catalogBannerUrl || style.ticketBannerUrl),
+      ),
+    );
+  }
+  if (style.ticketGreeting) {
+    container.addTextDisplayComponents(
+      text(applyGreeting(style.ticketGreeting, {
+        produto: "Tesla T4 · 4 vCPU",
+        duracao: "7 dias",
+        preco: "R$35,90",
+        usuario: "cliente",
+        equipe: "equipe",
+      })),
+    );
+  }
+  const sample = new ButtonBuilder().setCustomId("atlasby:preview:open").setLabel("Abrir ticket").setStyle(ButtonStyle.Secondary).setDisabled(true);
+  container.addActionRowComponents(new ActionRowBuilder().addComponents(style.openEmoji ? sample.setEmoji(style.openEmoji) : sample));
+  if (confirmationId) container.addActionRowComponents(confirmationRow(confirmationId));
+  return { components: [container], flags: v2Flags({ ephemeral: true }) };
 }
 
 export function offerModal(plan) {

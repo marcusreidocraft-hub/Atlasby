@@ -82,7 +82,11 @@ Não há pagamento nem provisionamento. Abrir um plano reserva estoque e edita a
 
 Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, só no canal privado configurado. O canal do ticket é apagado depois da contagem, e somente se essa transcrição tiver sido salva.
 
-Antes do primeiro ticket, o dono confirma em `/configurar` a categoria, o cargo da equipe, os preços que faltam e o estoque do 8 vCPU e do 16 vCPU.
+Antes do primeiro ticket, o dono abre `/configurar` e confirma a categoria, o cargo da equipe e o canal privado da transcrição.
+
+Para preço, estoque e disponibilidade, o caminho é `/configurar`, depois **4 vCPU**, **8 vCPU** ou **16 vCPU**, depois a duração. O formulário pede preço em reais, estoque e `disponivel` ou `esgotado`. O resumo só grava depois de **Confirmar**. Não é preciso digitar ID de produto.
+
+Aparência fica em `/configurar`, botão **Aparência**. Dali saem **Visual do catálogo** (emoji, banner HTTPS e emoji de abrir ticket), **Mensagem do ticket** (saudação com `{produto}`, `{duracao}`, `{preco}`, `{usuario}` e `{equipe}`, mais banner) e **Emojis dos botões** (assumir, liberar, transcrição e fechar). A prévia aparece antes da confirmação. Isso não muda o perfil global do bot. Emoji inválido, URL que não seja HTTPS e menção solta são recusados.
 
 ## Host
 
