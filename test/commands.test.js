@@ -16,25 +16,29 @@ import { loadConfig } from "../src/config.js";
 import { describeResult } from "../src/messages.js";
 import { createService } from "../src/service.js";
 import { openDatabase } from "../src/storage.js";
+import { textOf, validateV2Message } from "../src/ui.js";
 import { ACTOR, CHANNEL, GUILD, TARGET, commandInteraction, fakeDiscord } from "../src/fixtures.js";
 
 test("comandos são só de servidor e não pedem Administrador", () => {
   const built = commands.map((command) => command.toJSON());
   assert.deepEqual(
     built.map((command) => command.name),
-    ["aviso", "silenciar", "expulsar", "banir", "canal-logs"],
+    ["aviso", "silenciar", "expulsar", "banir", "canal-logs", "catalogo", "configurar"],
   );
   for (const command of built) {
     assert.equal(command.dm_permission, false);
     assert.deepEqual(command.contexts, [InteractionContextType.Guild]);
     assert.deepEqual(command.integration_types, [ApplicationIntegrationType.GuildInstall]);
-    assert.equal(BigInt(command.default_member_permissions) & PermissionFlagsBits.Administrator, 0n);
+    if (command.default_member_permissions != null) {
+      assert.equal(BigInt(command.default_member_permissions) & PermissionFlagsBits.Administrator, 0n);
+    }
   }
   const byName = Object.fromEntries(built.map((command) => [command.name, command]));
   assert.equal(BigInt(byName.aviso.default_member_permissions), PermissionFlagsBits.ModerateMembers);
   assert.equal(BigInt(byName.expulsar.default_member_permissions), PermissionFlagsBits.KickMembers);
   assert.equal(BigInt(byName.banir.default_member_permissions), PermissionFlagsBits.BanMembers);
-  assert.equal(BigInt(byName["canal-logs"].default_member_permissions), PermissionFlagsBits.ManageGuild);
+  assert.equal(byName["canal-logs"].default_member_permissions, undefined);
+  assert.equal(byName.catalogo.default_member_permissions, undefined);
 });
 
 test("interação recusa DM e servidor fora da lista sem chamar moderação", async () => {
@@ -46,8 +50,9 @@ test("interação recusa DM e servidor fora da lista sem chamar moderação", as
   const config = { allowedGuildIds: [GUILD] };
   const dm = commandInteraction({ name: "aviso", options: { inGuild: false, user: { id: TARGET }, motivo: "x" } });
   await handleInteraction(dm, { config, service });
-  assert.equal(dm.replies[0].content, describeResult({ code: "guild_only" }));
-  assert.equal(dm.replies[0].flags, MessageFlags.Ephemeral);
+  assert.equal(textOf(dm.replies[0]), describeResult({ code: "guild_only" }));
+  assert.equal(dm.replies[0].flags & MessageFlags.Ephemeral, MessageFlags.Ephemeral);
+  assert.equal(validateV2Message(dm.replies[0]).ok, true);
 
   const foreign = commandInteraction({
     name: "aviso",
@@ -55,7 +60,7 @@ test("interação recusa DM e servidor fora da lista sem chamar moderação", as
     options: { user: { id: TARGET }, motivo: "x" },
   });
   await handleInteraction(foreign, { config, service });
-  assert.equal(foreign.replies[0].content, describeResult({ code: "guild_unauthorized" }));
+  assert.equal(textOf(foreign.replies[0]), describeResult({ code: "guild_unauthorized" }));
   assert.equal(called, false);
 });
 
@@ -75,10 +80,10 @@ test("expulsão responde confirmação vinculada e ainda não aplicada", async (
   });
   await handleInteraction(interaction, { config: { allowedGuildIds: [GUILD] }, service });
   const reply = interaction.replies[0];
-  assert.match(reply.content, /ainda não foi aplicado/);
-  assert.equal(reply.flags, MessageFlags.Ephemeral);
-  const customId = reply.components[0].toJSON().components[0].custom_id;
-  assert.match(customId, /^atlasby:confirm:[0-9a-f-]{36}$/);
+  assert.match(textOf(reply), /ainda não foi aplicado/);
+  assert.equal(reply.content, undefined);
+  assert.equal(validateV2Message(reply).ok, true);
+  assert.match(JSON.stringify(reply.components[0].toJSON()), /atlasby:confirm:[0-9a-f-]{36}/);
   store.close();
 });
 
@@ -104,8 +109,10 @@ test("botão de outro fluxo não declara sucesso quando a API falha", async () =
   });
   await handleInteraction(interaction, { config: { allowedGuildIds: [GUILD] }, service });
   assert.equal(interaction.deferred, true);
-  assert.match(interaction.edits[0].content, /não foi aplicado/);
-  assert.equal(interaction.edits[0].components.length, 0);
+  assert.equal(interaction.edits[0].content, undefined);
+  assert.match(textOf(interaction.edits[0]), /não foi aplicado/);
+  assert.doesNotMatch(JSON.stringify(interaction.edits[0].components), /atlasby:confirm:/);
+  assert.equal(validateV2Message(interaction.edits[0]).ok, true);
   store.close();
 });
 
@@ -130,7 +137,7 @@ test("configuração exige token e servidores; setup cria o banco sem credencial
   assert.equal(setup.status, 0, setup.stderr);
   assert.match(setup.stdout, /Migração aplicada/);
   const store = openDatabase(dir);
-  assert.equal(store.migrationCount(), 1);
+  assert.equal(store.migrationCount(), 2);
   store.close();
 
   const start = spawnSync(process.execPath, ["index.js"], {

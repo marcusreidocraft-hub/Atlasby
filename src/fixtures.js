@@ -53,8 +53,13 @@ export function fakeDiscord(overrides = {}) {
     async inspectChannel() {
       return { guildId: GUILD, type: "GuildText", permissions: LOG_BITS };
     },
-    async inspectActor() {
-      return { id: ACTOR, permissions: Permissions.ManageGuild };
+    async inspectActor(_guildId, userId = ACTOR) {
+      return {
+        id: userId,
+        permissions: Permissions.ManageGuild,
+        ownerId: OWNER,
+        isOwner: userId === OWNER,
+      };
     },
     async timeoutMember(...args) {
       calls.push(["timeout", ...args]);

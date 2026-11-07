@@ -1,4 +1,4 @@
-import { ChannelType, EmbedBuilder } from "discord.js";
+import { ChannelType, ContainerBuilder, MessageFlags, TextDisplayBuilder } from "discord.js";
 
 const TITLES = {
   warn: "Aviso registrado",
@@ -44,7 +44,12 @@ export function createDiscordAdapter(client) {
     async inspectActor(guildId, actorId) {
       const guild = await client.guilds.fetch(guildId);
       const actor = await guild.members.fetch(actorId);
-      return { id: actor.id, permissions: actor.permissions.bitfield };
+      return {
+        id: actor.id,
+        permissions: actor.permissions.bitfield,
+        ownerId: guild.ownerId,
+        isOwner: guild.ownerId === actor.id,
+      };
     },
 
     async inspectChannel(channelId) {
@@ -87,20 +92,22 @@ export function createDiscordAdapter(client) {
       if (!channel?.isTextBased?.() || channel.isDMBased?.()) {
         throw new Error("Canal de logs indisponível.");
       }
-      const embed = new EmbedBuilder()
-        .setColor(record.action === "warn" ? 0xf1c40f : 0xe74c3c)
-        .setTitle(TITLES[record.action] ?? "Ação de moderação")
-        .addFields(
-          { name: "Alvo", value: `<@${record.targetId}>`, inline: true },
-          { name: "Moderador", value: `<@${record.moderatorId}>`, inline: true },
-          { name: "Motivo", value: record.reason },
-        )
-        .setTimestamp(record.at ?? Date.now());
-      if (record.warningId != null) embed.addFields({ name: "Aviso", value: String(record.warningId) });
-      if (record.extra?.durationLabel) {
-        embed.addFields({ name: "Duração", value: record.extra.durationLabel, inline: true });
-      }
-      await channel.send({ embeds: [embed] });
+      const lines = [
+        TITLES[record.action] ?? "Ação de moderação",
+        `Alvo: <@${record.targetId}>`,
+        `Moderador: <@${record.moderatorId}>`,
+        `Motivo: ${record.reason}`,
+      ];
+      if (record.warningId != null) lines.push(`Aviso: ${record.warningId}`);
+      if (record.extra?.durationLabel) lines.push(`Duração: ${record.extra.durationLabel}`);
+      const container = new ContainerBuilder()
+        .setAccentColor(record.action === "warn" ? 0xf1c40f : 0xe74c3c)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(lines.join("\n")));
+      await channel.send({
+        components: [container],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
     },
   };
 }

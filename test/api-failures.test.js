@@ -59,12 +59,20 @@ test("timeout não é aplicado se a chamada ao Discord falha", async () => {
       throw new Error("timeout recusado");
     },
   });
-  const result = await app.service.timeout({
+  const pending = await app.service.timeout({
     guildId: GUILD,
     actorId: ACTOR,
     targetId: TARGET,
     reason: "ofensa",
     duration: "10m",
+  });
+  assert.equal(pending.code, "confirmation_required");
+  assert.equal(app.discord.calls.some((call) => call[0] === "timeout"), false);
+  const result = await app.service.confirm({
+    confirmationId: pending.confirmationId,
+    guildId: GUILD,
+    moderatorId: ACTOR,
+    decision: "confirm",
   });
   assert.equal(result.punishmentApplied, false);
   assert.equal(result.code, "discord_api");
@@ -79,11 +87,18 @@ test("falha ao gravar o aviso não chama o Discord e não deixa registro", async
   store.setLogChannel(GUILD, CHANNEL, 1);
   const discord = fakeDiscord();
   const service = createService({ store, discord, now: () => 5_000, ttlMs: 60_000 });
-  const result = await service.warn({
+  const pending = await service.warn({
     guildId: GUILD,
     actorId: ACTOR,
     targetId: TARGET,
     reason: "aviso",
+  });
+  assert.equal(store.listWarnings(GUILD).length, 0);
+  const result = await service.confirm({
+    confirmationId: pending.confirmationId,
+    guildId: GUILD,
+    moderatorId: ACTOR,
+    decision: "confirm",
   });
   assert.equal(result.code, "warn_persist_failed");
   assert.equal(result.punishmentApplied, false);
@@ -99,11 +114,18 @@ test("aviso gravado com falha de log não é anunciado como envio concluído", a
       throw new Error("canal sumiu");
     },
   });
-  const result = await app.service.warn({
+  const pending = await app.service.warn({
     guildId: GUILD,
     actorId: ACTOR,
     targetId: TARGET,
     reason: "aviso persistente",
+  });
+  assert.equal(app.store.listWarnings(GUILD).length, 0);
+  const result = await app.service.confirm({
+    confirmationId: pending.confirmationId,
+    guildId: GUILD,
+    moderatorId: ACTOR,
+    decision: "confirm",
   });
   assert.equal(result.code, "log_failed");
   assert.equal(result.ok, false);
@@ -198,12 +220,19 @@ test("auditoria que falha antes da chamada não pune", async () => {
     },
   };
   const service = createService({ store: broken, discord, now: () => 5_000, ttlMs: 60_000 });
-  const result = await service.timeout({
+  const pending = await service.timeout({
     guildId: GUILD,
     actorId: ACTOR,
     targetId: TARGET,
     reason: "motivo",
     duration: "30s",
+  });
+  assert.equal(pending.code, "confirmation_required");
+  const result = await service.confirm({
+    confirmationId: pending.confirmationId,
+    guildId: GUILD,
+    moderatorId: ACTOR,
+    decision: "confirm",
   });
   assert.equal(result.code, "audit_failed");
   assert.equal(result.punishmentApplied, false);

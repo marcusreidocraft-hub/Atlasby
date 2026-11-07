@@ -4,7 +4,15 @@ const SUBJECT = {
   timeout_remove: "A remoção do timeout",
   kick: "A expulsão",
   ban: "O banimento",
+  set_log_channel: "A alteração do canal de logs",
+  set_plan: "A alteração do plano",
+  enroll_admin: "A inclusão de administrador",
+  remove_admin: "A remoção de administrador",
 };
+
+function isConfig(action) {
+  return action === "set_log_channel" || action === "set_plan" || action === "enroll_admin" || action === "remove_admin";
+}
 
 function subject(result) {
   return SUBJECT[result.action] ?? "A ação";
@@ -47,10 +55,17 @@ export function describeResult(result) {
       return `${name} não foi aplicado. O canal de logs está inacessível para o bot.`;
     case "log_channel_check_failed":
       return `${name} não foi aplicado. Não foi possível verificar o canal de logs.`;
-    case "confirmation_required":
-      return `${name} ainda não foi aplicado. Confirme antes de ${new Date(result.expiresAt).toISOString()} UTC. Só o moderador que executou o comando, neste servidor e para este alvo, pode confirmar.`;
+    case "confirmation_required": {
+      const summary = result.summary ? ` ${result.summary}` : "";
+      const lead = isConfig(result.action)
+        ? `${name} ainda não foi gravada.`
+        : `${name} ainda não foi aplicado.`;
+      return `${lead}${summary} Confirme antes de ${new Date(result.expiresAt).toISOString()} UTC. Só quem pediu, neste servidor e para este alvo, pode confirmar.`;
+    }
     case "cancelled":
-      return "Pedido cancelado. Nenhuma punição foi aplicada.";
+      return isConfig(result.action)
+        ? "Alteração cancelada. Nada foi gravado."
+        : "Pedido cancelado. Nenhuma punição foi aplicada.";
     case "confirmation_expired":
       return "O pedido expirou. Nenhuma punição foi aplicada.";
     case "confirmation_wrong_user":
@@ -108,9 +123,29 @@ export function describeResult(result) {
     case "channel_type":
       return "O canal de logs precisa ser um canal de texto. Nada foi alterado.";
     case "log_channel_saved":
-      return "Canal de logs atualizado. As próximas ações serão registradas nele.";
+    case "config_saved":
+      return "Alteração gravada. Nenhuma cobrança ou provisionamento foi feito.";
     case "log_channel_save_failed":
-      return "O canal de logs não foi alterado. A gravação local falhou.";
+    case "config_save_failed":
+      return "A alteração não foi gravada. A gravação local falhou.";
+    case "admin_unauthorized":
+      return "Só o dono do servidor ou um administrador incluído por ele pode configurar. Nada foi alterado.";
+    case "owner_only":
+      return "Só o dono do servidor pode alterar administradores. Nada foi alterado.";
+    case "admin_missing":
+      return "Esse usuário não está na lista de administradores. Nada foi alterado.";
+    case "plan_unknown":
+      return "Plano desconhecido. Nada foi alterado.";
+    case "plan_forbidden":
+      return "Planos de 6 horas e de 1 dia não existem neste catálogo. Nada foi alterado.";
+    case "price_invalid":
+      return "Preço inválido. Use centavos inteiros, como 3590, ou reais com dois decimais, como 35,90. Nada foi alterado.";
+    case "price_required":
+      return "Não há preço cadastrado para reativar este plano. Nada foi alterado e nenhum valor foi inventado.";
+    case "sold_out":
+      return "Plano esgotado. A seleção está desativada. Este catálogo não vende nem provisiona.";
+    case "confirmation_mismatch":
+      return "O pedido não confere com o alvo gravado. Nada foi aplicado.";
     case "internal":
       return "A ação não foi aplicada. Ocorreu um erro interno.";
     default:

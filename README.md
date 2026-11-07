@@ -2,7 +2,7 @@
 
 Bot de moderação do Discord, com comandos de barra em português do Brasil. O processo usa a API oficial por meio do discord.js 14 e grava avisos e auditoria num SQLite local, fora do Git.
 
-O código deste repositório pode ser executado e testado. Ele ainda não foi implantado no Bot-Hosting.net, não recebe token e não liga auto-pull nem sincronização.
+O código pode ser executado e testado sem token. Este repositório não grava segredo, não cobra e não reinicia o host.
 
 ## Comandos
 
@@ -13,9 +13,11 @@ O código deste repositório pode ser executado e testado. Ele ainda não foi im
 | `/silenciar remover` | Moderate Members | Remove o timeout atual. Se o membro não estiver silenciado, nada é chamado na API. |
 | `/expulsar` | Kick Members | Pede confirmação e só então expulsa. |
 | `/banir` | Ban Members | Pede confirmação e só então bane, sem apagar mensagens. |
-| `/canal-logs` | Manage Guild | Define o canal de texto da auditoria. |
+| `/canal-logs` | Dono ou administrador incluído | Pede confirmação para trocar o canal de logs. |
+| `/catalogo` | Qualquer membro do servidor autorizado | Mostra o catálogo, sem compra. |
+| `/configurar` | Dono ou administrador incluído | Painel de logs, preços, disponibilidade e administradores. |
 
-Expulsão e banimento só acontecem se o mesmo moderador confirmar, no mesmo servidor e para o mesmo alvo, antes do prazo. O padrão é 60 segundos. Outro usuário, outro servidor, prazo vencido ou segundo clique não aplicam a punição.
+Aviso, timeout, remoção de timeout, expulsão, banimento e mudanças de configuração só acontecem se a mesma pessoa confirmar, no mesmo servidor e para o mesmo alvo, antes do prazo. O padrão é 60 segundos. Outro usuário, outro servidor, prazo vencido, cancelamento ou segundo clique não aplicam a ação. As respostas usam Components V2: texto em Text Display, dentro de Container, com a flag `IS_COMPONENTS_V2`. Não há embed legado no lugar dessa flag.
 
 O bot recusa como alvo o dono do servidor, o próprio autor, o próprio bot e quem tem Administrador. O cargo de quem pune e o cargo do bot precisam estar acima do alvo. O dono do servidor pode punir sem o bit daquela permissão e acima da própria posição de cargo; a hierarquia e a permissão do bot continuam obrigatórias, assim como as proteções de alvo. Nos demais casos, moderador e bot precisam da permissão da ação.
 
@@ -63,7 +65,19 @@ Copie `.env.example` só no ambiente de execução. Os valores versionados ficam
 | `DATA_DIR` | não; padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não; padrão `60`, limites 15 e 300 |
 
-O banco é `data/moderation.sqlite`. A primeira migração cria avisos, auditoria, confirmações e configuração do canal. Subir o processo de novo não reaplica a versão já gravada. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
+O banco é `data/moderation.sqlite`. A migração 1 cria avisos, auditoria, confirmações e o canal de logs. A migração 2 acrescenta planos e administradores e preserva as linhas antigas. Subir o processo de novo não reaplica versão já gravada nem substitui preço ou disponibilidade já editados. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
+
+## Catálogo
+
+O produto exibido é Tesla T4 · 4 vCPU, da linha Nyx Cloud. Isto é só catálogo. Não existe cobrança, provedor de pagamento nem provisionamento.
+
+| Plano | Duração | Preço inicial | Situação inicial |
+| --- | --- | --- | --- |
+| 7 dias | 7 dias | R$35,90 | disponível |
+| Quinzenal | 15 dias | R$49,90, marcado como preço temporário | disponível |
+| Mensal | 30 dias | sem preço | Esgotado, botão desativado |
+
+Não há opção de 6 horas nem de 1 dia. O mensal não recebe um preço inventado. Reativá-lo exige um preço informado no painel e uma confirmação. O dono do servidor configura preço e disponibilidade em `/configurar`. Um administrador extra só entra se o dono confirmar a inclusão. Esses dados ficam no SQLite do servidor, não em variável de ambiente.
 
 ## Host
 
@@ -75,5 +89,6 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 2. Convidar o bot com o link acima e posicionar o cargo.
 3. Fazer o backup SFTP do servidor atual.
 4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
-5. Preencher as variáveis secretas e definir `/canal-logs` dentro do servidor autorizado.
-6. Só então, se quiser que um restart puxe o Git, ligar o auto-pull no painel ou usar o sync manual descrito na documentação de hospedagem.
+5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
+6. No Discord, o dono usa `/configurar` ou `/canal-logs` e confirma. `/catalogo` apenas mostra os planos.
+7. Só então, se quiser que um restart puxe o Git, ligar o auto-pull no painel ou usar o sync manual. O host que acompanha a branch de desenvolvimento precisa ser apontado para a branch publicada neste PR; este repositório não reinicia o servidor.

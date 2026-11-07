@@ -2,6 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+function mapPlan(row) {
+  return {
+    ...row,
+    available: row.available === 1,
+    temporary_price: row.temporary_price === 1,
+    price_cents: row.price_cents == null ? null : Number(row.price_cents),
+    duration_days: Number(row.duration_days),
+  };
+}
+
 const MIGRATIONS = [
   {
     version: 1,
@@ -51,6 +61,57 @@ const MIGRATIONS = [
       CREATE INDEX idx_actions_guild_created ON actions (guild_id, created_at);
     `,
   },
+  {
+    version: 2,
+    sql: `
+      CREATE TABLE plans (
+        guild_id TEXT NOT NULL,
+        code TEXT NOT NULL CHECK (code IN ('7d', '15d', '30d')),
+        label TEXT NOT NULL,
+        duration_days INTEGER NOT NULL CHECK (duration_days IN (7, 15, 30)),
+        price_cents INTEGER CHECK (price_cents IS NULL OR (price_cents >= 1 AND price_cents <= 10000000)),
+        available INTEGER NOT NULL CHECK (available IN (0, 1)),
+        temporary_price INTEGER NOT NULL CHECK (temporary_price IN (0, 1)),
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, code),
+        CHECK (available = 0 OR price_cents IS NOT NULL)
+      );
+
+      CREATE TABLE guild_admins (
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        enrolled_by TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, user_id)
+      );
+
+      CREATE TABLE confirmations_v2 (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK (action IN (
+          'warn', 'timeout', 'timeout_remove', 'kick', 'ban',
+          'set_log_channel', 'set_plan', 'enroll_admin', 'remove_admin'
+        )),
+        reason TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open', 'claimed', 'completed', 'failed', 'cancelled')),
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO confirmations_v2 (
+        id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      )
+      SELECT id, guild_id, moderator_id, target_id, action, reason, NULL, status, expires_at, created_at, updated_at
+      FROM confirmations;
+
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_v2 RENAME TO confirmations;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -94,9 +155,29 @@ function createStore(db, file, options = {}) {
     listWarnings: db.prepare("SELECT * FROM warnings WHERE guild_id = ? ORDER BY id"),
     insertConfirmation: db.prepare(
       `INSERT INTO confirmations (
-         id, guild_id, moderator_id, target_id, action, reason, status, expires_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+         id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
     ),
+    insertPlan: db.prepare(
+      `INSERT INTO plans (guild_id, code, label, duration_days, price_cents, available, temporary_price, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(guild_id, code) DO NOTHING`,
+    ),
+    listPlans: db.prepare("SELECT * FROM plans WHERE guild_id = ? ORDER BY duration_days"),
+    selectPlan: db.prepare("SELECT * FROM plans WHERE guild_id = ? AND code = ?"),
+    updatePlan: db.prepare(
+      `UPDATE plans
+       SET price_cents = ?, available = ?, updated_at = ?
+       WHERE guild_id = ? AND code = ? AND duration_days = ?`,
+    ),
+    insertAdmin: db.prepare(
+      `INSERT INTO guild_admins (guild_id, user_id, enrolled_by, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(guild_id, user_id) DO NOTHING`,
+    ),
+    deleteAdmin: db.prepare("DELETE FROM guild_admins WHERE guild_id = ? AND user_id = ?"),
+    listAdmins: db.prepare("SELECT * FROM guild_admins WHERE guild_id = ? ORDER BY created_at"),
+    selectAdmin: db.prepare("SELECT 1 AS ok FROM guild_admins WHERE guild_id = ? AND user_id = ?"),
     selectConfirmation: db.prepare("SELECT * FROM confirmations WHERE id = ?"),
     claimConfirmation: db.prepare(
       `UPDATE confirmations
@@ -187,8 +268,57 @@ function createStore(db, file, options = {}) {
     listWarnings(guildId) {
       return statements.listWarnings.all(guildId);
     },
-    createConfirmation({ id, guildId, moderatorId, targetId, action, reason, expiresAt, now }) {
-      statements.insertConfirmation.run(id, guildId, moderatorId, targetId, action, reason, expiresAt, now, now);
+    createConfirmation({ id, guildId, moderatorId, targetId, action, reason, payload, expiresAt, now }) {
+      statements.insertConfirmation.run(
+        id,
+        guildId,
+        moderatorId,
+        targetId,
+        action,
+        reason,
+        payload == null ? null : JSON.stringify(payload),
+        expiresAt,
+        now,
+        now,
+      );
+    },
+    ensureDefaultPlans(guildId, specs, now) {
+      for (const spec of specs) {
+        statements.insertPlan.run(
+          guildId,
+          spec.code,
+          spec.label,
+          spec.durationDays,
+          spec.defaultPriceCents,
+          spec.defaultAvailable ? 1 : 0,
+          spec.temporaryPrice ? 1 : 0,
+          now,
+        );
+      }
+    },
+    listPlans(guildId) {
+      return statements.listPlans.all(guildId).map(mapPlan);
+    },
+    getPlan(guildId, code) {
+      const row = statements.selectPlan.get(guildId, code);
+      return row ? mapPlan(row) : null;
+    },
+    updatePlan({ guildId, code, durationDays, priceCents, available, now }) {
+      return (
+        statements.updatePlan.run(priceCents, available ? 1 : 0, now, guildId, code, durationDays).changes === 1
+      );
+    },
+    isGuildAdmin(guildId, userId) {
+      return Boolean(statements.selectAdmin.get(guildId, userId));
+    },
+    listAdmins(guildId) {
+      return statements.listAdmins.all(guildId);
+    },
+    enrollAdmin({ guildId, userId, enrolledBy, now }) {
+      return statements.insertAdmin.run(guildId, userId, enrolledBy, now).changes === 1;
+    },
+    removeAdmin(guildId, userId) {
+      return statements.deleteAdmin.run(guildId, userId).changes === 1;
     },
     getConfirmation(id) {
       return statements.selectConfirmation.get(id) ?? null;

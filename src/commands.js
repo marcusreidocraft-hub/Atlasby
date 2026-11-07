@@ -80,8 +80,7 @@ export const commands = [
   guildOnly(
     new SlashCommandBuilder()
       .setName("canal-logs")
-      .setDescription("Define o canal onde as ações de moderação são registradas.")
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+      .setDescription("Pede confirmação para definir o canal de logs.")
       .addChannelOption((option) =>
         option
           .setName("canal")
@@ -89,5 +88,15 @@ export const commands = [
           .addChannelTypes(ChannelType.GuildText)
           .setRequired(true),
       ),
+  ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("catalogo")
+      .setDescription("Mostra o catálogo Tesla T4 · 4 vCPU, sem cobrança."),
+  ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("configurar")
+      .setDescription("Abre o painel para logs, planos e administradores."),
   ),
 ];

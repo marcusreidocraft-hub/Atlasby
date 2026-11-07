@@ -60,7 +60,7 @@ O artigo também diz que o auto-pull atualiza arquivos rastreados e mantém o qu
 | `DATA_DIR` | não | padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não | padrão `60`, entre 15 e 300 |
 
-`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord.
+`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 2 cria as tabelas de catálogo e administradores sem apagar avisos já gravados. Preço e disponibilidade editados no Discord permanecem no restart. O catálogo não cobra nem provisiona. Não há plano de 6 horas nem de 1 dia. O mensal começa esgotado e sem preço.
 
 ## O que continua desligado
 
