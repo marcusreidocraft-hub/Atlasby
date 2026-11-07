@@ -137,7 +137,7 @@ test("configuração exige token e servidores; setup cria o banco sem credencial
   assert.equal(setup.status, 0, setup.stderr);
   assert.match(setup.stdout, /Migração aplicada/);
   const store = openDatabase(dir);
-  assert.equal(store.migrationCount(), 4);
+  assert.equal(store.migrationCount(), 5);
   store.close();
 
   const start = spawnSync(process.execPath, ["index.js"], {

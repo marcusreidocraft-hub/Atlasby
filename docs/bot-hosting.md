@@ -60,7 +60,7 @@ O artigo também diz que o auto-pull atualiza arquivos rastreados e mantém o qu
 | `DATA_DIR` | não | padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não | padrão `60`, entre 15 e 300 |
 
-`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 3 preserva preços já editados do 4 vCPU, remove o rótulo temporário e cria 8 vCPU sem preço e 16 vCPU com os preços informados e estoque zero. O servidor que já acompanha `cursor/catalogo-components-v2-850e` recebe este código no próximo restart feito por quem opera o host. Este repositório não troca a branch do host, não faz merge e não reinicia nada. Não há cobrança nem provisionamento. Fechar um ticket apaga o canal somente depois da transcrição privada.
+`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 3 preserva preços já editados do 4 vCPU e remove o rótulo temporário. A migração 5 só adiciona textos de aparência. Tickets, preços e a coluna numérica antiga permanecem. O número deixa de controlar a abertura. O servidor que já acompanha `cursor/catalogo-components-v2-850e` recebe este código no próximo restart feito por quem opera o host. Este repositório não troca a branch do host, não faz merge e não reinicia nada. Não há cobrança nem provisionamento. Fechar um ticket apaga o canal somente depois da transcrição privada.
 
 ## O que continua desligado
 

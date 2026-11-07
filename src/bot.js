@@ -16,7 +16,10 @@ import {
   offerModal,
   renderAppearance,
   renderProductAdmin,
+  renderProductTexts,
   renderStylePreview,
+  productCopyModal,
+  infoModal,
   styleModal,
   renderTicketSettings,
   stockModal,
@@ -127,18 +130,13 @@ async function handleButton(interaction, service) {
   }
   const openTicket = /^atlasby:ticket:open:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
   if (openTicket) {
-    const result = await service.openTicket({
-      guildId: interaction.guildId,
-      openerId: interaction.user.id,
-      sku: openTicket[1],
-      code: openTicket[2],
-      hasCustomAvatar: Boolean(interaction.member?.avatar || interaction.user?.avatar),
-      avatarUrl:
-        interaction.member?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
-        interaction.user?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
-        null,
-    });
-    await interaction.reply(renderNotice(describeResult(result)));
+    await replyOpenedTicket(interaction, service, openTicket[1], openTicket[2]);
+    return;
+  }
+  if (customId === "atlasby:catalog:games" || customId === "atlasby:catalog:faq") {
+    const kind = customId.endsWith("faq") ? "faq" : "games";
+    const info = service.catalogNote(interaction.guildId, kind);
+    await interaction.reply(renderNotice(info.text ?? describeResult(info)));
     return;
   }
   const ticketAction = /^atlasby:ticket:(claim|unclaim|transcript|close):([0-9a-f-]{36})$/.exec(customId);
@@ -215,6 +213,34 @@ async function handleButton(interaction, service) {
     await interaction.showModal(styleModal(customId.split(":").at(-1)));
     return;
   }
+  if (customId === "atlasby:cfg:style:products") {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.update(renderNotice(describeResult(view), { update: true }));
+      return;
+    }
+    await interaction.update(renderProductTexts());
+    return;
+  }
+  if (customId === "atlasby:cfg:style:info") {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.reply(renderNotice(describeResult(view)));
+      return;
+    }
+    await interaction.showModal(infoModal());
+    return;
+  }
+  const copy = /^atlasby:cfg:copy:(t4-4|t4-8|t4-16)$/.exec(customId);
+  if (copy) {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.reply(renderNotice(describeResult(view)));
+      return;
+    }
+    await interaction.showModal(productCopyModal(copy[1]));
+    return;
+  }
   if (customId === "atlasby:cfg:tickets") {
     const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
     if (view.code !== "admin_panel") {
@@ -276,9 +302,41 @@ async function handleButton(interaction, service) {
   }
 }
 
+function avatarFrom(interaction) {
+  return {
+    hasCustomAvatar: Boolean(interaction.member?.avatar || interaction.user?.avatar),
+    avatarUrl:
+      interaction.member?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
+      interaction.user?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
+      null,
+  };
+}
+
+async function replyOpenedTicket(interaction, service, sku, code) {
+  const result = await service.openTicket({
+    guildId: interaction.guildId,
+    openerId: interaction.user.id,
+    sku,
+    code,
+    ...avatarFrom(interaction),
+  });
+  const channel = result.ticket?.channel_id ? ` <#${result.ticket.channel_id}>` : "";
+  const content = result.code === "ticket_opened" || result.code === "ticket_exists" ? `${describeResult(result)}${channel}` : describeResult(result);
+  await interaction.reply(renderNotice(content));
+}
+
 async function handleSelect(interaction, service) {
   const customId = interaction.customId ?? "";
   const selected = interaction.values?.[0] ?? null;
+  const period = /^atlasby:catalog:period:(t4-4|t4-8|t4-16)$/.exec(customId);
+  if (period) {
+    if (!["7d", "15d", "30d"].includes(selected)) {
+      await interaction.reply(renderNotice(describeResult({ code: "plan_unknown" })));
+      return;
+    }
+    await replyOpenedTicket(interaction, service, period[1], selected);
+    return;
+  }
   let result;
   if (customId === "atlasby:cfg:logselect") {
     result = await service.requestSetLogChannel({
@@ -336,9 +394,9 @@ async function handleModal(interaction, service) {
   if (styleMatch) {
     const read = (id) => blankToNull(interaction.fields.getTextInputValue(id));
     const patch = styleMatch[1] === "catalog"
-      ? { catalogEmoji: read("catalogo_emoji"), catalogBannerUrl: read("catalogo_banner"), openEmoji: read("abrir_emoji") }
+      ? { catalogEmoji: read("catalogo_emoji"), catalog_intro: read("catalogo_intro"), catalogBannerUrl: read("catalogo_banner"), openEmoji: read("abrir_emoji") }
       : styleMatch[1] === "ticket"
-        ? { ticketGreeting: read("saudacao"), ticketBannerUrl: read("ticket_banner") }
+        ? { ticketGreeting: read("saudacao"), ticket_title_emoji: read("titulo_emoji"), ticketBannerUrl: read("ticket_banner") }
         : {
             claimEmoji: read("assumir"),
             unclaimEmoji: read("liberar"),
@@ -346,6 +404,41 @@ async function handleModal(interaction, service) {
             closeEmoji: read("fechar"),
           };
     const result = await service.requestSetStyle({ guildId: interaction.guildId, actorId: interaction.user.id, patch });
+    if (result.code === "confirmation_required") {
+      await interaction.reply(renderStylePreview(result.preview, result.confirmationId));
+      return;
+    }
+    await interaction.reply(renderNotice(describeResult(result)));
+    return;
+  }
+  const copyMatch = /^atlasby:modal:copy:(t4-4|t4-8|t4-16)$/.exec(interaction.customId ?? "");
+  if (copyMatch) {
+    const sku = copyMatch[1].replace("-", "_");
+    const read = (id) => blankToNull(interaction.fields.getTextInputValue(id));
+    const result = await service.requestSetStyle({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      patch: { [`title_${sku}`]: read("titulo"), [`emoji_${sku}`]: read("emoji"), [`placeholder_${sku}`]: read("placeholder") },
+    });
+    if (result.code === "confirmation_required") {
+      await interaction.reply(renderStylePreview(result.preview, result.confirmationId));
+      return;
+    }
+    await interaction.reply(renderNotice(describeResult(result)));
+    return;
+  }
+  if (interaction.customId === "atlasby:modal:style:info") {
+    const read = (id) => blankToNull(interaction.fields.getTextInputValue(id));
+    const result = await service.requestSetStyle({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      patch: {
+        faq_text: read("faq"),
+        faq_emoji: read("faq_emoji"),
+        games_text: read("jogos"),
+        games_emoji: read("jogos_emoji"),
+      },
+    });
     if (result.code === "confirmation_required") {
       await interaction.reply(renderStylePreview(result.preview, result.confirmationId));
       return;
@@ -367,7 +460,6 @@ async function handleModal(interaction, service) {
       sku: offerMatch[1],
       code: offerMatch[2],
       rawPrice: interaction.fields.getTextInputValue("preco"),
-      stockText: interaction.fields.getTextInputValue("estoque"),
       available,
     });
     await interaction.reply(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null));

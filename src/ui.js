@@ -21,7 +21,7 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
 } from "discord.js";
-import { PRODUCT_LINE, offerState, publicPlanLine, reservationLine } from "./plans.js";
+import { CATALOG_INTRO, CATALOG_SUBTITLE, PERIOD_NAMES, PRODUCT_LINE, PRODUCT_UI, formatBrl, offerState, publicPlanLine, reservationLine } from "./plans.js";
 import { applyGreeting } from "./style.js";
 
 export const V2_FLAG = MessageFlags.IsComponentsV2;
@@ -53,42 +53,60 @@ export function renderNotice(content, { ephemeral = true, update = false, row = 
   return { components: [container], flags: v2Flags({ ephemeral, update }) };
 }
 
-function catalogButton(plan, emoji) {
-  const state = offerState(plan);
-  const openable = state.openable;
-  const label = openable ? `Abrir ticket · ${plan.label}` : publicPlanLine(plan);
-  const button = new ButtonBuilder()
-    .setCustomId(`atlasby:ticket:${openable ? "open" : "blocked"}:${plan.sku}:${plan.code}`)
-    .setLabel(label.slice(0, 80))
-    .setStyle(openable ? ButtonStyle.Primary : ButtonStyle.Secondary)
-    .setDisabled(!openable);
-  return emoji ? button.setEmoji(emoji) : button;
+function periodOption(plan) {
+  const period = PERIOD_NAMES[plan.code] ?? plan.label;
+  const openable = offerState(plan).openable;
+  const price = plan.price_cents == null ? "sem preço" : formatBrl(plan.price_cents);
+  return {
+    label: `${period}${openable ? "" : " · Esgotado"}`.slice(0, 100),
+    value: plan.code,
+    description: `${plan.duration_days} dias · ${openable ? price : "indisponível"}`.slice(0, 100),
+  };
 }
 
 export function renderCatalog(plans, style = null) {
   const heading = `${style?.catalog_emoji ? `${style.catalog_emoji} ` : ""}${style?.catalog_heading || PRODUCT_LINE}`;
-  const container = new ContainerBuilder()
-    .setAccentColor(0x2b2d31)
-    .addTextDisplayComponents(
-      text(`# ${heading}\nAbrir ticket reserva estoque para atendimento manual. Não há cobrança nem provisionamento.`),
-    );
+  const intro = style?.catalog_intro || CATALOG_INTRO;
+  const container = new ContainerBuilder().setAccentColor(0x2b2d31);
   if (style?.catalog_banner_url) {
-    container.addMediaGalleryComponents(
-      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(style.catalog_banner_url)),
+    container.addSectionComponents(
+      new SectionBuilder()
+        .addTextDisplayComponents(text(`# ${heading}\n${intro}`))
+        .setThumbnailAccessory(new ThumbnailBuilder({ description: "Logo do catálogo" }).setURL(style.catalog_banner_url)),
     );
+  } else {
+    container.addTextDisplayComponents(text(`# ${heading}\n${intro}`));
   }
-  const groups = new Map();
-  for (const plan of plans) {
-    const name = plan.product_name ?? plan.sku;
-    if (!groups.has(name)) groups.set(name, []);
-    groups.get(name).push(plan);
-  }
-  for (const [name, items] of groups) {
+  container.addTextDisplayComponents(text(CATALOG_SUBTITLE));
+  for (const sku of ["t4-4", "t4-8", "t4-16"]) {
+    const items = plans.filter((plan) => plan.sku === sku);
+    if (!items.length) continue;
+    const ui = PRODUCT_UI[sku];
+    const title = style?.[`title_${sku.replace("-", "_")}`] || ui.title;
+    const emoji = style?.[`emoji_${sku.replace("-", "_")}`] || "";
+    const placeholder = (style?.[`placeholder_${sku.replace("-", "_")}`] || ui.placeholder).slice(0, 150);
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(`atlasby:catalog:period:${sku}`)
+      .setPlaceholder(placeholder)
+      .setMinValues(1)
+      .setMaxValues(1)
+      .addOptions(items.map(periodOption));
+    if (!items.some((plan) => offerState(plan).openable)) menu.setDisabled(true);
     container
       .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
-      .addTextDisplayComponents(text(`## ${name}\n${items.map((item) => publicPlanLine(item)).join("\n")}`))
-      .addActionRowComponents(new ActionRowBuilder().addComponents(items.slice(0, 5).map((item) => catalogButton(item, style?.open_emoji))));
+      .addTextDisplayComponents(text(`${emoji ? `${emoji} ` : ""}**${title}**`))
+      .addActionRowComponents(new ActionRowBuilder().addComponents(menu));
   }
+  const extras = [];
+  if (style?.games_text) {
+    const games = new ButtonBuilder().setCustomId("atlasby:catalog:games").setLabel("Jogos incompatíveis").setStyle(ButtonStyle.Secondary);
+    extras.push(style.games_emoji ? games.setEmoji(style.games_emoji) : games);
+  }
+  if (style?.faq_text) {
+    const faq = new ButtonBuilder().setCustomId("atlasby:catalog:faq").setLabel("FAQ").setStyle(ButtonStyle.Secondary);
+    extras.push(style.faq_emoji ? faq.setEmoji(style.faq_emoji) : faq);
+  }
+  if (extras.length) container.addActionRowComponents(new ActionRowBuilder().addComponents(extras));
   return { components: [container], flags: v2Flags({ ephemeral: false }) };
 }
 
@@ -112,13 +130,14 @@ export function renderTicket(ticket, { avatarUrl, staffText, style = null }) {
     .addTextDisplayComponents(
       text(
         [
-          `# ${ticket.product_name}`,
+          `# ${style?.ticket_title_emoji ? `${style.ticket_title_emoji} ` : ""}Ticket de compra criado`,
+          `**${ticket.product_name}**`,
           reservationLine(ticket),
           `Aberto <t:${Math.floor(ticket.opened_at / 1000)}:F>`,
           `Cliente <@${ticket.opener_id}>`,
           claimed,
           greeting,
-          "Isto é uma reserva, não uma compra paga nem um servidor provisionado.",
+          "Pedido registrado neste ticket. Não houve cobrança nem provisionamento.",
         ].filter(Boolean).join("\n"),
       ),
     )
@@ -176,7 +195,7 @@ export function renderAdmin(state) {
 export function renderProductAdmin(plans) {
   const container = new ContainerBuilder()
     .setAccentColor(0x57f287)
-    .addTextDisplayComponents(text("Escolha a duração. O próximo passo pede preço em reais, estoque e disponibilidade, e só grava depois do resumo."));
+    .addTextDisplayComponents(text("Escolha a duração. O próximo passo pede preço e disponível ou esgotado, e só grava depois do resumo."));
   container.addActionRowComponents(
     new ActionRowBuilder().addComponents(
       plans.slice(0, 5).map((plan) =>
@@ -201,6 +220,8 @@ export function renderAppearance() {
         new ButtonBuilder().setCustomId("atlasby:cfg:style:catalog").setLabel("Visual do catálogo").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("atlasby:cfg:style:ticket").setLabel("Mensagem do ticket").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:style:buttons").setLabel("Emojis dos botões").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:style:products").setLabel("Textos dos planos").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:style:info").setLabel("FAQ e jogos").setStyle(ButtonStyle.Secondary),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
@@ -217,6 +238,7 @@ export function styleModal(kind) {
       .setTitle("Visual do catálogo")
       .addLabelComponents(
         new LabelBuilder().setLabel("Emoji do catálogo").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("catalogo_emoji", "🙂")),
+        new LabelBuilder().setLabel("Texto introdutório").setDescription("Vazio volta ao texto padrão.").setTextInputComponent(new TextInputBuilder().setCustomId("catalogo_intro").setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(200).setPlaceholder("Selecione o plano e o período para abrir um ticket.")),
         new LabelBuilder().setLabel("Banner do catálogo").setDescription("URL HTTPS. Vazio remove.").setTextInputComponent(optionalInput("catalogo_banner", "https://")),
         new LabelBuilder().setLabel("Emoji de abrir ticket").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("abrir_emoji", "🎫")),
       );
@@ -232,6 +254,7 @@ export function styleModal(kind) {
           .setTextInputComponent(
             new TextInputBuilder().setCustomId("saudacao").setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(500).setPlaceholder("Olá {usuario}"),
           ),
+        new LabelBuilder().setLabel("Emoji do título").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("titulo_emoji", "🧾")),
         new LabelBuilder().setLabel("Banner do ticket").setDescription("URL HTTPS. Vazio remove.").setTextInputComponent(optionalInput("ticket_banner", "https://")),
       );
   }
@@ -243,6 +266,48 @@ export function styleModal(kind) {
       new LabelBuilder().setLabel("Liberar").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("liberar", "↩️")),
       new LabelBuilder().setLabel("Transcrição").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("transcricao", "📄")),
       new LabelBuilder().setLabel("Fechar").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("fechar", "🔒")),
+    );
+}
+
+export function renderProductTexts() {
+  return {
+    components: [
+      new ContainerBuilder()
+        .setAccentColor(0x57f287)
+        .addTextDisplayComponents(text("Título, emoji e placeholder de cada seletor. O texto padrão é neutro."))
+        .addActionRowComponents(
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId("atlasby:cfg:copy:t4-4").setLabel("Textos 4 vCPU").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId("atlasby:cfg:copy:t4-8").setLabel("Textos 8 vCPU").setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId("atlasby:cfg:copy:t4-16").setLabel("Textos 16 vCPU").setStyle(ButtonStyle.Secondary),
+          ),
+        ),
+    ],
+    flags: v2Flags({ ephemeral: true, update: true }),
+  };
+}
+
+export function productCopyModal(sku) {
+  const ui = PRODUCT_UI[sku];
+  return new ModalBuilder()
+    .setCustomId(`atlasby:modal:copy:${sku}`)
+    .setTitle(`Textos · ${ui.title}`)
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Título acima do seletor").setDescription("Vazio volta ao texto neutro.").setTextInputComponent(optionalInput("titulo", ui.title)),
+      new LabelBuilder().setLabel("Emoji do seletor").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("emoji", "🖥️")),
+      new LabelBuilder().setLabel("Placeholder do seletor").setDescription("Vazio volta ao texto padrão.").setTextInputComponent(optionalInput("placeholder", ui.placeholder)),
+    );
+}
+
+export function infoModal() {
+  return new ModalBuilder()
+    .setCustomId("atlasby:modal:style:info")
+    .setTitle("FAQ e jogos")
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Texto do FAQ").setDescription("Vazio oculta o botão. Sem links inventados.").setTextInputComponent(new TextInputBuilder().setCustomId("faq").setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(1000)),
+      new LabelBuilder().setLabel("Emoji do FAQ").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("faq_emoji", "❓")),
+      new LabelBuilder().setLabel("Texto de jogos incompatíveis").setDescription("Vazio oculta o botão.").setTextInputComponent(new TextInputBuilder().setCustomId("jogos").setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(1000)),
+      new LabelBuilder().setLabel("Emoji de jogos").setDescription("Unicode ou <:nome:id>. Vazio remove.").setTextInputComponent(optionalInput("jogos_emoji", "🎮")),
     );
 }
 
@@ -280,19 +345,11 @@ export function offerModal(plan) {
   const price = plan.price_cents == null ? "" : (plan.price_cents / 100).toFixed(2).replace(".", ",");
   const priceInput = new TextInputBuilder().setCustomId("preco").setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(16).setPlaceholder(price || "sem preço");
   if (price) priceInput.setValue(price);
-  const stockInput = new TextInputBuilder()
-    .setCustomId("estoque")
-    .setStyle(TextInputStyle.Short)
-    .setRequired(false)
-    .setMaxLength(7)
-    .setPlaceholder(plan.stock == null ? "sem teto" : String(plan.stock));
-  if (plan.stock != null) stockInput.setValue(String(plan.stock));
   return new ModalBuilder()
     .setCustomId(`atlasby:modal:offer:${plan.sku}:${plan.code}`)
     .setTitle(`${plan.product_name} · ${plan.label}`.slice(0, 45))
     .addLabelComponents(
       new LabelBuilder().setLabel("Preço em reais").setDescription("Exemplo: 35,90. Vazio mantém o preço atual.").setTextInputComponent(priceInput),
-      new LabelBuilder().setLabel("Estoque").setDescription("Inteiro a partir de zero. Vazio mantém sem teto.").setTextInputComponent(stockInput),
       new LabelBuilder()
         .setLabel("Disponibilidade")
         .setDescription("Escreva disponivel ou esgotado.")

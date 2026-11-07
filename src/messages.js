@@ -143,19 +143,20 @@ export function describeResult(result) {
     case "price_required":
       return "Não há preço cadastrado para reativar este plano. Nada foi alterado e nenhum valor foi inventado.";
     case "sold_out":
-      return "Plano esgotado. A seleção está desativada. Este catálogo não vende nem provisiona.";
+      return "Este período está esgotado. O ticket não foi aberto.";
     case "out_of_stock":
-      return "Estoque numérico esgotado. Nada foi reservado.";
+    case "stock_retired":
+      return "A quantidade de estoque não é mais usada. O número antigo foi preservado e não foi alterado. Use disponível ou esgotado.";
     case "sku_setup_required":
-      return "O 8 vCPU ainda não tem preço nem estoque definidos pela equipe. Nada foi reservado.";
+      return "O 8 vCPU ainda não tem preço definido pela equipe. O ticket não foi aberto.";
     case "ticket_setup_required":
-      return "Configure a categoria e o cargo da equipe antes de abrir tickets. Nada foi reservado.";
+      return "Configure a categoria e o cargo da equipe antes de abrir tickets. Nada foi aberto.";
     case "ticket_opened":
-      return "Ticket aberto e estoque reservado. Não houve cobrança nem provisionamento.";
+      return "Ticket de compra criado.";
     case "ticket_exists":
-      return "Você já tem um ticket aberto para este plano. Nenhuma reserva extra foi feita.";
+      return "Você já tem um ticket aberto para este plano.";
     case "ticket_panel_failed":
-      return "A reserva foi criada, mas o painel do ticket não pôde ser enviado.";
+      return "O ticket foi registrado, mas o painel não pôde ser enviado.";
     case "ticket_claimed":
       return "Ticket assumido.";
     case "claim_taken":
@@ -163,9 +164,9 @@ export function describeResult(result) {
     case "claim_cleared":
       return "A responsabilidade do ticket foi liberada.";
     case "ticket_closed":
-      return "A transcrição privada foi salva, a reserva voltou ao estoque e o canal será apagado. Nenhuma venda foi registrada.";
+      return "A transcrição privada foi salva e o canal será apagado. Nenhuma venda foi registrada.";
     case "delete_failed":
-      return "A transcrição foi salva e a reserva já voltou ao estoque, mas o canal não pôde ser apagado. Ele será apagado na próxima tentativa, sem nova transcrição.";
+      return "A transcrição foi salva, mas o canal não pôde ser apagado. Ele será apagado na próxima tentativa, sem nova transcrição.";
     case "transcript_incomplete":
       return "A transcrição não inclui o texto das mensagens porque a intent Message Content está desligada. O canal foi mantido. Ative a intent no portal, defina ENABLE_MESSAGE_CONTENT_INTENT=1 e tente fechar de novo.";
     case "close_in_progress":
@@ -173,7 +174,7 @@ export function describeResult(result) {
     case "transcript_ready":
       return "Transcrição gerada no canal privado configurado, ou no próprio ticket se não houver canal de arquivo.";
     case "transcript_failed":
-      return "A transcrição falhou. O ticket continua aberto e o estoque não foi devolvido.";
+      return "A transcrição falhou. O ticket continua aberto.";
     case "transcript_channel_unsafe":
       return "O canal de transcrição é público ou inacessível. Nada foi enviado.";
     case "staff_only":
@@ -188,7 +189,9 @@ export function describeResult(result) {
     case "transcript_not_configured":
       return "Configure um canal privado de transcrição antes de fechar. O canal do ticket foi mantido.";
     case "stock_invalid":
-      return "Estoque inválido. Use um inteiro maior ou igual a zero. Nada foi alterado.";
+      return "A quantidade de estoque não é mais usada. Nada foi alterado.";
+    case "info_unconfigured":
+      return "Este texto ainda não foi configurado.";
     case "confirmation_mismatch":
       return "O pedido não confere com o alvo gravado. Nada foi aplicado.";
     case "internal":

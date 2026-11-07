@@ -373,19 +373,14 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
           });
           if (!updated) return deny(row.action, { code: "plan_unknown" });
         } else {
-          const parsed = parseStock(payload.stock);
-          if (!parsed.ok) return deny(row.action, parsed);
-          if (!store.updateStock({ guildId: row.guild_id, sku, code: payload.code, stock: parsed.stock, now: ts })) {
-            return deny(row.action, { code: "plan_unknown" });
-          }
+          return deny(row.action, { code: "stock_retired" });
         }
       } else if (row.action === "set_offer") {
         const sku = payload.sku;
         const duration = durationSpec(sku, payload.code);
         const valid = validatePlanUpdate(duration ? { ...duration, sku, code: payload.code } : null, payload);
-        const stock = payload.stock == null ? { ok: true, stock: null } : parseStock(payload.stock);
-        if (!duration || `${sku}:${payload.code}` !== row.target_id || !valid.ok || !stock.ok) {
-          return deny(row.action, valid.ok && stock.ok ? { code: "confirmation_mismatch" } : valid.ok ? stock : valid);
+        if (!duration || `${sku}:${payload.code}` !== row.target_id || !valid.ok) {
+          return deny(row.action, valid.ok ? { code: "confirmation_mismatch" } : valid);
         }
         if (!store.updateOffer({
           guildId: row.guild_id,
@@ -394,24 +389,13 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
           durationDays: duration.durationDays,
           priceCents: valid.priceCents,
           available: valid.available,
-          stock: stock.stock,
           now: ts,
         })) return deny(row.action, { code: "plan_unknown" });
       } else if (row.action === "set_style") {
-        const valid = validateStyle({
-          catalogHeading: payload.catalogHeading,
-          catalogEmoji: payload.catalogEmoji,
-          catalogBannerUrl: payload.catalogBannerUrl,
-          ticketGreeting: payload.ticketGreeting,
-          ticketBannerUrl: payload.ticketBannerUrl,
-          openEmoji: payload.openEmoji,
-          claimEmoji: payload.claimEmoji,
-          unclaimEmoji: payload.unclaimEmoji,
-          transcriptEmoji: payload.transcriptEmoji,
-          closeEmoji: payload.closeEmoji,
-        });
+        const valid = validateStyle(payload ?? {});
         if (!valid.ok || row.target_id !== row.guild_id) return deny(row.action, valid.ok ? { code: "confirmation_mismatch" } : valid);
         store.saveStyle(row.guild_id, valid.style, ts);
+        store.saveStyleColumns(row.guild_id, valid.style);
       } else if (row.action === "set_category" || row.action === "set_staff_role" || row.action === "set_transcript_channel") {
         const field = {
           set_category: "ticket_category_id",
@@ -597,6 +581,13 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
       });
     },
 
+    catalogNote(guildId, kind) {
+      const style = store.getStyle(guildId);
+      const text = kind === "faq" ? style?.faq_text : style?.games_text;
+      if (!text) return { ok: false, code: "info_unconfigured", text: null };
+      return { ok: true, code: "catalog_info", text };
+    },
+
     async catalog({ guildId }) {
       store.ensureDefaultPlans(guildId, PRODUCTS, now());
       return {
@@ -683,24 +674,10 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
       return this.requestSetPlan({ guildId, actorId, sku, code, priceCents: parsed.cents });
     },
 
-    async requestSetStock({ guildId, actorId, sku, code, stock }) {
+    async requestSetStock({ guildId, actorId }) {
       const auth = await assertAdmin(guildId, actorId);
       if (!auth.ok) return { ...auth, action: "set_stock" };
-      const parsed = parseStock(stock);
-      if (!parsed.ok) return deny("set_stock", parsed);
-      const spec = durationSpec(sku, code);
-      if (!spec) return deny("set_stock", { code: "plan_unknown" });
-      store.ensureDefaultPlans(guildId, PRODUCTS, now());
-      if (!store.getItem(guildId, sku, code)) return deny("set_stock", { code: "plan_unknown" });
-      return openConfirmation({
-        action: "set_stock",
-        guildId,
-        actorId,
-        targetId: `${sku}:${code}`,
-        reason: "Alterar estoque",
-        payload: { sku, code, stock: parsed.stock },
-        summary: `Estoque proposto: ${parsed.stock}.`,
-      });
+      return deny("set_stock", { code: "stock_retired" });
     },
 
     async requestSetOffer({ guildId, actorId, sku, code, rawPrice, stockText, available }) {
@@ -717,24 +694,17 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         if (!parsed.ok) return deny("set_offer", parsed);
         priceCents = parsed.cents;
       }
-      let stock = current.stock;
-      if (stockText != null && String(stockText).trim() !== "") {
-        const parsed = parseStock(String(stockText));
-        if (!parsed.ok) return deny("set_offer", parsed);
-        stock = parsed.stock;
-      }
       const valid = validatePlanUpdate({ ...spec, sku, code }, { priceCents, available });
       if (!valid.ok) return deny("set_offer", valid);
       const priceText = valid.priceCents == null ? "sem preço" : formatBrl(valid.priceCents);
-      const stockLabel = stock == null ? "sem teto" : String(stock);
       return openConfirmation({
         action: "set_offer",
         guildId,
         actorId,
         targetId: `${sku}:${code}`,
-        reason: "Alterar preço, estoque e disponibilidade",
-        payload: { sku, code, priceCents: valid.priceCents, available: valid.available, stock },
-        summary: `${current.product_name} · ${spec.label}: ${priceText}, estoque ${stockLabel}, ${valid.available ? "disponível" : "esgotado"}.`,
+        reason: "Alterar preço e disponibilidade",
+        payload: { sku, code, priceCents: valid.priceCents, available: valid.available },
+        summary: `${current.product_name} · ${spec.label}: ${priceText}, ${valid.available ? "disponível" : "esgotado"}.`,
       });
     },
 
@@ -753,6 +723,21 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         unclaimEmoji: current?.unclaim_emoji ?? null,
         transcriptEmoji: current?.transcript_emoji ?? null,
         closeEmoji: current?.close_emoji ?? null,
+        catalog_intro: current?.catalog_intro ?? null,
+        title_t4_4: current?.title_t4_4 ?? null,
+        title_t4_8: current?.title_t4_8 ?? null,
+        title_t4_16: current?.title_t4_16 ?? null,
+        emoji_t4_4: current?.emoji_t4_4 ?? null,
+        emoji_t4_8: current?.emoji_t4_8 ?? null,
+        emoji_t4_16: current?.emoji_t4_16 ?? null,
+        placeholder_t4_4: current?.placeholder_t4_4 ?? null,
+        placeholder_t4_8: current?.placeholder_t4_8 ?? null,
+        placeholder_t4_16: current?.placeholder_t4_16 ?? null,
+        games_text: current?.games_text ?? null,
+        games_emoji: current?.games_emoji ?? null,
+        faq_text: current?.faq_text ?? null,
+        faq_emoji: current?.faq_emoji ?? null,
+        ticket_title_emoji: current?.ticket_title_emoji ?? null,
         ...patch,
       };
       const valid = validateStyle(merged);
@@ -873,7 +858,6 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
       const avatar = await resolveAvatar(guildId, openerId, avatarUrl, hasCustomAvatar);
       const reserved = store.reserveTicket({ guildId, openerId, sku, code, now: now(), id: randomUUID(), avatarUrl: avatar });
       if (!reserved.ok) return deny("open_ticket", reserved);
-      if (!reserved.idempotent) scheduleCatalog(guildId);
       if (reserved.ticket.channel_id) {
         return { ok: true, action: "open_ticket", code: "ticket_exists", ticket: reserved.ticket, punishmentApplied: false, logDelivered: false, auditRecorded: false };
       }
@@ -893,7 +877,6 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         channelId = created.id;
       } catch {
         store.failPendingTicket(reserved.ticket.id);
-        scheduleCatalog(guildId);
         return deny("open_ticket", { code: "discord_api" });
       }
       if (!store.markTicketOpen(reserved.ticket.id, channelId)) return deny("open_ticket", { code: "config_save_failed" });
@@ -905,6 +888,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
           avatarUrl: ticket.opener_avatar_url,
           staffRoleId: settings.staff_role_id,
           mention: staffMention(settings.staff_role_id),
+          style: store.getStyle(guildId),
         });
       } catch {
         return { ok: false, action: "open_ticket", code: "ticket_panel_failed", ticket, punishmentApplied: false, logDelivered: false, auditRecorded: false };
@@ -937,9 +921,9 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         guildId,
         actorId,
         targetId: ticketId,
-        reason: "Fechar ticket e liberar a reserva",
+        reason: "Fechar o ticket depois da transcrição",
         payload: { ticketId },
-        summary: "O canal permanece arquivado e a reserva volta ao estoque. Não é uma venda.",
+        summary: "A transcrição privada vem antes da contagem. O canal só é apagado depois. Não é uma venda.",
       });
     },
 

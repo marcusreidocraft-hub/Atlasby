@@ -261,6 +261,26 @@ const MIGRATIONS = [
       ALTER TABLE confirmations_v4 RENAME TO confirmations;
     `,
   },
+  {
+    version: 5,
+    sql: `
+      ALTER TABLE guild_styles ADD COLUMN catalog_intro TEXT;
+      ALTER TABLE guild_styles ADD COLUMN title_t4_4 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN title_t4_8 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN title_t4_16 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN emoji_t4_4 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN emoji_t4_8 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN emoji_t4_16 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN placeholder_t4_4 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN placeholder_t4_8 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN placeholder_t4_16 TEXT;
+      ALTER TABLE guild_styles ADD COLUMN games_text TEXT;
+      ALTER TABLE guild_styles ADD COLUMN games_emoji TEXT;
+      ALTER TABLE guild_styles ADD COLUMN faq_text TEXT;
+      ALTER TABLE guild_styles ADD COLUMN faq_emoji TEXT;
+      ALTER TABLE guild_styles ADD COLUMN ticket_title_emoji TEXT;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -579,14 +599,6 @@ function createStore(db, file, options = {}) {
           db.exec("ROLLBACK");
           return { ok: false, code: item?.price_cents == null && sku === "t4-8" ? "sku_setup_required" : "sold_out" };
         }
-        let reserved = 0;
-        if (item.stock != null) {
-          if (statements.decrementStock.run(guildId, sku, code).changes !== 1) {
-            db.exec("ROLLBACK");
-            return { ok: false, code: "out_of_stock" };
-          }
-          reserved = 1;
-        }
         statements.insertTicket.run(
           id,
           guildId,
@@ -597,7 +609,7 @@ function createStore(db, file, options = {}) {
           item.label,
           item.duration_days,
           item.price_cents,
-          reserved,
+          0,
           now,
           avatarUrl,
         );
@@ -620,7 +632,6 @@ function createStore(db, file, options = {}) {
           return false;
         }
         statements.failTicket.run(id);
-        if (ticket.stock_reserved === 1) statements.incrementStock.run(ticket.guild_id, ticket.sku, ticket.code);
         db.exec("COMMIT");
         return true;
       } catch (error) {
@@ -664,7 +675,6 @@ function createStore(db, file, options = {}) {
           return { released: false, ticket: mapTicket(current) };
         }
         const changed = statements.closeTicket.run(now, closedBy, id, guildId).changes === 1;
-        if (changed && current.stock_reserved === 1) statements.incrementStock.run(guildId, current.sku, current.code);
         const ticket = mapTicket(statements.selectTicket.get(id, guildId));
         db.exec("COMMIT");
         return { released: changed, ticket };
@@ -691,12 +701,7 @@ function createStore(db, file, options = {}) {
     markPendingDelete({ guildId, id, closedBy, now }) {
       db.exec("BEGIN IMMEDIATE");
       try {
-        const current = statements.selectTicket.get(id, guildId);
         const changed = statements.markPendingDelete.run(closedBy, now, id, guildId).changes === 1;
-        if (changed && current?.stock_reserved === 1 && current.stock_released === 0) {
-          statements.incrementStock.run(guildId, current.sku, current.code);
-          statements.markStockReleased.run(id, guildId);
-        }
         const ticket = mapTicket(statements.selectTicket.get(id, guildId));
         db.exec("COMMIT");
         return { changed, ticket };
@@ -723,6 +728,16 @@ function createStore(db, file, options = {}) {
     getStyle(guildId) {
       return statements.selectStyle.get(guildId) ?? null;
     },
+    saveStyleColumns(guildId, style) {
+      const fields = [
+        "catalog_intro", "title_t4_4", "title_t4_8", "title_t4_16", "emoji_t4_4", "emoji_t4_8", "emoji_t4_16",
+        "placeholder_t4_4", "placeholder_t4_8", "placeholder_t4_16", "games_text", "games_emoji", "faq_text", "faq_emoji", "ticket_title_emoji",
+      ];
+      for (const field of fields) {
+        if (!(field in style)) continue;
+        db.prepare(`UPDATE guild_styles SET ${field} = ? WHERE guild_id = ?`).run(style[field] ?? null, guildId);
+      }
+    },
     saveStyle(guildId, style, now) {
       statements.upsertStyle.run(
         guildId,
@@ -743,9 +758,9 @@ function createStore(db, file, options = {}) {
       return (
         db.prepare(
           `UPDATE catalog_items
-           SET price_cents = ?, available = ?, stock = ?, updated_at = ?
+           SET price_cents = ?, available = ?, updated_at = ?
            WHERE guild_id = ? AND sku = ? AND code = ? AND duration_days = ?`,
-        ).run(priceCents, available ? 1 : 0, stock, now, guildId, sku, code, durationDays).changes === 1
+        ).run(priceCents, available ? 1 : 0, now, guildId, sku, code, durationDays).changes === 1
       );
     },
     rewriteDefaultBrands() {

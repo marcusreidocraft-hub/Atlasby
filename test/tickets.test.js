@@ -78,7 +78,7 @@ test("permissões do ticket negam everyone e não pedem administrador", () => {
   assert.deepEqual(staffMention("everyone").allowedMentions, { parse: [] });
 });
 
-test("reserva é transacional, idempotente e devolve o estoque uma vez", async () => {
+test("abrir e fechar não altera quantidade e esgotado bloqueia inclusive clique antigo", async () => {
   const ticket = app();
   ticket.store.updateStock({ guildId: GUILD, sku: "t4-16", code: "7d", stock: 1, now: 2 });
   const first = ticket.store.reserveTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-16", code: "7d", now: 3, id: randomUUID() });
@@ -87,20 +87,24 @@ test("reserva é transacional, idempotente e devolve o estoque uma vez", async (
   assert.equal(first.ok, true);
   assert.equal(first.idempotent, false);
   assert.equal(first.ticket.price_cents, 4500);
-  assert.equal(first.ticket.stock_reserved, true);
-  assert.equal(second.ok, false);
-  assert.equal(second.code, "out_of_stock");
+  assert.equal(first.ticket.stock_reserved, false);
+  assert.equal(second.ok, true);
+  assert.notEqual(second.ticket.id, first.ticket.id);
   assert.equal(again.idempotent, true);
   assert.equal(again.ticket.id, first.ticket.id);
-  assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 0);
+  assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 1);
   assert.equal(ticket.store.getItem(OTHER_GUILD, "t4-16", "7d").stock, 0);
+  ticket.store.updatePlan({ guildId: GUILD, sku: "t4-16", code: "7d", durationDays: 7, priceCents: 4500, available: false, now: 6 });
+  const blocked = ticket.store.reserveTicket({ guildId: GUILD, openerId: "100000000000000077", sku: "t4-16", code: "7d", now: 7, id: randomUUID() });
+  assert.equal(blocked.ok, false);
+  assert.equal(blocked.code, "sold_out");
   ticket.store.markTicketOpen(first.ticket.id, "100000000000000041");
-  const closed = ticket.store.releaseTicket({ guildId: GUILD, id: first.ticket.id, closedBy: ACTOR, now: 6 });
-  const twice = ticket.store.releaseTicket({ guildId: GUILD, id: first.ticket.id, closedBy: ACTOR, now: 7 });
+  const closed = ticket.store.releaseTicket({ guildId: GUILD, id: first.ticket.id, closedBy: ACTOR, now: 8 });
+  const twice = ticket.store.releaseTicket({ guildId: GUILD, id: first.ticket.id, closedBy: ACTOR, now: 9 });
   assert.equal(closed.released, true);
   assert.equal(twice.released, false);
   assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 1);
-  const legacy = ticket.store.reserveTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "7d", now: 8, id: randomUUID() });
+  const legacy = ticket.store.reserveTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "7d", now: 10, id: randomUUID() });
   assert.equal(legacy.ticket.stock_reserved, false);
   assert.equal(ticket.store.getItem(GUILD, "t4-4", "7d").stock, null);
   ticket.close();
@@ -161,7 +165,9 @@ test("claim concorrente, transcrição escapada e fechamento sem apagar canal", 
   assert.equal(ticket.calls[0][0], "channel");
   assert.equal(ticket.calls[0][1].overwrites.find((row) => row.id === EVERYONE).deny.includes("ViewChannel"), true);
   const view = renderTicket(opened.ticket, { avatarUrl: opened.ticket.opener_avatar_url, staffText: `<@&${ROLE}>` });
-  assert.match(JSON.stringify(view), /7 dias · R\$35,90 reservados/);
+  assert.match(JSON.stringify(view), /Ticket de compra criado/);
+  assert.match(JSON.stringify(view), /Semanal · 7 dias · R\$35,90/);
+  assert.doesNotMatch(JSON.stringify(view), /reservad|email|FiveM|observaç/i);
   assert.doesNotMatch(JSON.stringify(view), /7 dias · 7 dias/);
   const json = JSON.stringify(view.components[0].toJSON());
   assert.match(json, /"type":11/);
@@ -214,7 +220,7 @@ test("falha da transcrição não fecha nem devolve estoque duas vezes", async (
   const failed = await ticket.service.confirm({ confirmationId: pending.confirmationId, guildId: GUILD, moderatorId: OWNER, decision: "confirm" });
   assert.equal(failed.code, "transcript_failed");
   assert.equal(ticket.store.getTicket(GUILD, opened.ticket.id).status, "open");
-  assert.equal(ticket.store.getItem(GUILD, "t4-16", "15d").stock, 0);
+  assert.equal(ticket.store.getItem(GUILD, "t4-16", "15d").stock, 1);
   ticket.close();
 });
 
@@ -265,12 +271,26 @@ test("catálogo publicado é editado no lugar e não vaza ticket", async () => {
     avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png",
   });
   await ticket.service.whenCatalogSettled(GUILD);
+  assert.equal(ticket.calls.filter((call) => call[0] === "edit").length, 0);
+  assert.equal(ticket.store.getItem(GUILD, "t4-4", "7d").stock, 2);
+  const pending = await ticket.service.requestSetPlan({
+    guildId: GUILD,
+    actorId: OWNER,
+    sku: "t4-4",
+    code: "7d",
+    available: false,
+  });
+  await ticket.service.confirm({ confirmationId: pending.confirmationId, guildId: GUILD, moderatorId: OWNER, decision: "confirm" });
+  await ticket.service.whenCatalogSettled(GUILD);
   const edits = ticket.calls.filter((call) => call[0] === "edit");
   assert.equal(edits.length, 1);
   assert.equal(edits[0][1], "100000000000000008");
   const rendered = JSON.stringify(edits[0][3]);
-  assert.match(rendered, /estoque 1/);
+  assert.match(rendered, /Semanal · Esgotado/);
+  assert.doesNotMatch(rendered, /estoque|reservad/i);
   assert.doesNotMatch(rendered, new RegExp(OWNER));
+  const oldButton = await ticket.service.openTicket({ guildId: GUILD, openerId: ACTOR, sku: "t4-4", code: "7d" });
+  assert.equal(oldButton.code, "sold_out");
   assert.equal(opened.ticket.opener_avatar_url, defaultAvatarUrl(OWNER));
   assert.notEqual(defaultAvatarUrl(String(1n << 22n)), defaultAvatarUrl(String(2n << 22n)));
   ticket.close();
@@ -286,7 +306,7 @@ test("texto ausente sem a intent mantém o canal", async () => {
   assert.equal(failed.code, "transcript_incomplete");
   assert.equal(ticket.store.getTicket(GUILD, opened.ticket.id).status, "open");
   assert.equal(ticket.calls.some((call) => call[0] === "delete"), false);
-  assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 0);
+  assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 1);
   ticket.close();
 });
 

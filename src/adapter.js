@@ -109,9 +109,9 @@ export function createDiscordAdapter(client) {
       );
     },
 
-    async sendTicketPanel({ channelId, ticket, avatarUrl, staffRoleId, mention }) {
+    async sendTicketPanel({ channelId, ticket, avatarUrl, staffRoleId, mention, style = null }) {
       const channel = await client.channels.fetch(channelId);
-      const payload = renderTicket(ticket, { avatarUrl, staffText: mention.text });
+      const payload = renderTicket(ticket, { avatarUrl, staffText: mention.text, style });
       await channel.send({ ...payload, allowedMentions: mention.allowedMentions });
       return staffRoleId;
     },

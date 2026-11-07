@@ -66,27 +66,27 @@ Copie `.env.example` só no ambiente de execução. Os valores versionados ficam
 | `CONFIRMATION_TTL_SECONDS` | não; padrão `60`, limites 15 e 300 |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | não; vazio desliga a intent |
 
-O banco é `data/moderation.sqlite`. As migrações 1 e 2 criam moderação e o catálogo antigo. A migração 3 copia os planos de 4 vCPU para o catálogo novo, apaga só o rótulo de preço temporário e não mexe no preço que a equipe já alterou. Estoque numérico desses planos antigos fica vazio, ou seja, sem teto, até alguém definir um número. Itens novos entram com estoque 0. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
+O banco é `data/moderation.sqlite`. As migrações 1 e 2 criam moderação e o catálogo antigo. A migração 3 copia os planos de 4 vCPU para o catálogo novo, apaga só o rótulo de preço temporário e não mexe no preço que a equipe já alterou. A coluna numérica `stock` continua no banco, junto com tickets, transcrições e auditoria. A migração 5 só acrescenta colunas de texto na aparência. Ela não apaga linhas, não zera preço e não reescreve o status de um ticket. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
 
 ## Catálogo e tickets
 
-A marca padrão é Atlas. Se o banco ainda tiver o texto exato Nyx ou Nyx Cloud como padrão antigo, a migração troca só esse padrão. Preço, estoque, permissões e o texto histórico de uma transcrição não são reescritos.
+A marca padrão é Atlas. Se o banco ainda tiver o texto exato Nyx ou Nyx Cloud como padrão antigo, a migração troca só esse padrão. Preço, permissões, o número antigo de estoque e o texto histórico de uma transcrição não são reescritos. Um ticket `open` continua `open`. Um ticket `closed` continua `closed`.
 
-Não há pagamento nem provisionamento. Abrir um plano reserva estoque e edita a mesma mensagem do catálogo. Fechar salva a transcrição privada, mostra a contagem 5, 4, 3, 2 e 1 e só então apaga o canal. Se a transcrição, a permissão ou o texto das mensagens faltarem, o canal continua. A reserva volta uma única vez e isso não é uma venda.
+Não há pagamento nem provisionamento. O catálogo é uma mensagem Components V2 com três seletores: 4 vCPUs, 8 vCPUs e 16 vCPUs. Escolher um período disponível abre o ticket privado na hora, sem modal de e-mail, sistema ou observações. Esgotado não abre ticket, mesmo que o clique venha de uma mensagem antiga. Abrir ou fechar não soma nem diminui a quantidade guardada na coluna `stock`. Quando preço ou disponibilidade mudam, a mensagem já publicada é editada no lugar.
 
-| Produto | 7 dias | 15 dias | 30 dias | Estoque inicial |
-| --- | --- | --- | --- | --- |
-| Tesla T4 · 4 vCPU | R$35,90, disponível | R$49,90, disponível, sem rótulo temporário | Esgotado, sem preço inventado | sem teto, herdado |
-| Tesla T4 · 8 vCPU | sem preço | sem preço | Esgotado, sem preço | 0; a equipe precisa definir preço e estoque |
-| Tesla T4 · 16 vCPU | R$45,00 | R$75,00 | Esgotado, sem preço | 0 até a equipe informar a quantidade |
+| Produto | Semanal, 7 dias | Quinzenal, 15 dias | Mensal, 30 dias |
+| --- | --- | --- | --- |
+| 4 vCPUs | R$35,90, disponível | R$49,90, disponível | Esgotado, sem preço inventado |
+| 8 vCPUs | sem preço, seletor desativado | sem preço | Esgotado, sem preço |
+| 16 vCPUs | R$45,00, disponível | R$75,00, disponível | Esgotado, sem preço |
 
-Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, só no canal privado configurado. O canal do ticket é apagado depois da contagem, e somente se essa transcrição tiver sido salva.
+Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, só no canal privado configurado. O canal do ticket é apagado depois da contagem 5, 4, 3, 2 e 1, e somente se essa transcrição tiver sido salva. Se a transcrição, a permissão ou o texto das mensagens faltarem, o canal continua.
 
 Antes do primeiro ticket, o dono abre `/configurar` e confirma a categoria, o cargo da equipe e o canal privado da transcrição.
 
-Para preço, estoque e disponibilidade, o caminho é `/configurar`, depois **4 vCPU**, **8 vCPU** ou **16 vCPU**, depois a duração. O formulário pede preço em reais, estoque e `disponivel` ou `esgotado`. O resumo só grava depois de **Confirmar**. Não é preciso digitar ID de produto.
+Para preço e disponibilidade, o caminho é `/configurar`, depois **4 vCPU**, **8 vCPU** ou **16 vCPU**, depois a duração. O formulário pede preço em reais e `disponivel` ou `esgotado`. O resumo só grava depois de **Confirmar**. O 8 vCPU permanece fechado até receber um preço e ser marcado disponível. Não é preciso digitar ID de produto.
 
-Aparência fica em `/configurar`, botão **Aparência**. Dali saem **Visual do catálogo** (emoji, banner HTTPS e emoji de abrir ticket), **Mensagem do ticket** (saudação com `{produto}`, `{duracao}`, `{preco}`, `{usuario}` e `{equipe}`, mais banner) e **Emojis dos botões** (assumir, liberar, transcrição e fechar). A prévia aparece antes da confirmação. Isso não muda o perfil global do bot. Emoji inválido, URL que não seja HTTPS e menção solta são recusados.
+Aparência fica em `/configurar`, botão **Aparência**. Dali saem **Visual do catálogo** (emoji, texto introdutório e banner HTTPS), **Mensagem do ticket** (emoji do título, saudação com `{produto}`, `{duracao}`, `{preco}`, `{usuario}` e `{equipe}`, mais banner), **Emojis dos botões** (assumir, liberar, transcrição e fechar), **Textos dos planos** (título, emoji e placeholder de cada seletor) e **FAQ e jogos** (textos privados; os botões só aparecem se houver texto). A prévia aparece antes da confirmação. Isso não muda o perfil global do bot e vale só para aquele servidor. Emoji inválido, URL que não seja HTTPS e menção solta são recusados.
 
 ## Host
 
@@ -100,4 +100,4 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
 5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
 6. O host que já usa `cursor/catalogo-components-v2-850e` não precisa trocar de branch. Este repositório não faz merge nem restart. O código novo só entra no processo quando quem opera o host reiniciar.
-7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preços e estoque. `/catalogo` abre o ticket do plano escolhido.
+7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preço e disponível ou esgotado. `/catalogo` publica os seletores. Um período disponível abre o ticket.

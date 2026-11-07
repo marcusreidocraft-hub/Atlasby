@@ -50,10 +50,25 @@ export function applyGreeting(template, values) {
   return template.replace(PLACEHOLDER, (token, key) => (ALLOWED_PLACEHOLDERS.has(key) ? values[key] ?? "" : token));
 }
 
+function validatePlain(value, max) {
+  if (value == null || value === "") return { ok: true, text: null };
+  if (typeof value !== "string" || value.trim().length > max || /@everyone|@here|<@/i.test(value)) {
+    return { ok: false, code: "greeting_invalid" };
+  }
+  return { ok: true, text: value.trim() };
+}
+
 export function validateStyle(input) {
   const emojiFields = ["catalogEmoji", "openEmoji", "claimEmoji", "unclaimEmoji", "transcriptEmoji", "closeEmoji"];
+  const extraEmoji = ["emoji_t4_4", "emoji_t4_8", "emoji_t4_16", "games_emoji", "faq_emoji", "ticket_title_emoji"];
   const style = {};
   for (const field of emojiFields) {
+    const parsed = validateEmoji(input[field]);
+    if (!parsed.ok) return parsed;
+    style[field] = parsed.emoji;
+  }
+  for (const field of extraEmoji) {
+    if (!(field in input)) continue;
     const parsed = validateEmoji(input[field]);
     if (!parsed.ok) return parsed;
     style[field] = parsed.emoji;
@@ -67,6 +82,23 @@ export function validateStyle(input) {
   if (!greeting.ok) return greeting;
   const heading = rewriteDefaultBrand(input.catalogHeading ?? "");
   if (heading && (heading.length > 40 || /@everyone|@here/i.test(heading))) return { ok: false, code: "greeting_invalid" };
+  const texts = {
+    catalog_intro: 200,
+    title_t4_4: 80,
+    title_t4_8: 80,
+    title_t4_16: 80,
+    placeholder_t4_4: 150,
+    placeholder_t4_8: 150,
+    placeholder_t4_16: 150,
+    games_text: 1000,
+    faq_text: 1000,
+  };
+  for (const [field, max] of Object.entries(texts)) {
+    if (!(field in input)) continue;
+    const parsed = validatePlain(input[field], max);
+    if (!parsed.ok) return parsed;
+    style[field] = parsed.text;
+  }
   return {
     ok: true,
     style: {

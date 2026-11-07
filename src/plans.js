@@ -94,12 +94,21 @@ export function validatePlanUpdate(spec, { priceCents, available }) {
   return { ok: true, priceCents, available: on };
 }
 
+export const PERIOD_NAMES = Object.freeze({ "7d": "Semanal", "15d": "Quinzenal", "30d": "Mensal" });
+export const PRODUCT_UI = Object.freeze({
+  "t4-4": { title: "4 vCPUs", placeholder: "Selecione o período — 4 vCPUs" },
+  "t4-8": { title: "8 vCPUs", placeholder: "Selecione o período — 8 vCPUs" },
+  "t4-16": { title: "16 vCPUs", placeholder: "Selecione o período — 16 vCPUs" },
+});
+export const CATALOG_INTRO = "Selecione o plano e o período para abrir um ticket.";
+export const CATALOG_SUBTITLE = "NVIDIA Tesla T4";
+
 export function offerState(item) {
-  if (item.price_cents == null || !item.available) {
-    if (item.sku === "t4-8" && item.price_cents == null) return { openable: false, code: "sku_setup_required" };
-    return { openable: false, code: "sold_out" };
+  if (!item) return { openable: false, code: "plan_unknown" };
+  if (item.price_cents == null) {
+    return { openable: false, code: item.sku === "t4-8" ? "sku_setup_required" : "sold_out" };
   }
-  if (item.stock === 0) return { openable: false, code: "out_of_stock" };
+  if (!item.available) return { openable: false, code: "sold_out" };
   return { openable: true, code: "open" };
 }
 
@@ -110,16 +119,12 @@ function planTitle(plan) {
 export function publicPlanLine(plan) {
   const state = offerState(plan);
   const title = planTitle(plan);
-  if (state.code === "sku_setup_required") return `${title} · aguardando preço e estoque`;
-  if (state.code === "sold_out") {
-    return plan.price_cents == null ? `${title} · Esgotado` : `${title} · ${formatBrl(plan.price_cents)} · Esgotado`;
-  }
-  if (state.code === "out_of_stock") return `${title} · ${formatBrl(plan.price_cents)} · estoque 0`;
-  const stock = plan.stock == null ? "" : ` · estoque ${plan.stock}`;
-  return `${title} · ${formatBrl(plan.price_cents)}${stock}`;
+  if (state.code === "sku_setup_required") return `${PERIOD_NAMES[plan.code] ?? title} · aguardando preço`;
+  if (!state.openable) return `${PERIOD_NAMES[plan.code] ?? title} · Esgotado`;
+  return `${PERIOD_NAMES[plan.code] ?? title} · ${formatBrl(plan.price_cents)}`;
 }
 
 export function reservationLine(ticket) {
-  const title = ticket.label === "7 dias" ? "7 dias" : `${ticket.label} · ${ticket.duration_days} dias`;
-  return `${title} · ${formatBrl(ticket.price_cents)} reservados`;
+  const period = PERIOD_NAMES[ticket.code] ?? ticket.label;
+  return `${period} · ${ticket.duration_days} dias · ${formatBrl(ticket.price_cents)}`;
 }
