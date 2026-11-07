@@ -67,6 +67,8 @@ test("catálogo novo traz 7d, quinzenal temporário e mensal esgotado sem preço
 
   const payload = renderCatalog(catalog.plans);
   const rendered = textOf(payload);
+  assert.match(rendered, /# Atlas/);
+  assert.doesNotMatch(rendered, /Nyx/);
   assert.match(rendered, /Tesla T4 · 4 vCPU/);
   assert.match(rendered, /Não há cobrança/);
   assert.match(rendered, /R\$35,90/);

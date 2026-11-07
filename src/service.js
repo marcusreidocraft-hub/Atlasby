@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { assessConfirmation } from "./confirmations.js";
 import { parseDuration } from "./duration.js";
-import { PRODUCTS, durationSpec, offerState, parseBrlToCents, parseStock, validatePlanUpdate } from "./plans.js";
-import { collectHistoryPages, renderTranscriptDocument, safeAvatarUrl, staffMention, ticketOverwrites } from "./tickets.js";
+import { PRODUCTS, durationSpec, formatBrl, offerState, parseBrlToCents, parseStock, validatePlanUpdate } from "./plans.js";
+import { messageNeedsContentIntent, renderTranscriptDocument, resolveOpenerAvatar, staffMention, ticketOverwrites, collectHistoryPages } from "./tickets.js";
+import { renderCatalog, renderTicket } from "./ui.js";
+import { validateStyle } from "./style.js";
 import { canPostLogs, evaluateModeration, hasPermission, Permissions } from "./permissions.js";
 
 const REASON_MAX = 512;
@@ -11,6 +13,8 @@ const CONFIG_ACTIONS = new Set([
   "set_log_channel",
   "set_plan",
   "set_stock",
+  "set_offer",
+  "set_style",
   "set_category",
   "set_staff_role",
   "set_transcript_channel",
@@ -49,8 +53,32 @@ function readPayload(row) {
   }
 }
 
-export function createService({ store, discord, now = () => Date.now(), ttlMs }) {
+export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
   if (!Number.isInteger(ttlMs) || ttlMs < 15_000 || ttlMs > 300_000) throw new Error("ttlMs inválido.");
+  const catalogChains = new Map();
+  async function refreshCatalog(guildId) {
+    if (!discord.editMessage) return;
+    const payload = { ...renderCatalog(store.listPlans(guildId), store.getStyle(guildId)), allowedMentions: { parse: [] } };
+    for (const post of store.listCatalogPosts(guildId)) {
+      const result = await discord.editMessage(post.channel_id, post.message_id, payload);
+      if (result?.missing) store.pruneCatalogPost(post);
+    }
+  }
+  function scheduleCatalog(guildId) {
+    const previous = catalogChains.get(guildId) ?? Promise.resolve();
+    const next = previous.then(() => refreshCatalog(guildId)).catch(() => {});
+    catalogChains.set(guildId, next);
+    return next;
+  }
+  async function resolveAvatar(guildId, openerId, url, hasCustomAvatar) {
+    if (hasCustomAvatar != null || url) return resolveOpenerAvatar({ userId: openerId, url, hasCustomAvatar });
+    if (!discord.fetchMemberAvatar) return resolveOpenerAvatar({ userId: openerId, hasCustomAvatar: false });
+    try {
+      return resolveOpenerAvatar(await discord.fetchMemberAvatar(guildId, openerId));
+    } catch {
+      return resolveOpenerAvatar({ userId: openerId, hasCustomAvatar: false });
+    }
+  }
 
   async function loadPeople(guildId, actorId, targetId) {
     try {
@@ -351,6 +379,39 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
             return deny(row.action, { code: "plan_unknown" });
           }
         }
+      } else if (row.action === "set_offer") {
+        const sku = payload.sku;
+        const duration = durationSpec(sku, payload.code);
+        const valid = validatePlanUpdate(duration ? { ...duration, sku, code: payload.code } : null, payload);
+        const stock = payload.stock == null ? { ok: true, stock: null } : parseStock(payload.stock);
+        if (!duration || `${sku}:${payload.code}` !== row.target_id || !valid.ok || !stock.ok) {
+          return deny(row.action, valid.ok && stock.ok ? { code: "confirmation_mismatch" } : valid.ok ? stock : valid);
+        }
+        if (!store.updateOffer({
+          guildId: row.guild_id,
+          sku,
+          code: payload.code,
+          durationDays: duration.durationDays,
+          priceCents: valid.priceCents,
+          available: valid.available,
+          stock: stock.stock,
+          now: ts,
+        })) return deny(row.action, { code: "plan_unknown" });
+      } else if (row.action === "set_style") {
+        const valid = validateStyle({
+          catalogHeading: payload.catalogHeading,
+          catalogEmoji: payload.catalogEmoji,
+          catalogBannerUrl: payload.catalogBannerUrl,
+          ticketGreeting: payload.ticketGreeting,
+          ticketBannerUrl: payload.ticketBannerUrl,
+          openEmoji: payload.openEmoji,
+          claimEmoji: payload.claimEmoji,
+          unclaimEmoji: payload.unclaimEmoji,
+          transcriptEmoji: payload.transcriptEmoji,
+          closeEmoji: payload.closeEmoji,
+        });
+        if (!valid.ok || row.target_id !== row.guild_id) return deny(row.action, valid.ok ? { code: "confirmation_mismatch" } : valid);
+        store.saveStyle(row.guild_id, valid.style, ts);
       } else if (row.action === "set_category" || row.action === "set_staff_role" || row.action === "set_transcript_channel") {
         const field = {
           set_category: "ticket_category_id",
@@ -367,6 +428,9 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
       } else if (row.action === "remove_admin") {
         if (payload.userId !== row.target_id) return deny(row.action, { code: "confirmation_mismatch" });
         if (!store.removeAdmin(row.guild_id, payload.userId)) return deny(row.action, { code: "admin_missing" });
+      }
+      if (row.action === "set_plan" || row.action === "set_stock" || row.action === "set_offer" || row.action === "set_style") {
+        scheduleCatalog(row.guild_id);
       }
       store.insertAction({
         guildId: row.guild_id,
@@ -438,39 +502,57 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
     if (!ticket || ticket.status !== "open" || !ticket.channel_id) return deny("close_ticket", { code: "ticket_missing" });
     const allowed = row.moderator_id === ticket.opener_id || (await canStaff(row.guild_id, row.moderator_id));
     if (!allowed) return deny("close_ticket", { code: "staff_only" });
-    try {
-      await deliverTranscript(row.guild_id, ticket);
-    } catch (error) {
-      return deny("close_ticket", { code: error?.code === "unsafe" ? "transcript_channel_unsafe" : "transcript_failed" });
+    if (ticket.close_phase === "pending_delete") {
+      return { ok: true, action: "close_ticket", code: "countdown_ready", ticket, punishmentApplied: false, logDelivered: true, auditRecorded: false };
     }
-    let identity;
-    try {
-      identity = await discord.guildIdentity(row.guild_id);
-      const settings = store.getSettings(row.guild_id);
-      await discord.applyOverwrites(
-        ticket.channel_id,
-        ticketOverwrites({
-          everyoneId: identity.everyoneId,
-          openerId: ticket.opener_id,
-          staffRoleId: settings.staff_role_id,
-          botId: identity.botId,
-          archive: true,
-        }),
-      );
-    } catch {
-      return deny("close_ticket", { code: "discord_api" });
+    if (ticket.close_phase !== "transcript_saved") {
+      if (!store.beginClose(row.guild_id, ticket.id)) return deny("close_ticket", { code: "close_in_progress" });
+      try {
+        const messages = await collectHistoryPages((before) => discord.fetchHistoryPage(ticket.channel_id, before));
+        if (!messageContentIntent && messages.some(messageNeedsContentIntent)) {
+          store.abortClose(row.guild_id, ticket.id);
+          return deny("close_ticket", { code: "transcript_incomplete" });
+        }
+        const html = renderTranscriptDocument(messages);
+        const destination = await transcriptDestination(row.guild_id, ticket);
+        await discord.deliverTranscript({ channelId: destination, html, filename: `ticket-${ticket.id}.html` });
+        if (!store.markTranscriptSaved(row.guild_id, ticket.id)) {
+          store.abortClose(row.guild_id, ticket.id);
+          return deny("close_ticket", { code: "transcript_failed" });
+        }
+      } catch (error) {
+        store.abortClose(row.guild_id, ticket.id);
+        return deny("close_ticket", {
+          code: error?.code === "unsafe" || error?.code === "transcript_not_configured" ? error.code === "unsafe" ? "transcript_channel_unsafe" : "transcript_not_configured" : "transcript_failed",
+        });
+      }
     }
-    const released = store.releaseTicket({ guildId: row.guild_id, id: ticket.id, closedBy: row.moderator_id, now: now() });
-    if (!released.released) return deny("close_ticket", { code: "ticket_missing" });
+    const pending = store.markPendingDelete({ guildId: row.guild_id, id: ticket.id, closedBy: row.moderator_id, now: now() });
+    if (pending.changed) scheduleCatalog(row.guild_id);
     return {
       ok: true,
       action: "close_ticket",
-      code: "ticket_closed",
-      ticket: released.ticket,
+      code: "countdown_ready",
+      ticket: pending.ticket ?? store.getTicket(row.guild_id, ticket.id),
       punishmentApplied: false,
       logDelivered: true,
       auditRecorded: false,
     };
+  }
+  async function transcriptDestination(guildId, ticket) {
+    const settings = store.getSettings(guildId);
+    if (!settings?.transcript_channel_id) {
+      const error = new Error("canal");
+      error.code = "transcript_not_configured";
+      throw error;
+    }
+    const info = await discord.inspectChannel(settings.transcript_channel_id);
+    if (!info || info.guildId !== guildId || info.everyoneCanView || info.type !== "GuildText" || !canPostLogs(info.permissions)) {
+      const error = new Error("canal");
+      error.code = "unsafe";
+      throw error;
+    }
+    return settings.transcript_channel_id;
   }
 
   return {
@@ -506,6 +588,15 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
       return requestModeration("ban", input);
     },
 
+    ticketCard(guildId, ticket) {
+      const settings = store.getSettings(guildId);
+      return renderTicket(ticket, {
+        avatarUrl: ticket.opener_avatar_url,
+        staffText: staffMention(settings?.staff_role_id).text,
+        style: store.getStyle(guildId),
+      });
+    },
+
     async catalog({ guildId }) {
       store.ensureDefaultPlans(guildId, PRODUCTS, now());
       return {
@@ -513,6 +604,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
         action: null,
         code: "catalog",
         plans: store.listPlans(guildId),
+        style: store.getStyle(guildId),
         punishmentApplied: false,
         logDelivered: false,
         auditRecorded: false,
@@ -611,6 +703,100 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
       });
     },
 
+    async requestSetOffer({ guildId, actorId, sku, code, rawPrice, stockText, available }) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "set_offer" };
+      const spec = durationSpec(sku, code);
+      if (!spec) return deny("set_offer", { code: "plan_unknown" });
+      store.ensureDefaultPlans(guildId, PRODUCTS, now());
+      const current = store.getItem(guildId, sku, code);
+      if (!current) return deny("set_offer", { code: "plan_unknown" });
+      let priceCents = current.price_cents;
+      if (rawPrice != null && String(rawPrice).trim() !== "") {
+        const parsed = parseBrlToCents(String(rawPrice));
+        if (!parsed.ok) return deny("set_offer", parsed);
+        priceCents = parsed.cents;
+      }
+      let stock = current.stock;
+      if (stockText != null && String(stockText).trim() !== "") {
+        const parsed = parseStock(String(stockText));
+        if (!parsed.ok) return deny("set_offer", parsed);
+        stock = parsed.stock;
+      }
+      const valid = validatePlanUpdate({ ...spec, sku, code }, { priceCents, available });
+      if (!valid.ok) return deny("set_offer", valid);
+      const priceText = valid.priceCents == null ? "sem preço" : formatBrl(valid.priceCents);
+      const stockLabel = stock == null ? "sem teto" : String(stock);
+      return openConfirmation({
+        action: "set_offer",
+        guildId,
+        actorId,
+        targetId: `${sku}:${code}`,
+        reason: "Alterar preço, estoque e disponibilidade",
+        payload: { sku, code, priceCents: valid.priceCents, available: valid.available, stock },
+        summary: `${current.product_name} · ${spec.label}: ${priceText}, estoque ${stockLabel}, ${valid.available ? "disponível" : "esgotado"}.`,
+      });
+    },
+
+    async requestSetStyle({ guildId, actorId, input }) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "set_style" };
+      const valid = validateStyle(input);
+      if (!valid.ok) return deny("set_style", valid);
+      return openConfirmation({
+        action: "set_style",
+        guildId,
+        actorId,
+        targetId: guildId,
+        reason: "Alterar a aparência do catálogo e dos tickets",
+        payload: valid.style,
+        summary: `Título: ${valid.style.catalogHeading ?? "Atlas"}.`,
+      });
+    },
+
+    trackCatalog(post) {
+      store.trackCatalogPost(post);
+    },
+
+    whenCatalogSettled(guildId) {
+      return catalogChains.get(guildId) ?? Promise.resolve();
+    },
+
+    async recoverPendingDeletes() {
+      for (const ticket of store.listPendingDeletes()) {
+        try {
+          await discord.deleteChannel(ticket.channel_id);
+          store.markTicketDeleted(ticket.guild_id, ticket.id);
+        } catch {
+          // A próxima inicialização tenta de novo, sem nova transcrição nem nova devolução.
+        }
+      }
+    },
+
+    async reconcileCatalogs() {
+      const guilds = new Set(store.listCatalogPosts().map((post) => post.guild_id));
+      for (const guildId of guilds) scheduleCatalog(guildId);
+      await Promise.all([...guilds].map((guildId) => this.whenCatalogSettled(guildId)));
+    },
+
+    async finishDeletion({ guildId, ticketId, editStatus, sleep: wait = sleep }) {
+      const ticket = store.getTicket(guildId, ticketId);
+      if (!ticket || ticket.close_phase !== "pending_delete" || ticket.status !== "open") {
+        return deny("close_ticket", { code: "ticket_missing" });
+      }
+      for (const step of [5, 4, 3, 2, 1]) {
+        await editStatus(`O canal será apagado em ${step}. A transcrição privada já foi salva.`);
+        await wait(1000);
+      }
+      try {
+        await discord.deleteChannel(ticket.channel_id);
+      } catch {
+        return { ok: false, action: "close_ticket", code: "delete_failed", ticket, punishmentApplied: false, logDelivered: true, auditRecorded: false };
+      }
+      store.markTicketDeleted(guildId, ticketId);
+      return { ok: true, action: "close_ticket", code: "ticket_deleted", ticket, punishmentApplied: false, logDelivered: true, auditRecorded: false };
+    },
+
     async requestEnrollAdmin({ guildId, actorId, userId }) {
       const auth = await assertAdmin(guildId, actorId, { ownerOnly: true });
       if (!auth.ok) return { ...auth, action: "enroll_admin" };
@@ -655,7 +841,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
       });
     },
 
-    async openTicket({ guildId, openerId, sku, code, avatarUrl }) {
+    async openTicket({ guildId, openerId, sku, code, avatarUrl, hasCustomAvatar }) {
       store.ensureDefaultPlans(guildId, PRODUCTS, now());
       const settings = store.getSettings(guildId);
       if (!settings?.ticket_category_id || !settings?.staff_role_id) return deny("open_ticket", { code: "ticket_setup_required" });
@@ -669,8 +855,10 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
         return deny("open_ticket", { code: "lookup_failed" });
       }
       if (!hasPermission(identity.botPermissions, Permissions.ManageChannels)) return deny("open_ticket", { code: "bot_permission" });
-      const reserved = store.reserveTicket({ guildId, openerId, sku, code, now: now(), id: randomUUID() });
+      const avatar = await resolveAvatar(guildId, openerId, avatarUrl, hasCustomAvatar);
+      const reserved = store.reserveTicket({ guildId, openerId, sku, code, now: now(), id: randomUUID(), avatarUrl: avatar });
       if (!reserved.ok) return deny("open_ticket", reserved);
+      if (!reserved.idempotent) scheduleCatalog(guildId);
       if (reserved.ticket.channel_id) {
         return { ok: true, action: "open_ticket", code: "ticket_exists", ticket: reserved.ticket, punishmentApplied: false, logDelivered: false, auditRecorded: false };
       }
@@ -690,6 +878,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
         channelId = created.id;
       } catch {
         store.failPendingTicket(reserved.ticket.id);
+        scheduleCatalog(guildId);
         return deny("open_ticket", { code: "discord_api" });
       }
       if (!store.markTicketOpen(reserved.ticket.id, channelId)) return deny("open_ticket", { code: "config_save_failed" });
@@ -698,7 +887,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
         await discord.sendTicketPanel({
           channelId,
           ticket,
-          avatarUrl: safeAvatarUrl(avatarUrl),
+          avatarUrl: ticket.opener_avatar_url,
           staffRoleId: settings.staff_role_id,
           mention: staffMention(settings.staff_role_id),
         });
@@ -844,10 +1033,10 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs })
           ? await executeClose(row)
           : await executeConfig(row);
       try {
-        const completed = result.punishmentApplied || result.code === "config_saved" || result.code === "ticket_closed";
+        const completed = result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready";
         store.finishConfirmation(confirmationId, completed ? "completed" : "failed", now());
       } catch {
-        if (result.punishmentApplied || result.code === "config_saved" || result.code === "ticket_closed") {
+        if (result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready") {
           return { ...result, ok: false, code: "audit_failed", auditRecorded: false };
         }
         return { ...result, auditRecorded: false };

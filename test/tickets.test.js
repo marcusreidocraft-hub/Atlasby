@@ -8,9 +8,10 @@ import { randomUUID } from "node:crypto";
 import { createService } from "../src/service.js";
 import { openDatabase } from "../src/storage.js";
 import { PRODUCTS } from "../src/plans.js";
-import { collectHistoryPages, escapeHtml, renderTranscriptDocument, staffMention, ticketOverwrites } from "../src/tickets.js";
+import { collectHistoryPages, defaultAvatarUrl, escapeHtml, renderTranscriptDocument, staffMention, ticketOverwrites } from "../src/tickets.js";
 import { renderTicket, validateV2Message } from "../src/ui.js";
 import { ACTOR, GUILD, OTHER, OTHER_GUILD, OWNER, fakeDiscord } from "../src/fixtures.js";
+import { rewriteDefaultBrand, validateEmoji, validateGreeting, validateMediaUrl } from "../src/style.js";
 
 const CATEGORY = "100000000000000021";
 const ROLE = "100000000000000022";
@@ -24,6 +25,7 @@ function app() {
   store.ensureDefaultPlans(OTHER_GUILD, PRODUCTS, 1);
   store.setGuildField(GUILD, "ticket_category_id", CATEGORY, 1);
   store.setGuildField(GUILD, "staff_role_id", ROLE, 1);
+  store.setGuildField(GUILD, "transcript_channel_id", "100000000000000008", 1);
   const calls = [];
   const discord = fakeDiscord({
     async guildIdentity() {
@@ -49,6 +51,16 @@ function app() {
     },
     async applyOverwrites(channelId, overwrites) {
       calls.push(["lock", channelId, overwrites]);
+    },
+    async deleteChannel(channelId) {
+      calls.push(["delete", channelId]);
+    },
+    async editMessage(channelId, messageId, payload) {
+      calls.push(["edit", channelId, messageId, payload]);
+      return { ok: true, missing: false };
+    },
+    async inspectChannel() {
+      return { guildId: GUILD, type: "GuildText", permissions: (1n << 10n) | (1n << 11n) | (1n << 14n), everyoneCanView: false };
     },
   });
   const service = createService({ store, discord, now: () => 5_000, ttlMs: 60_000 });
@@ -136,11 +148,21 @@ test("migração tira o preço temporário e não inventa 8 vCPU nem apaga preç
 test("claim concorrente, transcrição escapada e fechamento sem apagar canal", async () => {
   const ticket = app();
   ticket.store.updateStock({ guildId: GUILD, sku: "t4-4", code: "7d", stock: 2, now: 2 });
-  const opened = await ticket.service.openTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "7d", avatarUrl: "https://cdn.discordapp.com/avatars/1/a.png" });
+  const opened = await ticket.service.openTicket({
+    guildId: GUILD,
+    openerId: OWNER,
+    sku: "t4-4",
+    code: "7d",
+    hasCustomAvatar: true,
+    avatarUrl: "https://cdn.discordapp.com/avatars/1/a.png",
+  });
+  assert.equal(opened.ticket.opener_avatar_url, "https://cdn.discordapp.com/avatars/1/a.png");
   assert.equal(opened.code, "ticket_opened");
   assert.equal(ticket.calls[0][0], "channel");
   assert.equal(ticket.calls[0][1].overwrites.find((row) => row.id === EVERYONE).deny.includes("ViewChannel"), true);
-  const view = renderTicket(opened.ticket, { avatarUrl: "https://cdn.discordapp.com/avatars/1/a.png", staffText: `<@&${ROLE}>` });
+  const view = renderTicket(opened.ticket, { avatarUrl: opened.ticket.opener_avatar_url, staffText: `<@&${ROLE}>` });
+  assert.match(JSON.stringify(view), /7 dias · R\$35,90 reservados/);
+  assert.doesNotMatch(JSON.stringify(view), /7 dias · 7 dias/);
   const json = JSON.stringify(view.components[0].toJSON());
   assert.match(json, /"type":11/);
   assert.match(json, /<t:5:F>/);
@@ -163,9 +185,20 @@ test("claim concorrente, transcrição escapada e fechamento sem apagar canal", 
   assert.deepEqual(pages.map((item) => item.id), ["8", "9"]);
   const pending = await ticket.service.requestCloseTicket({ guildId: GUILD, actorId: ACTOR, ticketId: opened.ticket.id });
   const closed = await ticket.service.confirm({ confirmationId: pending.confirmationId, guildId: GUILD, moderatorId: ACTOR, decision: "confirm" });
-  assert.equal(closed.code, "ticket_closed");
-  assert.equal(ticket.calls.some((call) => call[0] === "lock"), true);
+  assert.equal(closed.code, "countdown_ready");
+  assert.equal(ticket.calls.some((call) => call[0] === "transcript"), true);
   assert.equal(ticket.calls.some((call) => call[0] === "delete"), false);
+  assert.equal(ticket.store.getItem(GUILD, "t4-4", "7d").stock, 2);
+  const edits = [];
+  const finished = await ticket.service.finishDeletion({
+    guildId: GUILD,
+    ticketId: opened.ticket.id,
+    editStatus: async (content) => edits.push(content),
+    sleep: async () => {},
+  });
+  assert.deepEqual(edits.map((line) => line.match(/em (\d)/)[1]), ["5", "4", "3", "2", "1"]);
+  assert.equal(finished.code, "ticket_deleted");
+  assert.equal(ticket.calls.filter((call) => call[0] === "delete").length, 1);
   assert.equal(ticket.store.getItem(GUILD, "t4-4", "7d").stock, 2);
   ticket.close();
 });
@@ -185,9 +218,112 @@ test("falha da transcrição não fecha nem devolve estoque duas vezes", async (
   ticket.close();
 });
 
+test("marca padrão Nyx vira Atlas e texto customizado ou histórico permanecem", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlasby-brand-"));
+  const store = openDatabase(dir);
+  store.ensureDefaultPlans(GUILD, PRODUCTS, 1);
+  store.close();
+  const db = new DatabaseSync(path.join(dir, "moderation.sqlite"));
+  db.exec(`UPDATE catalog_items SET product_name = 'Nyx Cloud' WHERE sku = 't4-4' AND code = '7d'`);
+  db.exec(`UPDATE catalog_items SET product_name = 'Loja Nyx do João' WHERE sku = 't4-4' AND code = '15d'`);
+  db.exec(`INSERT INTO guild_styles (guild_id, catalog_heading, updated_at) VALUES ('${GUILD}', 'Nyx', 1)`);
+  db.exec(`INSERT INTO guild_styles (guild_id, catalog_heading, ticket_greeting, updated_at) VALUES ('${OTHER_GUILD}', 'Minha loja Nyx', 'Olá {usuario}', 1)`);
+  db.exec(`INSERT INTO tickets (
+    id, guild_id, opener_id, sku, code, product_name, label, duration_days, price_cents, stock_reserved, stock_released, status, opened_at
+  ) VALUES ('hist', '${GUILD}', '${OWNER}', 't4-4', '7d', 'Nyx Cloud', '7 dias', 7, 3590, 0, 0, 'closed', 1)`);
+  db.close();
+  const reopened = openDatabase(dir);
+  reopened.rewriteDefaultBrands();
+  reopened.rewriteDefaultBrands();
+  assert.equal(reopened.getItem(GUILD, "t4-4", "7d").product_name, "Atlas");
+  assert.equal(reopened.getItem(GUILD, "t4-4", "7d").price_cents, 3590);
+  assert.equal(reopened.getItem(GUILD, "t4-4", "15d").product_name, "Loja Nyx do João");
+  assert.equal(reopened.getStyle(GUILD).catalog_heading, "Atlas");
+  assert.equal(reopened.getStyle(OTHER_GUILD).catalog_heading, "Minha loja Nyx");
+  assert.equal(reopened.getStyle(OTHER_GUILD).ticket_greeting, "Olá {usuario}");
+  const historical = dbOpen(dir);
+  assert.equal(historical.prepare("SELECT product_name FROM tickets WHERE id = 'hist'").get().product_name, "Nyx Cloud");
+  historical.close();
+  reopened.close();
+});
+
+function dbOpen(dir) {
+  return new DatabaseSync(path.join(dir, "moderation.sqlite"));
+}
+
+test("catálogo publicado é editado no lugar e não vaza ticket", async () => {
+  const ticket = app();
+  ticket.service.trackCatalog({ guildId: GUILD, channelId: "100000000000000008", messageId: "100000000000000077" });
+  ticket.service.trackCatalog({ guildId: OTHER_GUILD, channelId: "100000000000000018", messageId: "100000000000000078" });
+  ticket.store.updateStock({ guildId: GUILD, sku: "t4-4", code: "7d", stock: 2, now: 2 });
+  const opened = await ticket.service.openTicket({
+    guildId: GUILD,
+    openerId: OWNER,
+    sku: "t4-4",
+    code: "7d",
+    hasCustomAvatar: false,
+    avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png",
+  });
+  await ticket.service.whenCatalogSettled(GUILD);
+  const edits = ticket.calls.filter((call) => call[0] === "edit");
+  assert.equal(edits.length, 1);
+  assert.equal(edits[0][1], "100000000000000008");
+  const rendered = JSON.stringify(edits[0][3]);
+  assert.match(rendered, /estoque 1/);
+  assert.doesNotMatch(rendered, new RegExp(OWNER));
+  assert.equal(opened.ticket.opener_avatar_url, defaultAvatarUrl(OWNER));
+  assert.notEqual(defaultAvatarUrl(String(1n << 22n)), defaultAvatarUrl(String(2n << 22n)));
+  ticket.close();
+});
+
+test("texto ausente sem a intent mantém o canal", async () => {
+  const ticket = app();
+  ticket.store.updateStock({ guildId: GUILD, sku: "t4-16", code: "7d", stock: 1, now: 1 });
+  const opened = await ticket.service.openTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-16", code: "7d", hasCustomAvatar: true, avatarUrl: "https://cdn.discordapp.com/avatars/9/a.png" });
+  ticket.discord.fetchHistoryPage = async () => [{ id: "3", authorIsBot: false, content: "", attachments: [], embeds: [], components: [] }];
+  const pending = await ticket.service.requestCloseTicket({ guildId: GUILD, actorId: OWNER, ticketId: opened.ticket.id });
+  const failed = await ticket.service.confirm({ confirmationId: pending.confirmationId, guildId: GUILD, moderatorId: OWNER, decision: "confirm" });
+  assert.equal(failed.code, "transcript_incomplete");
+  assert.equal(ticket.store.getTicket(GUILD, opened.ticket.id).status, "open");
+  assert.equal(ticket.calls.some((call) => call[0] === "delete"), false);
+  assert.equal(ticket.store.getItem(GUILD, "t4-16", "7d").stock, 0);
+  ticket.close();
+});
+
+test("falha ao apagar não devolve o estoque de novo", async () => {
+  const ticket = app();
+  ticket.store.updateStock({ guildId: GUILD, sku: "t4-4", code: "15d", stock: 1, now: 1 });
+  const opened = await ticket.service.openTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "15d", hasCustomAvatar: true, avatarUrl: "https://cdn.discordapp.com/avatars/9/a.png" });
+  ticket.discord.deleteChannel = async () => {
+    throw new Error("discord");
+  };
+  const pending = await ticket.service.requestCloseTicket({ guildId: GUILD, actorId: OWNER, ticketId: opened.ticket.id });
+  const ready = await ticket.service.confirm({ confirmationId: pending.confirmationId, guildId: GUILD, moderatorId: OWNER, decision: "confirm" });
+  assert.equal(ready.code, "countdown_ready");
+  const failed = await ticket.service.finishDeletion({ guildId: GUILD, ticketId: opened.ticket.id, editStatus: async () => {}, sleep: async () => {} });
+  assert.equal(failed.code, "delete_failed");
+  assert.equal(ticket.store.getItem(GUILD, "t4-4", "15d").stock, 1);
+  ticket.discord.deleteChannel = async (channelId) => {
+    ticket.calls.push(["delete", channelId]);
+  };
+  const retried = await ticket.service.finishDeletion({ guildId: GUILD, ticketId: opened.ticket.id, editStatus: async () => {}, sleep: async () => {} });
+  assert.equal(retried.code, "ticket_deleted");
+  assert.equal(ticket.store.getItem(GUILD, "t4-4", "15d").stock, 1);
+  ticket.close();
+});
+
 test("html de segredo não permanece e paginação rejeita página inválida", async () => {
   const html = escapeHtml(`token ${"a".repeat(24)}.${"b".repeat(6)}.${"c".repeat(27)}`);
   assert.match(renderTranscriptDocument([{ authorId: "1", content: `${"a".repeat(24)}.${"b".repeat(6)}.${"c".repeat(27)}`, timestamp: "t", attachments: [] }]), /\[segredo\]/);
   assert.equal(html.includes("<"), false);
   await assert.rejects(() => collectHistoryPages(async () => ({ id: "1" })));
+  assert.equal(rewriteDefaultBrand("Nyx Cloud"), "Atlas");
+  assert.equal(rewriteDefaultBrand("Loja Nyx do João"), "Loja Nyx do João");
+  assert.equal(validateEmoji("🙂").ok, true);
+  assert.equal(validateEmoji("<:ok:100000000000000022>").ok, true);
+  assert.equal(validateEmoji("texto").ok, false);
+  assert.equal(validateMediaUrl("http://cdn.example/a.png").ok, false);
+  assert.equal(validateMediaUrl("https://cdn.example/banner.png").ok, true);
+  assert.equal(validateGreeting("Olá {usuario} @everyone").ok, false);
+  assert.equal(validateGreeting("Olá {usuario}").ok, true);
 });

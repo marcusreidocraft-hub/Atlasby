@@ -13,8 +13,8 @@ import {
   renderCatalog,
   renderLogPicker,
   renderNotice,
+  offerModal,
   renderProductAdmin,
-  renderTicket,
   renderTicketSettings,
   stockModal,
 } from "./ui.js";
@@ -76,7 +76,10 @@ async function handleCommand(interaction, service) {
 
   if (name === "catalogo") {
     const result = await service.catalog({ guildId });
-    await interaction.reply(renderCatalog(result.plans));
+    const message = await interaction.reply({ ...renderCatalog(result.plans, result.style), fetchReply: true });
+    if (message?.id && interaction.channelId) {
+      service.trackCatalog({ guildId, channelId: interaction.channelId, messageId: message.id });
+    }
     return;
   }
   if (name === "configurar") {
@@ -126,7 +129,11 @@ async function handleButton(interaction, service) {
       openerId: interaction.user.id,
       sku: openTicket[1],
       code: openTicket[2],
-      avatarUrl: interaction.user.displayAvatarURL?.({ extension: "png", size: 128 }) ?? null,
+      hasCustomAvatar: Boolean(interaction.member?.avatar || interaction.user?.avatar),
+      avatarUrl:
+        interaction.member?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
+        interaction.user?.displayAvatarURL?.({ extension: "png", size: 128 }) ??
+        null,
     });
     await interaction.reply(renderNotice(describeResult(result)));
     return;
@@ -146,7 +153,8 @@ async function handleButton(interaction, service) {
           ? await service.clearTicketClaim({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId })
           : await service.transcriptTicket({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId });
     if (result.ticket && ticketAction[1] !== "transcript") {
-      await interaction.update(renderTicket(result.ticket, { avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png", staffText: describeResult(result) }));
+      await interaction.update(service.ticketCard(interaction.guildId, result.ticket));
+      await interaction.followUp(renderNotice(describeResult(result)));
       return;
     }
     await interaction.reply(renderNotice(describeResult(result)));
@@ -161,6 +169,15 @@ async function handleButton(interaction, service) {
       moderatorId: interaction.user.id,
       decision: confirm[1] === "confirm" ? "confirm" : "cancel",
     });
+    if (result.code === "countdown_ready") {
+      const finished = await service.finishDeletion({
+        guildId: interaction.guildId,
+        ticketId: result.ticket.id,
+        editStatus: (content) => interaction.editReply(renderNotice(content, { update: true })),
+      });
+      await interaction.editReply(notice(finished, null, { update: true }));
+      return;
+    }
     await interaction.editReply(notice(result, null, { update: true }));
     return;
   }
@@ -199,6 +216,17 @@ async function handleButton(interaction, service) {
       return;
     }
     await interaction.update(renderProductAdmin(view.plans.filter((plan) => plan.sku === product[1])));
+    return;
+  }
+  const durationChoice = /^atlasby:cfg:duration:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
+  if (durationChoice) {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    const plan = view.plans?.find((item) => item.sku === durationChoice[1] && item.code === durationChoice[2]);
+    if (!plan) {
+      await interaction.reply(renderNotice(describeResult({ code: "plan_unknown" })));
+      return;
+    }
+    await interaction.showModal(offerModal(plan));
     return;
   }
   const price = /^atlasby:cfg:price:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
@@ -283,6 +311,26 @@ async function handleSelect(interaction, service) {
 }
 
 async function handleModal(interaction, service) {
+  const offerMatch = /^atlasby:modal:offer:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
+  if (offerMatch) {
+    const availability = interaction.fields.getTextInputValue("disponibilidade").trim().toLowerCase();
+    const available = availability === "disponivel" || availability === "disponível";
+    if (!available && availability !== "esgotado") {
+      await interaction.reply(renderNotice(describeResult({ code: "greeting_invalid", action: "set_offer" })));
+      return;
+    }
+    const result = await service.requestSetOffer({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      sku: offerMatch[1],
+      code: offerMatch[2],
+      rawPrice: interaction.fields.getTextInputValue("preco"),
+      stockText: interaction.fields.getTextInputValue("estoque"),
+      available,
+    });
+    await interaction.reply(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null));
+    return;
+  }
   const priceMatch = /^atlasby:modal:price:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
   const stockMatch = /^atlasby:modal:stock:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
   if (!priceMatch && !stockMatch) return;
@@ -326,6 +374,7 @@ export async function startBot({ config, store }) {
     store,
     discord: createDiscordAdapter(client),
     ttlMs: config.confirmationTtlMs,
+    messageContentIntent: config.messageContentIntent,
   });
   client.on(Events.InteractionCreate, (interaction) => {
     handleInteraction(interaction, { config, service }).catch((error) => {
@@ -335,6 +384,14 @@ export async function startBot({ config, store }) {
   });
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`Conectado como ${readyClient.user.tag}.`);
+    service.recoverPendingDeletes().catch((error) => {
+      const message = error instanceof Error ? error.message : "erro";
+      console.error(`Falha ao retomar exclusão de ticket: ${message}`);
+    });
+    service.reconcileCatalogs().catch((error) => {
+      const message = error instanceof Error ? error.message : "erro";
+      console.error(`Falha ao atualizar catálogos publicados: ${message}`);
+    });
     registerGuildCommands(config).catch((error) => {
       const message = error instanceof Error ? error.message : "erro";
       console.error(`Falha ao registrar comandos: ${message}`);

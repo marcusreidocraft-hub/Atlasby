@@ -6,6 +6,8 @@ import {
   ChannelType,
   ContainerBuilder,
   LabelBuilder,
+  MediaGalleryBuilder,
+  MediaGalleryItemBuilder,
   RoleSelectMenuBuilder,
   SectionBuilder,
   ThumbnailBuilder,
@@ -19,7 +21,8 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
 } from "discord.js";
-import { PRODUCT_LINE, formatBrl, offerState, publicPlanLine } from "./plans.js";
+import { PRODUCT_LINE, offerState, publicPlanLine, reservationLine } from "./plans.js";
+import { applyGreeting } from "./style.js";
 
 export const V2_FLAG = MessageFlags.IsComponentsV2;
 const TOP_LEVEL = new Set([1, 9, 10, 12, 13, 14, 17]);
@@ -50,23 +53,30 @@ export function renderNotice(content, { ephemeral = true, update = false, row = 
   return { components: [container], flags: v2Flags({ ephemeral, update }) };
 }
 
-function catalogButton(plan) {
+function catalogButton(plan, emoji) {
   const state = offerState(plan);
   const openable = state.openable;
   const label = openable ? `Abrir ticket · ${plan.label}` : publicPlanLine(plan);
-  return new ButtonBuilder()
+  const button = new ButtonBuilder()
     .setCustomId(`atlasby:ticket:${openable ? "open" : "blocked"}:${plan.sku}:${plan.code}`)
     .setLabel(label.slice(0, 80))
     .setStyle(openable ? ButtonStyle.Primary : ButtonStyle.Secondary)
     .setDisabled(!openable);
+  return emoji ? button.setEmoji(emoji) : button;
 }
 
-export function renderCatalog(plans) {
+export function renderCatalog(plans, style = null) {
+  const heading = style?.catalog_heading || PRODUCT_LINE;
   const container = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
     .addTextDisplayComponents(
-      text(`# ${PRODUCT_LINE}\nAbrir ticket reserva estoque para atendimento manual. Não há cobrança nem provisionamento.`),
+      text(`# ${heading}\nAbrir ticket reserva estoque para atendimento manual. Não há cobrança nem provisionamento.`),
     );
+  if (style?.catalog_banner_url) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(style.catalog_banner_url)),
+    );
+  }
   const groups = new Map();
   for (const plan of plans) {
     const name = plan.product_name ?? plan.sku;
@@ -77,39 +87,58 @@ export function renderCatalog(plans) {
     container
       .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
       .addTextDisplayComponents(text(`## ${name}\n${items.map((item) => publicPlanLine(item)).join("\n")}`))
-      .addActionRowComponents(new ActionRowBuilder().addComponents(items.slice(0, 5).map(catalogButton)));
+      .addActionRowComponents(new ActionRowBuilder().addComponents(items.slice(0, 5).map((item) => catalogButton(item, style?.open_emoji))));
   }
   return { components: [container], flags: v2Flags({ ephemeral: false }) };
 }
 
-export function renderTicket(ticket, { avatarUrl, staffText }) {
+function emojiButton(customId, label, style, emoji) {
+  const button = new ButtonBuilder().setCustomId(customId).setLabel(label).setStyle(style);
+  return emoji ? button.setEmoji(emoji) : button;
+}
+
+export function renderTicket(ticket, { avatarUrl, staffText, style = null }) {
   const claimed = ticket.claimed_by
-    ? `Assumido por <@${ticket.claimed_by}> <t:${Math.floor(ticket.claimed_at / 1000)}:F>`
-    : "Ninguém assumiu ainda.";
+    ? `Responsável: <@${ticket.claimed_by}> <t:${Math.floor(ticket.claimed_at / 1000)}:F>`
+    : "Ninguém assumiu este ticket ainda.";
+  const greeting = applyGreeting(style?.ticket_greeting, {
+    produto: ticket.product_name,
+    duracao: ticket.label,
+    preco: reservationLine(ticket),
+    usuario: `<@${ticket.opener_id}>`,
+    equipe: staffText,
+  });
   const section = new SectionBuilder()
     .addTextDisplayComponents(
       text(
         [
           `# ${ticket.product_name}`,
-          `${ticket.label} · ${ticket.duration_days} dias · ${formatBrl(ticket.price_cents)} reservados`,
+          reservationLine(ticket),
           `Aberto <t:${Math.floor(ticket.opened_at / 1000)}:F>`,
           `Cliente <@${ticket.opener_id}>`,
           claimed,
+          greeting,
           "Isto é uma reserva, não uma compra paga nem um servidor provisionado.",
-        ].join("\n"),
+        ].filter(Boolean).join("\n"),
       ),
     )
     .setThumbnailAccessory(new ThumbnailBuilder({ description: "Avatar de quem abriu o ticket" }).setURL(avatarUrl));
   const container = new ContainerBuilder()
     .setAccentColor(0x5865f2)
-    .addSectionComponents(section)
+    .addSectionComponents(section);
+  if (style?.ticket_banner_url) {
+    container.addMediaGalleryComponents(
+      new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(style.ticket_banner_url)),
+    );
+  }
+  container
     .addTextDisplayComponents(text(staffText))
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`atlasby:ticket:claim:${ticket.id}`).setLabel("Assumir").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId(`atlasby:ticket:unclaim:${ticket.id}`).setLabel("Liberar").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`atlasby:ticket:transcript:${ticket.id}`).setLabel("Transcrição").setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`atlasby:ticket:close:${ticket.id}`).setLabel("Fechar").setStyle(ButtonStyle.Danger),
+        emojiButton(`atlasby:ticket:claim:${ticket.id}`, "Assumir", ButtonStyle.Primary, style?.claim_emoji),
+        emojiButton(`atlasby:ticket:unclaim:${ticket.id}`, "Liberar", ButtonStyle.Secondary, style?.unclaim_emoji),
+        emojiButton(`atlasby:ticket:transcript:${ticket.id}`, "Transcrição", ButtonStyle.Secondary, style?.transcript_emoji),
+        emojiButton(`atlasby:ticket:close:${ticket.id}`, "Fechar", ButtonStyle.Danger, style?.close_emoji),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: false }) };
@@ -146,20 +175,49 @@ export function renderAdmin(state) {
 export function renderProductAdmin(plans) {
   const container = new ContainerBuilder()
     .setAccentColor(0x57f287)
-    .addTextDisplayComponents(text(plans.map((plan) => publicPlanLine(plan)).join("\n") || "Sem planos."));
-  for (const plan of plans) {
-    container.addActionRowComponents(
-      new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`atlasby:cfg:price:${plan.sku}:${plan.code}`).setLabel(`Preço ${plan.label}`.slice(0, 80)).setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`atlasby:cfg:stock:${plan.sku}:${plan.code}`).setLabel(`Estoque ${plan.label}`.slice(0, 80)).setStyle(ButtonStyle.Secondary),
+    .addTextDisplayComponents(text("Escolha a duração. O próximo passo pede preço em reais, estoque e disponibilidade, e só grava depois do resumo."));
+  container.addActionRowComponents(
+    new ActionRowBuilder().addComponents(
+      plans.slice(0, 5).map((plan) =>
         new ButtonBuilder()
-          .setCustomId(`atlasby:cfg:avail:${plan.sku}:${plan.code}`)
-          .setLabel(plan.available ? `Esgotar ${plan.code}` : `Reativar ${plan.code}`)
+          .setCustomId(`atlasby:cfg:duration:${plan.sku}:${plan.code}`)
+          .setLabel(publicPlanLine(plan).slice(0, 80))
           .setStyle(ButtonStyle.Secondary),
       ),
-    );
-  }
+    ),
+  );
   return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function offerModal(plan) {
+  const price = plan.price_cents == null ? "" : (plan.price_cents / 100).toFixed(2).replace(".", ",");
+  const priceInput = new TextInputBuilder().setCustomId("preco").setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(16).setPlaceholder(price || "sem preço");
+  if (price) priceInput.setValue(price);
+  const stockInput = new TextInputBuilder()
+    .setCustomId("estoque")
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(7)
+    .setPlaceholder(plan.stock == null ? "sem teto" : String(plan.stock));
+  if (plan.stock != null) stockInput.setValue(String(plan.stock));
+  return new ModalBuilder()
+    .setCustomId(`atlasby:modal:offer:${plan.sku}:${plan.code}`)
+    .setTitle(`${plan.product_name} · ${plan.label}`.slice(0, 45))
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Preço em reais").setDescription("Exemplo: 35,90. Vazio mantém o preço atual.").setTextInputComponent(priceInput),
+      new LabelBuilder().setLabel("Estoque").setDescription("Inteiro a partir de zero. Vazio mantém sem teto.").setTextInputComponent(stockInput),
+      new LabelBuilder()
+        .setLabel("Disponibilidade")
+        .setDescription("Escreva disponivel ou esgotado.")
+        .setTextInputComponent(
+          new TextInputBuilder()
+            .setCustomId("disponibilidade")
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+            .setMaxLength(12)
+            .setValue(plan.available ? "disponivel" : "esgotado"),
+        ),
+    );
 }
 
 export function renderTicketSettings() {

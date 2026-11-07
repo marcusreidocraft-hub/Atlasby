@@ -161,9 +161,15 @@ export function describeResult(result) {
     case "claim_taken":
       return "Outra pessoa da equipe já assumiu este ticket.";
     case "claim_cleared":
-      return "Assunção liberada.";
+      return "A responsabilidade do ticket foi liberada.";
     case "ticket_closed":
-      return "Ticket arquivado e reserva devolvida ao estoque. O canal não foi apagado e nenhuma venda foi registrada.";
+      return "A transcrição privada foi salva, a reserva voltou ao estoque e o canal será apagado. Nenhuma venda foi registrada.";
+    case "delete_failed":
+      return "A transcrição foi salva e a reserva já voltou ao estoque, mas o canal não pôde ser apagado. Ele será apagado na próxima tentativa, sem nova transcrição.";
+    case "transcript_incomplete":
+      return "A transcrição não inclui o texto das mensagens porque a intent Message Content está desligada. O canal foi mantido. Ative a intent no portal, defina ENABLE_MESSAGE_CONTENT_INTENT=1 e tente fechar de novo.";
+    case "close_in_progress":
+      return "Este fechamento já está em andamento.";
     case "transcript_ready":
       return "Transcrição gerada no canal privado configurado, ou no próprio ticket se não houver canal de arquivo.";
     case "transcript_failed":
@@ -174,6 +180,13 @@ export function describeResult(result) {
       return "Só a equipe configurada, o dono ou um administrador pode fazer isso.";
     case "ticket_missing":
       return "Ticket inexistente ou já fechado. Nada foi alterado.";
+    case "greeting_invalid":
+      return "Texto ou emoji inválido. Use emoji Unicode ou customizado, HTTPS e apenas os marcadores {produto}, {duracao}, {preco}, {usuario} e {equipe}. Nada foi gravado.";
+    case "emoji_invalid":
+    case "media_invalid":
+      return "Emoji ou imagem inválidos. A imagem precisa ser HTTPS, sem buscar o arquivo agora. Nada foi gravado.";
+    case "transcript_not_configured":
+      return "Configure um canal privado de transcrição antes de fechar. O canal do ticket foi mantido.";
     case "stock_invalid":
       return "Estoque inválido. Use um inteiro maior ou igual a zero. Nada foi alterado.";
     case "confirmation_mismatch":

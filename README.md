@@ -70,7 +70,9 @@ O banco é `data/moderation.sqlite`. As migrações 1 e 2 criam moderação e o 
 
 ## Catálogo e tickets
 
-Não há pagamento nem provisionamento. Abrir um plano cria um ticket privado e uma reserva. Fechar o ticket devolve a reserva uma única vez. Isso não conta como venda.
+A marca padrão é Atlas. Se o banco ainda tiver o texto exato Nyx ou Nyx Cloud como padrão antigo, a migração troca só esse padrão. Preço, estoque, permissões e o texto histórico de uma transcrição não são reescritos.
+
+Não há pagamento nem provisionamento. Abrir um plano reserva estoque e edita a mesma mensagem do catálogo. Fechar salva a transcrição privada, mostra a contagem 5, 4, 3, 2 e 1 e só então apaga o canal. Se a transcrição, a permissão ou o texto das mensagens faltarem, o canal continua. A reserva volta uma única vez e isso não é uma venda.
 
 | Produto | 7 dias | 15 dias | 30 dias | Estoque inicial |
 | --- | --- | --- | --- | --- |
@@ -78,7 +80,7 @@ Não há pagamento nem provisionamento. Abrir um plano cria um ticket privado e 
 | Tesla T4 · 8 vCPU | sem preço | sem preço | Esgotado, sem preço | 0; a equipe precisa definir preço e estoque |
 | Tesla T4 · 16 vCPU | R$45,00 | R$75,00 | Esgotado, sem preço | 0 até a equipe informar a quantidade |
 
-Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, no canal privado configurado ou no próprio ticket. O canal não é apagado.
+Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, só no canal privado configurado. O canal do ticket é apagado depois da contagem, e somente se essa transcrição tiver sido salva.
 
 Antes do primeiro ticket, o dono confirma em `/configurar` a categoria, o cargo da equipe, os preços que faltam e o estoque do 8 vCPU e do 16 vCPU.
 
@@ -93,5 +95,5 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 3. Fazer o backup SFTP do servidor atual.
 4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
 5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
-6. Deixe o host ligado em `main`. As atualizações entram quando este PR for mergeado em `main` e o servidor for reiniciado por você. Este repositório não faz o merge nem o restart.
+6. O host que já usa `cursor/catalogo-components-v2-850e` não precisa trocar de branch. Este repositório não faz merge nem restart. O código novo só entra no processo quando quem opera o host reiniciar.
 7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preços e estoque. `/catalogo` abre o ticket do plano escolhido.

@@ -1,5 +1,5 @@
 const SNOWFLAKE = /^\d{17,20}$/;
-const DISCORD_CDN = /^https:\/\/cdn\.discordapp\.com\/.+/;
+const AVATAR_URL = /^https:\/\/(?:cdn\.discordapp\.com|media\.discordapp\.net)\/(?:avatars|embed\/avatars|guilds)\//i;
 
 export function ticketOverwrites({ everyoneId, openerId, staffRoleId, botId, archive = false }) {
   for (const id of [everyoneId, openerId, staffRoleId, botId]) {
@@ -26,9 +26,18 @@ export function staffMention(roleId) {
   return { text: `<@&${roleId}>`, allowedMentions: { parse: [], roles: [roleId] } };
 }
 
-export function safeAvatarUrl(url) {
-  if (typeof url === "string" && DISCORD_CDN.test(url)) return url;
-  return "https://cdn.discordapp.com/embed/avatars/0.png";
+export function defaultAvatarUrl(userId) {
+  const index = Number((BigInt(userId) >> 22n) % 6n);
+  return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
+}
+
+export function resolveOpenerAvatar({ userId, url, hasCustomAvatar }) {
+  if (typeof url === "string" && AVATAR_URL.test(url) && hasCustomAvatar !== false) return url;
+  return defaultAvatarUrl(userId);
+}
+
+export function messageNeedsContentIntent(message) {
+  return !message?.authorIsBot && !message?.content && !(message?.attachments ?? []).length && !(message?.embeds ?? []).length && !(message?.components ?? []).length;
 }
 
 export function escapeHtml(value) {

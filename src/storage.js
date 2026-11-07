@@ -200,6 +200,67 @@ const MIGRATIONS = [
       ALTER TABLE confirmations_v3 RENAME TO confirmations;
     `,
   },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE tickets ADD COLUMN opener_avatar_url TEXT;
+      ALTER TABLE tickets ADD COLUMN close_phase TEXT;
+      ALTER TABLE tickets ADD COLUMN transcript_saved INTEGER NOT NULL DEFAULT 0;
+
+      CREATE TABLE catalog_posts (
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        PRIMARY KEY (guild_id, channel_id, message_id)
+      );
+
+      CREATE TABLE guild_styles (
+        guild_id TEXT PRIMARY KEY,
+        catalog_heading TEXT,
+        catalog_emoji TEXT,
+        catalog_banner_url TEXT,
+        ticket_greeting TEXT,
+        ticket_banner_url TEXT,
+        open_emoji TEXT,
+        claim_emoji TEXT,
+        unclaim_emoji TEXT,
+        transcript_emoji TEXT,
+        close_emoji TEXT,
+        updated_at INTEGER NOT NULL
+      );
+
+      UPDATE catalog_items SET product_name = 'Atlas' WHERE product_name IN ('Nyx', 'Nyx Cloud');
+      UPDATE guild_styles SET catalog_heading = 'Atlas' WHERE catalog_heading IN ('Nyx', 'Nyx Cloud');
+
+      CREATE TABLE confirmations_v4 (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK (action IN (
+          'warn', 'timeout', 'timeout_remove', 'kick', 'ban',
+          'set_log_channel', 'set_plan', 'set_stock', 'set_offer', 'set_style',
+          'set_category', 'set_staff_role', 'set_transcript_channel',
+          'enroll_admin', 'remove_admin', 'close_ticket'
+        )),
+        reason TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open', 'claimed', 'completed', 'failed', 'cancelled')),
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO confirmations_v4 (
+        id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      )
+      SELECT id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      FROM confirmations;
+
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_v4 RENAME TO confirmations;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -278,8 +339,8 @@ function createStore(db, file, options = {}) {
     insertTicket: db.prepare(
       `INSERT INTO tickets (
          id, guild_id, channel_id, opener_id, sku, code, product_name, label, duration_days, price_cents,
-         stock_reserved, stock_released, status, opened_at
-       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?)`,
+         stock_reserved, stock_released, status, opened_at, opener_avatar_url
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?, ?)`,
     ),
     selectTicket: db.prepare("SELECT * FROM tickets WHERE id = ? AND guild_id = ?"),
     attachChannel: db.prepare("UPDATE tickets SET channel_id = ?, status = 'open' WHERE id = ? AND status = 'pending'"),
@@ -295,6 +356,64 @@ function createStore(db, file, options = {}) {
     closeTicket: db.prepare(
       `UPDATE tickets SET status = 'closed', closed_at = ?, closed_by = ?, stock_released = 1
        WHERE id = ? AND guild_id = ? AND status = 'open' AND stock_released = 0`,
+    ),
+    beginClose: db.prepare(
+      `UPDATE tickets SET close_phase = 'closing'
+       WHERE id = ? AND guild_id = ? AND status = 'open' AND (close_phase IS NULL OR close_phase = '')`,
+    ),
+    abortClose: db.prepare(
+      `UPDATE tickets SET close_phase = NULL WHERE id = ? AND guild_id = ? AND close_phase = 'closing'`,
+    ),
+    markTranscript: db.prepare(
+      `UPDATE tickets SET close_phase = 'transcript_saved', transcript_saved = 1
+       WHERE id = ? AND guild_id = ? AND close_phase = 'closing'`,
+    ),
+    markPendingDelete: db.prepare(
+      `UPDATE tickets SET close_phase = 'pending_delete', closed_by = ?, closed_at = ?
+       WHERE id = ? AND guild_id = ? AND status = 'open' AND close_phase = 'transcript_saved'`,
+    ),
+    markStockReleased: db.prepare(
+      `UPDATE tickets SET stock_released = 1 WHERE id = ? AND guild_id = ? AND stock_released = 0`,
+    ),
+    markDeleted: db.prepare(
+      `UPDATE tickets SET status = 'closed' WHERE id = ? AND guild_id = ? AND status = 'open' AND close_phase = 'pending_delete'`,
+    ),
+    listPendingDeletes: db.prepare(
+      `SELECT * FROM tickets WHERE status = 'open' AND close_phase = 'pending_delete'`,
+    ),
+    insertCatalogPost: db.prepare(
+      `INSERT INTO catalog_posts (guild_id, channel_id, message_id) VALUES (?, ?, ?)
+       ON CONFLICT(guild_id, channel_id, message_id) DO NOTHING`,
+    ),
+    listCatalogPosts: db.prepare("SELECT * FROM catalog_posts WHERE guild_id = ?"),
+    listAllCatalogPosts: db.prepare("SELECT * FROM catalog_posts"),
+    deleteCatalogPost: db.prepare(
+      "DELETE FROM catalog_posts WHERE guild_id = ? AND channel_id = ? AND message_id = ?",
+    ),
+    selectStyle: db.prepare("SELECT * FROM guild_styles WHERE guild_id = ?"),
+    upsertStyle: db.prepare(
+      `INSERT INTO guild_styles (
+         guild_id, catalog_heading, catalog_emoji, catalog_banner_url, ticket_greeting, ticket_banner_url,
+         open_emoji, claim_emoji, unclaim_emoji, transcript_emoji, close_emoji, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(guild_id) DO UPDATE SET
+         catalog_heading = excluded.catalog_heading,
+         catalog_emoji = excluded.catalog_emoji,
+         catalog_banner_url = excluded.catalog_banner_url,
+         ticket_greeting = excluded.ticket_greeting,
+         ticket_banner_url = excluded.ticket_banner_url,
+         open_emoji = excluded.open_emoji,
+         claim_emoji = excluded.claim_emoji,
+         unclaim_emoji = excluded.unclaim_emoji,
+         transcript_emoji = excluded.transcript_emoji,
+         close_emoji = excluded.close_emoji,
+         updated_at = excluded.updated_at`,
+    ),
+    rewriteCatalogBrand: db.prepare(
+      "UPDATE catalog_items SET product_name = 'Atlas' WHERE product_name IN ('Nyx', 'Nyx Cloud')",
+    ),
+    rewriteStyleBrand: db.prepare(
+      "UPDATE guild_styles SET catalog_heading = 'Atlas' WHERE catalog_heading IN ('Nyx', 'Nyx Cloud')",
     ),
     selectSettings: db.prepare("SELECT * FROM guild_settings WHERE guild_id = ?"),
     insertAdmin: db.prepare(
@@ -447,7 +566,7 @@ function createStore(db, file, options = {}) {
     updateStock({ guildId, sku, code, stock, now }) {
       return statements.updateStock.run(stock, now, guildId, sku, code).changes === 1;
     },
-    reserveTicket({ guildId, openerId, sku, code, now, id }) {
+    reserveTicket({ guildId, openerId, sku, code, now, id, avatarUrl = null }) {
       db.exec("BEGIN IMMEDIATE");
       try {
         const existing = statements.openTicket.get(guildId, openerId, sku, code);
@@ -480,6 +599,7 @@ function createStore(db, file, options = {}) {
           item.price_cents,
           reserved,
           now,
+          avatarUrl,
         );
         db.exec("COMMIT");
         return { ok: true, idempotent: false, ticket: mapTicket(statements.selectTicket.get(id, guildId)) };
@@ -555,6 +675,83 @@ function createStore(db, file, options = {}) {
     },
     getSettings(guildId) {
       return statements.selectSettings.get(guildId) ?? null;
+    },
+    setOpenerAvatar(id, url) {
+      db.prepare("UPDATE tickets SET opener_avatar_url = ? WHERE id = ?").run(url, id);
+    },
+    beginClose(guildId, id) {
+      return statements.beginClose.run(id, guildId).changes === 1;
+    },
+    abortClose(guildId, id) {
+      statements.abortClose.run(id, guildId);
+    },
+    markTranscriptSaved(guildId, id) {
+      return statements.markTranscript.run(id, guildId).changes === 1;
+    },
+    markPendingDelete({ guildId, id, closedBy, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = statements.selectTicket.get(id, guildId);
+        const changed = statements.markPendingDelete.run(closedBy, now, id, guildId).changes === 1;
+        if (changed && current?.stock_reserved === 1 && current.stock_released === 0) {
+          statements.incrementStock.run(guildId, current.sku, current.code);
+          statements.markStockReleased.run(id, guildId);
+        }
+        const ticket = mapTicket(statements.selectTicket.get(id, guildId));
+        db.exec("COMMIT");
+        return { changed, ticket };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    markTicketDeleted(guildId, id) {
+      return statements.markDeleted.run(id, guildId).changes === 1;
+    },
+    listPendingDeletes() {
+      return statements.listPendingDeletes.all().map(mapTicket);
+    },
+    trackCatalogPost({ guildId, channelId, messageId }) {
+      statements.insertCatalogPost.run(guildId, channelId, messageId);
+    },
+    listCatalogPosts(guildId) {
+      return guildId ? statements.listCatalogPosts.all(guildId) : statements.listAllCatalogPosts.all();
+    },
+    pruneCatalogPost(post) {
+      statements.deleteCatalogPost.run(post.guild_id, post.channel_id, post.message_id);
+    },
+    getStyle(guildId) {
+      return statements.selectStyle.get(guildId) ?? null;
+    },
+    saveStyle(guildId, style, now) {
+      statements.upsertStyle.run(
+        guildId,
+        style.catalogHeading,
+        style.catalogEmoji,
+        style.catalogBannerUrl,
+        style.ticketGreeting,
+        style.ticketBannerUrl,
+        style.openEmoji,
+        style.claimEmoji,
+        style.unclaimEmoji,
+        style.transcriptEmoji,
+        style.closeEmoji,
+        now,
+      );
+    },
+    updateOffer({ guildId, sku, code, durationDays, priceCents, available, stock, now }) {
+      return (
+        db.prepare(
+          `UPDATE catalog_items
+           SET price_cents = ?, available = ?, stock = ?, updated_at = ?
+           WHERE guild_id = ? AND sku = ? AND code = ? AND duration_days = ?`,
+        ).run(priceCents, available ? 1 : 0, stock, now, guildId, sku, code, durationDays).changes === 1
+      );
+    },
+    rewriteDefaultBrands() {
+      const catalog = statements.rewriteCatalogBrand.run().changes;
+      const styles = statements.rewriteStyleBrand.run().changes;
+      return { catalog, styles };
     },
     setGuildField(guildId, field, value, now) {
       const allowed = new Set(["ticket_category_id", "staff_role_id", "transcript_channel_id"]);

@@ -125,9 +125,12 @@ export function createDiscordAdapter(client) {
           id: message.id,
           authorId: message.author.id,
           authorName: message.author.username,
+          authorIsBot: Boolean(message.author.bot),
           content: message.content ?? "",
           timestamp: message.createdAt.toISOString(),
           attachments: [...message.attachments.values()].map((file) => ({ url: file.url, name: file.name })),
+          embeds: message.embeds ?? [],
+          components: message.components ?? [],
         }));
     },
 
@@ -143,6 +146,31 @@ export function createDiscordAdapter(client) {
         flags: MessageFlags.IsComponentsV2,
         allowedMentions: { parse: [] },
       });
+    },
+
+    async deleteChannel(channelId) {
+      const channel = await client.channels.fetch(channelId);
+      await channel.delete("Ticket fechado depois da transcrição privada");
+    },
+
+    async editMessage(channelId, messageId, payload) {
+      try {
+        const channel = await client.channels.fetch(channelId);
+        await channel.messages.edit(messageId, payload);
+        return { ok: true, missing: false };
+      } catch (error) {
+        return { ok: false, missing: error?.code === 10008 };
+      }
+    },
+
+    async fetchMemberAvatar(guildId, userId) {
+      const guild = await client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      return {
+        userId,
+        hasCustomAvatar: Boolean(member.avatar || member.user?.avatar),
+        url: member.displayAvatarURL({ extension: "png", size: 128 }),
+      };
     },
 
     async timeoutMember(guildId, userId, durationMs, reason) {

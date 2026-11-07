@@ -1,4 +1,4 @@
-export const PRODUCT_LINE = "Nyx Cloud";
+export const PRODUCT_LINE = "Atlas";
 const MAX_CENTS = 10_000_000;
 const MAX_STOCK = 1_000_000;
 
@@ -117,4 +117,9 @@ export function publicPlanLine(plan) {
   if (state.code === "out_of_stock") return `${title} · ${formatBrl(plan.price_cents)} · estoque 0`;
   const stock = plan.stock == null ? "" : ` · estoque ${plan.stock}`;
   return `${title} · ${formatBrl(plan.price_cents)}${stock}`;
+}
+
+export function reservationLine(ticket) {
+  const title = ticket.label === "7 dias" ? "7 dias" : `${ticket.label} · ${ticket.duration_days} dias`;
+  return `${title} · ${formatBrl(ticket.price_cents)} reservados`;
 }
