@@ -34,6 +34,7 @@ export function loadConfig(env, options = {}) {
     token: (env.DISCORD_TOKEN ?? "").trim(),
     clientId: (env.DISCORD_CLIENT_ID ?? "").trim(),
     allowedGuildIds: parseGuilds(env.ALLOWED_GUILD_IDS),
+    messageContentIntent: (env.ENABLE_MESSAGE_CONTENT_INTENT ?? "").trim() === "1",
   };
 
   if (requireDiscord) {

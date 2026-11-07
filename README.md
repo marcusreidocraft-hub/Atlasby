@@ -27,13 +27,13 @@ Os comandos são só de servidor (`GuildInstall`, contexto Guild, sem DM) e só 
 
 ## Permissões do bot
 
-O convite não pede Administrador. Bits: Kick Members, Ban Members, Moderate Members, View Channel, Send Messages e Embed Links. O valor é `1099511647238`.
+O convite não pede Administrador. Além de Kick, Ban, Moderate Members, View Channel, Send Messages e Embed Links, o ticket precisa de Manage Channels, Read Message History e Attach Files. O valor é `1099511745558`.
 
 ```text
-https://discord.com/oauth2/authorize?client_id=SEU_CLIENT_ID&scope=bot%20applications.commands&permissions=1099511647238
+https://discord.com/oauth2/authorize?client_id=SEU_CLIENT_ID&scope=bot%20applications.commands&permissions=1099511745558
 ```
 
-Intents privilegiadas não são necessárias. O processo usa a intent Guilds e consulta membro e canal pela API.
+A intent padrão é só Guilds. A transcrição grava autor, horário e anexos mesmo assim. O texto das mensagens de outras pessoas só vem completo se a intent privilegiada Message Content estiver ligada no portal e `ENABLE_MESSAGE_CONTENT_INTENT=1` no host. Sem isso, o arquivo marca o trecho como conteúdo indisponível em vez de fingir que leu a mensagem. Ligar a intent sem o portal derruba o login, por isso ela fica desligada por padrão.
 
 Coloque o cargo do bot acima dos membros que ele pode punir e abaixo dos cargos que devem permanecer protegidos.
 
@@ -64,20 +64,23 @@ Copie `.env.example` só no ambiente de execução. Os valores versionados ficam
 | `ALLOWED_GUILD_IDS` | sim, IDs separados por vírgula |
 | `DATA_DIR` | não; padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não; padrão `60`, limites 15 e 300 |
+| `ENABLE_MESSAGE_CONTENT_INTENT` | não; vazio desliga a intent |
 
-O banco é `data/moderation.sqlite`. A migração 1 cria avisos, auditoria, confirmações e o canal de logs. A migração 2 acrescenta planos e administradores e preserva as linhas antigas. Subir o processo de novo não reaplica versão já gravada nem substitui preço ou disponibilidade já editados. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
+O banco é `data/moderation.sqlite`. As migrações 1 e 2 criam moderação e o catálogo antigo. A migração 3 copia os planos de 4 vCPU para o catálogo novo, apaga só o rótulo de preço temporário e não mexe no preço que a equipe já alterou. Estoque numérico desses planos antigos fica vazio, ou seja, sem teto, até alguém definir um número. Itens novos entram com estoque 0. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
 
-## Catálogo
+## Catálogo e tickets
 
-O produto exibido é Tesla T4 · 4 vCPU, da linha Nyx Cloud. Isto é só catálogo. Não existe cobrança, provedor de pagamento nem provisionamento.
+Não há pagamento nem provisionamento. Abrir um plano cria um ticket privado e uma reserva. Fechar o ticket devolve a reserva uma única vez. Isso não conta como venda.
 
-| Plano | Duração | Preço inicial | Situação inicial |
-| --- | --- | --- | --- |
-| 7 dias | 7 dias | R$35,90 | disponível |
-| Quinzenal | 15 dias | R$49,90, marcado como preço temporário | disponível |
-| Mensal | 30 dias | sem preço | Esgotado, botão desativado |
+| Produto | 7 dias | 15 dias | 30 dias | Estoque inicial |
+| --- | --- | --- | --- | --- |
+| Tesla T4 · 4 vCPU | R$35,90, disponível | R$49,90, disponível, sem rótulo temporário | Esgotado, sem preço inventado | sem teto, herdado |
+| Tesla T4 · 8 vCPU | sem preço | sem preço | Esgotado, sem preço | 0; a equipe precisa definir preço e estoque |
+| Tesla T4 · 16 vCPU | R$45,00 | R$75,00 | Esgotado, sem preço | 0 até a equipe informar a quantidade |
 
-Não há opção de 6 horas nem de 1 dia. O mensal não recebe um preço inventado. Reativá-lo exige um preço informado no painel e uma confirmação. O dono do servidor configura preço e disponibilidade em `/configurar`. Um administrador extra só entra se o dono confirmar a inclusão. Esses dados ficam no SQLite do servidor, não em variável de ambiente.
+Não há plano de 6 horas nem de 1 dia. Cada pessoa só pode ter um ticket aberto por produto e duração. O canal nasce invisível para `@everyone` e visível para quem abriu, o cargo da equipe e o bot. Assumir é atômico e só a equipe, o dono ou um administrador incluído consegue. A transcrição sai em HTML escapado, no canal privado configurado ou no próprio ticket. O canal não é apagado.
+
+Antes do primeiro ticket, o dono confirma em `/configurar` a categoria, o cargo da equipe, os preços que faltam e o estoque do 8 vCPU e do 16 vCPU.
 
 ## Host
 
@@ -90,5 +93,5 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 3. Fazer o backup SFTP do servidor atual.
 4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
 5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
-6. No Discord, o dono usa `/configurar` ou `/canal-logs` e confirma. `/catalogo` apenas mostra os planos.
-7. Só então, se quiser que um restart puxe o Git, ligar o auto-pull no painel ou usar o sync manual. O host que acompanha a branch de desenvolvimento precisa ser apontado para a branch publicada neste PR; este repositório não reinicia o servidor.
+6. Deixe o host ligado em `main`. As atualizações entram quando este PR for mergeado em `main` e o servidor for reiniciado por você. Este repositório não faz o merge nem o restart.
+7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preços e estoque. `/catalogo` abre o ticket do plano escolhido.

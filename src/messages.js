@@ -144,6 +144,38 @@ export function describeResult(result) {
       return "Não há preço cadastrado para reativar este plano. Nada foi alterado e nenhum valor foi inventado.";
     case "sold_out":
       return "Plano esgotado. A seleção está desativada. Este catálogo não vende nem provisiona.";
+    case "out_of_stock":
+      return "Estoque numérico esgotado. Nada foi reservado.";
+    case "sku_setup_required":
+      return "O 8 vCPU ainda não tem preço nem estoque definidos pela equipe. Nada foi reservado.";
+    case "ticket_setup_required":
+      return "Configure a categoria e o cargo da equipe antes de abrir tickets. Nada foi reservado.";
+    case "ticket_opened":
+      return "Ticket aberto e estoque reservado. Não houve cobrança nem provisionamento.";
+    case "ticket_exists":
+      return "Você já tem um ticket aberto para este plano. Nenhuma reserva extra foi feita.";
+    case "ticket_panel_failed":
+      return "A reserva foi criada, mas o painel do ticket não pôde ser enviado.";
+    case "ticket_claimed":
+      return "Ticket assumido.";
+    case "claim_taken":
+      return "Outra pessoa da equipe já assumiu este ticket.";
+    case "claim_cleared":
+      return "Assunção liberada.";
+    case "ticket_closed":
+      return "Ticket arquivado e reserva devolvida ao estoque. O canal não foi apagado e nenhuma venda foi registrada.";
+    case "transcript_ready":
+      return "Transcrição gerada no canal privado configurado, ou no próprio ticket se não houver canal de arquivo.";
+    case "transcript_failed":
+      return "A transcrição falhou. O ticket continua aberto e o estoque não foi devolvido.";
+    case "transcript_channel_unsafe":
+      return "O canal de transcrição é público ou inacessível. Nada foi enviado.";
+    case "staff_only":
+      return "Só a equipe configurada, o dono ou um administrador pode fazer isso.";
+    case "ticket_missing":
+      return "Ticket inexistente ou já fechado. Nada foi alterado.";
+    case "stock_invalid":
+      return "Estoque inválido. Use um inteiro maior ou igual a zero. Nada foi alterado.";
     case "confirmation_mismatch":
       return "O pedido não confere com o alvo gravado. Nada foi aplicado.";
     case "internal":

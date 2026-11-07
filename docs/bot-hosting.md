@@ -60,7 +60,7 @@ O artigo também diz que o auto-pull atualiza arquivos rastreados e mantém o qu
 | `DATA_DIR` | não | padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não | padrão `60`, entre 15 e 300 |
 
-`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 2 cria as tabelas de catálogo e administradores sem apagar avisos já gravados. Preço e disponibilidade editados no Discord permanecem no restart. O catálogo não cobra nem provisiona. Não há plano de 6 horas nem de 1 dia. O mensal começa esgotado e sem preço.
+`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 3 preserva preços já editados do 4 vCPU, remove o rótulo temporário e cria 8 vCPU sem preço e 16 vCPU com os preços informados e estoque zero. O host deve permanecer em `main`. Um PR aberto não atualiza o servidor até ser mergeado e o processo reiniciar. Não há cobrança nem provisionamento.
 
 ## O que continua desligado
 

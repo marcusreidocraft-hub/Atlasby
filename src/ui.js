@@ -6,6 +6,9 @@ import {
   ChannelType,
   ContainerBuilder,
   LabelBuilder,
+  RoleSelectMenuBuilder,
+  SectionBuilder,
+  ThumbnailBuilder,
   MessageFlags,
   ModalBuilder,
   SeparatorBuilder,
@@ -16,7 +19,7 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
 } from "discord.js";
-import { PRODUCT_LINE, PRODUCT_NAME, publicPlanLine } from "./plans.js";
+import { PRODUCT_LINE, formatBrl, offerState, publicPlanLine } from "./plans.js";
 
 export const V2_FLAG = MessageFlags.IsComponentsV2;
 const TOP_LEVEL = new Set([1, 9, 10, 12, 13, 14, 17]);
@@ -47,28 +50,68 @@ export function renderNotice(content, { ephemeral = true, update = false, row = 
   return { components: [container], flags: v2Flags({ ephemeral, update }) };
 }
 
+function catalogButton(plan) {
+  const state = offerState(plan);
+  const openable = state.openable;
+  const label = openable ? `Abrir ticket · ${plan.label}` : publicPlanLine(plan);
+  return new ButtonBuilder()
+    .setCustomId(`atlasby:ticket:${openable ? "open" : "blocked"}:${plan.sku}:${plan.code}`)
+    .setLabel(label.slice(0, 80))
+    .setStyle(openable ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    .setDisabled(!openable);
+}
+
 export function renderCatalog(plans) {
   const container = new ContainerBuilder()
     .setAccentColor(0x2b2d31)
     .addTextDisplayComponents(
-      text(`# ${PRODUCT_NAME}\n${PRODUCT_LINE}\nSomente catálogo. Este bot não cobra, não recebe pagamento e não provisiona servidor.`),
-    )
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
+      text(`# ${PRODUCT_LINE}\nAbrir ticket reserva estoque para atendimento manual. Não há cobrança nem provisionamento.`),
+    );
+  const groups = new Map();
   for (const plan of plans) {
-    container.addTextDisplayComponents(text(publicPlanLine(plan)));
+    const name = plan.product_name ?? plan.sku;
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(plan);
   }
-  const soldOut = plans.find((plan) => !plan.available);
-  if (soldOut) {
-    container.addActionRowComponents(
+  for (const [name, items] of groups) {
+    container
+      .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small))
+      .addTextDisplayComponents(text(`## ${name}\n${items.map((item) => publicPlanLine(item)).join("\n")}`))
+      .addActionRowComponents(new ActionRowBuilder().addComponents(items.slice(0, 5).map(catalogButton)));
+  }
+  return { components: [container], flags: v2Flags({ ephemeral: false }) };
+}
+
+export function renderTicket(ticket, { avatarUrl, staffText }) {
+  const claimed = ticket.claimed_by
+    ? `Assumido por <@${ticket.claimed_by}> <t:${Math.floor(ticket.claimed_at / 1000)}:F>`
+    : "Ninguém assumiu ainda.";
+  const section = new SectionBuilder()
+    .addTextDisplayComponents(
+      text(
+        [
+          `# ${ticket.product_name}`,
+          `${ticket.label} · ${ticket.duration_days} dias · ${formatBrl(ticket.price_cents)} reservados`,
+          `Aberto <t:${Math.floor(ticket.opened_at / 1000)}:F>`,
+          `Cliente <@${ticket.opener_id}>`,
+          claimed,
+          "Isto é uma reserva, não uma compra paga nem um servidor provisionado.",
+        ].join("\n"),
+      ),
+    )
+    .setThumbnailAccessory(new ThumbnailBuilder({ description: "Avatar de quem abriu o ticket" }).setURL(avatarUrl));
+  const container = new ContainerBuilder()
+    .setAccentColor(0x5865f2)
+    .addSectionComponents(section)
+    .addTextDisplayComponents(text(staffText))
+    .addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId(`atlasby:plan:soldout:${soldOut.code}`)
-          .setLabel(`${soldOut.label} · ${soldOut.duration_days} dias · Esgotado`.slice(0, 80))
-          .setStyle(ButtonStyle.Secondary)
-          .setDisabled(true),
+        new ButtonBuilder().setCustomId(`atlasby:ticket:claim:${ticket.id}`).setLabel("Assumir").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId(`atlasby:ticket:unclaim:${ticket.id}`).setLabel("Liberar").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`atlasby:ticket:transcript:${ticket.id}`).setLabel("Transcrição").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`atlasby:ticket:close:${ticket.id}`).setLabel("Fechar").setStyle(ButtonStyle.Danger),
       ),
     );
-  }
   return { components: [container], flags: v2Flags({ ephemeral: false }) };
 }
 
@@ -77,11 +120,7 @@ export function renderAdmin(state) {
     "# Configuração",
     `Canal de logs: ${state.logChannelId ? `<#${state.logChannelId}>` : "não definido"}`,
     "Alterações de canal, preço e disponibilidade só são gravadas depois da confirmação.",
-    ...state.plans.map((plan) => {
-      const price = plan.price_cents == null ? "sem preço" : `${plan.price_cents} centavos`;
-      const stock = plan.available ? "disponível" : "esgotado";
-      return `${plan.label}: ${price}, ${stock}`;
-    }),
+    ...state.plans.map((plan) => `${plan.product_name} · ${publicPlanLine(plan)}`),
   ];
   const container = new ContainerBuilder()
     .setAccentColor(0x57f287)
@@ -91,23 +130,82 @@ export function renderAdmin(state) {
       new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("atlasby:cfg:logs").setLabel("Canal de logs").setStyle(ButtonStyle.Primary),
         new ButtonBuilder().setCustomId("atlasby:cfg:admins").setLabel("Administradores").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:tickets").setLabel("Tickets").setStyle(ButtonStyle.Secondary),
+      ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-4").setLabel("4 vCPU").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-8").setLabel("8 vCPU").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-16").setLabel("16 vCPU").setStyle(ButtonStyle.Secondary),
       ),
     );
-  for (const plan of state.plans) {
+  return { components: [container], flags: v2Flags({ ephemeral: true }) };
+}
+
+export function renderProductAdmin(plans) {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x57f287)
+    .addTextDisplayComponents(text(plans.map((plan) => publicPlanLine(plan)).join("\n") || "Sem planos."));
+  for (const plan of plans) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`atlasby:cfg:price:${plan.sku}:${plan.code}`).setLabel(`Preço ${plan.label}`.slice(0, 80)).setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`atlasby:cfg:stock:${plan.sku}:${plan.code}`).setLabel(`Estoque ${plan.label}`.slice(0, 80)).setStyle(ButtonStyle.Secondary),
         new ButtonBuilder()
-          .setCustomId(`atlasby:cfg:price:${plan.code}`)
-          .setLabel(`Preço ${plan.label}`.slice(0, 80))
-          .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-          .setCustomId(`atlasby:cfg:stock:${plan.code}`)
-          .setLabel(plan.available ? `Esgotar ${plan.label}`.slice(0, 80) : `Reativar ${plan.label}`.slice(0, 80))
+          .setCustomId(`atlasby:cfg:avail:${plan.sku}:${plan.code}`)
+          .setLabel(plan.available ? `Esgotar ${plan.code}` : `Reativar ${plan.code}`)
           .setStyle(ButtonStyle.Secondary),
       ),
     );
   }
-  return { components: [container], flags: v2Flags({ ephemeral: true }) };
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderTicketSettings() {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x57f287)
+    .addTextDisplayComponents(text("Categoria, cargo da equipe e canal privado da transcrição. Nada é gravado até a confirmação."))
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId("atlasby:cfg:category")
+          .setPlaceholder("Categoria dos tickets")
+          .setChannelTypes(ChannelType.GuildCategory)
+          .setMinValues(1)
+          .setMaxValues(1),
+      ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new RoleSelectMenuBuilder().setCustomId("atlasby:cfg:staff").setPlaceholder("Cargo da equipe").setMinValues(1).setMaxValues(1),
+      ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId("atlasby:cfg:transcript")
+          .setPlaceholder("Canal privado da transcrição")
+          .setChannelTypes(ChannelType.GuildText)
+          .setMinValues(1)
+          .setMaxValues(1),
+      ),
+    );
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function stockModal(sku, code, label) {
+  return new ModalBuilder()
+    .setCustomId(`atlasby:modal:stock:${sku}:${code}`)
+    .setTitle(`Estoque · ${label}`.slice(0, 45))
+    .addLabelComponents(
+      new LabelBuilder()
+        .setLabel("Estoque")
+        .setDescription("Inteiro maior ou igual a zero.")
+        .setTextInputComponent(
+          new TextInputBuilder().setCustomId("estoque").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(7).setPlaceholder("0"),
+        ),
+    );
 }
 
 export function renderLogPicker({ update = false } = {}) {
@@ -153,9 +251,9 @@ export function renderAdminPicker(admins, { update = false } = {}) {
   return { components: [container], flags: v2Flags({ ephemeral: true, update }) };
 }
 
-export function priceModal(code, label) {
+export function priceModal(sku, code, label) {
   return new ModalBuilder()
-    .setCustomId(`atlasby:modal:price:${code}`)
+    .setCustomId(`atlasby:modal:price:${sku}:${code}`)
     .setTitle(`Preço · ${label}`.slice(0, 45))
     .addTextDisplayComponents(text("Informe centavos, como 3590, ou reais com dois decimais, como 35,90. Nada é gravado neste passo."))
     .addLabelComponents(
@@ -240,11 +338,12 @@ export function validateV2Message(payload) {
       for (const child of children) visit(child, { insideContainer, inActionRow: true });
       return;
     }
-    if (type === 17) {
+    if (type === 17 || type === 9) {
       for (const child of children) {
-        if (!CONTAINER_CHILDREN.has(child.type)) errors.push(`container-child:${child.type}`);
+        if (type === 17 && !CONTAINER_CHILDREN.has(child.type)) errors.push(`container-child:${child.type}`);
         visit(child, { insideContainer: true });
       }
+      if (component.accessory) visit(component.accessory, { insideContainer: true });
     }
   };
   for (const component of components) visit(component);

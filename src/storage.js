@@ -6,10 +6,16 @@ function mapPlan(row) {
   return {
     ...row,
     available: row.available === 1,
-    temporary_price: row.temporary_price === 1,
     price_cents: row.price_cents == null ? null : Number(row.price_cents),
     duration_days: Number(row.duration_days),
+    stock: row.stock == null ? null : Number(row.stock),
+    vcpu: row.vcpu == null ? null : Number(row.vcpu),
   };
+}
+
+function mapTicket(row) {
+  if (!row) return null;
+  return { ...row, price_cents: Number(row.price_cents), stock_reserved: row.stock_reserved === 1, stock_released: row.stock_released === 1 };
 }
 
 const MIGRATIONS = [
@@ -112,6 +118,88 @@ const MIGRATIONS = [
       ALTER TABLE confirmations_v2 RENAME TO confirmations;
     `,
   },
+  {
+    version: 3,
+    sql: `
+      CREATE TABLE catalog_items (
+        guild_id TEXT NOT NULL,
+        sku TEXT NOT NULL CHECK (sku IN ('t4-4', 't4-8', 't4-16')),
+        code TEXT NOT NULL CHECK (code IN ('7d', '15d', '30d')),
+        label TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        vcpu INTEGER NOT NULL,
+        duration_days INTEGER NOT NULL CHECK (duration_days IN (7, 15, 30)),
+        price_cents INTEGER CHECK (price_cents IS NULL OR (price_cents >= 1 AND price_cents <= 10000000)),
+        available INTEGER NOT NULL CHECK (available IN (0, 1)),
+        stock INTEGER CHECK (stock IS NULL OR (stock >= 0 AND stock <= 1000000)),
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, sku, code),
+        CHECK (available = 0 OR price_cents IS NOT NULL)
+      );
+
+      INSERT INTO catalog_items (
+        guild_id, sku, code, label, product_name, vcpu, duration_days, price_cents, available, stock, updated_at
+      )
+      SELECT guild_id, 't4-4', code, label, 'Tesla T4 · 4 vCPU', 4, duration_days, price_cents, available, NULL, updated_at
+      FROM plans;
+
+      CREATE TABLE tickets (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        channel_id TEXT,
+        opener_id TEXT NOT NULL,
+        sku TEXT NOT NULL,
+        code TEXT NOT NULL,
+        product_name TEXT NOT NULL,
+        label TEXT NOT NULL,
+        duration_days INTEGER NOT NULL,
+        price_cents INTEGER NOT NULL,
+        stock_reserved INTEGER NOT NULL CHECK (stock_reserved IN (0, 1)),
+        stock_released INTEGER NOT NULL DEFAULT 0 CHECK (stock_released IN (0, 1)),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'open', 'closed', 'failed')),
+        claimed_by TEXT,
+        claimed_at INTEGER,
+        opened_at INTEGER NOT NULL,
+        closed_at INTEGER,
+        closed_by TEXT
+      );
+
+      CREATE UNIQUE INDEX idx_one_open_ticket
+      ON tickets (guild_id, opener_id, sku, code)
+      WHERE status IN ('pending', 'open');
+
+      ALTER TABLE guild_settings ADD COLUMN ticket_category_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN staff_role_id TEXT;
+      ALTER TABLE guild_settings ADD COLUMN transcript_channel_id TEXT;
+
+      CREATE TABLE confirmations_v3 (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK (action IN (
+          'warn', 'timeout', 'timeout_remove', 'kick', 'ban',
+          'set_log_channel', 'set_plan', 'set_stock', 'set_category', 'set_staff_role', 'set_transcript_channel',
+          'enroll_admin', 'remove_admin', 'close_ticket'
+        )),
+        reason TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open', 'claimed', 'completed', 'failed', 'cancelled')),
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO confirmations_v3 (
+        id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      )
+      SELECT id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      FROM confirmations;
+
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_v3 RENAME TO confirmations;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -159,17 +247,56 @@ function createStore(db, file, options = {}) {
        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
     ),
     insertPlan: db.prepare(
-      `INSERT INTO plans (guild_id, code, label, duration_days, price_cents, available, temporary_price, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(guild_id, code) DO NOTHING`,
+      `INSERT INTO catalog_items (
+         guild_id, sku, code, label, product_name, vcpu, duration_days, price_cents, available, stock, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(guild_id, sku, code) DO NOTHING`,
     ),
-    listPlans: db.prepare("SELECT * FROM plans WHERE guild_id = ? ORDER BY duration_days"),
-    selectPlan: db.prepare("SELECT * FROM plans WHERE guild_id = ? AND code = ?"),
+    listPlans: db.prepare("SELECT * FROM catalog_items WHERE guild_id = ? ORDER BY vcpu, duration_days"),
+    selectPlan: db.prepare("SELECT * FROM catalog_items WHERE guild_id = ? AND sku = 't4-4' AND code = ?"),
+    selectItem: db.prepare("SELECT * FROM catalog_items WHERE guild_id = ? AND sku = ? AND code = ?"),
     updatePlan: db.prepare(
-      `UPDATE plans
+      `UPDATE catalog_items
        SET price_cents = ?, available = ?, updated_at = ?
-       WHERE guild_id = ? AND code = ? AND duration_days = ?`,
+       WHERE guild_id = ? AND sku = ? AND code = ? AND duration_days = ?`,
     ),
+    updateStock: db.prepare(
+      `UPDATE catalog_items SET stock = ?, updated_at = ? WHERE guild_id = ? AND sku = ? AND code = ?`,
+    ),
+    decrementStock: db.prepare(
+      `UPDATE catalog_items SET stock = stock - 1
+       WHERE guild_id = ? AND sku = ? AND code = ? AND stock IS NOT NULL AND stock >= 1`,
+    ),
+    incrementStock: db.prepare(
+      `UPDATE catalog_items SET stock = stock + 1
+       WHERE guild_id = ? AND sku = ? AND code = ? AND stock IS NOT NULL`,
+    ),
+    openTicket: db.prepare(
+      `SELECT * FROM tickets
+       WHERE guild_id = ? AND opener_id = ? AND sku = ? AND code = ? AND status IN ('pending', 'open')`,
+    ),
+    insertTicket: db.prepare(
+      `INSERT INTO tickets (
+         id, guild_id, channel_id, opener_id, sku, code, product_name, label, duration_days, price_cents,
+         stock_reserved, stock_released, status, opened_at
+       ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?)`,
+    ),
+    selectTicket: db.prepare("SELECT * FROM tickets WHERE id = ? AND guild_id = ?"),
+    attachChannel: db.prepare("UPDATE tickets SET channel_id = ?, status = 'open' WHERE id = ? AND status = 'pending'"),
+    failTicket: db.prepare("UPDATE tickets SET status = 'failed' WHERE id = ? AND status = 'pending' AND stock_released = 0"),
+    claimTicket: db.prepare(
+      `UPDATE tickets SET claimed_by = ?, claimed_at = ?
+       WHERE id = ? AND guild_id = ? AND status = 'open' AND claimed_by IS NULL`,
+    ),
+    clearClaim: db.prepare(
+      `UPDATE tickets SET claimed_by = NULL, claimed_at = NULL
+       WHERE id = ? AND guild_id = ? AND status = 'open' AND claimed_by IS NOT NULL`,
+    ),
+    closeTicket: db.prepare(
+      `UPDATE tickets SET status = 'closed', closed_at = ?, closed_by = ?, stock_released = 1
+       WHERE id = ? AND guild_id = ? AND status = 'open' AND stock_released = 0`,
+    ),
+    selectSettings: db.prepare("SELECT * FROM guild_settings WHERE guild_id = ?"),
     insertAdmin: db.prepare(
       `INSERT INTO guild_admins (guild_id, user_id, enrolled_by, created_at)
        VALUES (?, ?, ?, ?)
@@ -282,18 +409,23 @@ function createStore(db, file, options = {}) {
         now,
       );
     },
-    ensureDefaultPlans(guildId, specs, now) {
-      for (const spec of specs) {
-        statements.insertPlan.run(
-          guildId,
-          spec.code,
-          spec.label,
-          spec.durationDays,
-          spec.defaultPriceCents,
-          spec.defaultAvailable ? 1 : 0,
-          spec.temporaryPrice ? 1 : 0,
-          now,
-        );
+    ensureDefaultPlans(guildId, products, now) {
+      for (const product of products) {
+        for (const duration of product.durations) {
+          statements.insertPlan.run(
+            guildId,
+            product.sku,
+            duration.code,
+            duration.label,
+            product.name,
+            product.vcpu,
+            duration.durationDays,
+            duration.priceCents,
+            duration.available ? 1 : 0,
+            duration.stock,
+            now,
+          );
+        }
       }
     },
     listPlans(guildId) {
@@ -303,10 +435,134 @@ function createStore(db, file, options = {}) {
       const row = statements.selectPlan.get(guildId, code);
       return row ? mapPlan(row) : null;
     },
-    updatePlan({ guildId, code, durationDays, priceCents, available, now }) {
+    getItem(guildId, sku, code) {
+      const row = statements.selectItem.get(guildId, sku, code);
+      return row ? mapPlan(row) : null;
+    },
+    updatePlan({ guildId, sku = "t4-4", code, durationDays, priceCents, available, now }) {
       return (
-        statements.updatePlan.run(priceCents, available ? 1 : 0, now, guildId, code, durationDays).changes === 1
+        statements.updatePlan.run(priceCents, available ? 1 : 0, now, guildId, sku, code, durationDays).changes === 1
       );
+    },
+    updateStock({ guildId, sku, code, stock, now }) {
+      return statements.updateStock.run(stock, now, guildId, sku, code).changes === 1;
+    },
+    reserveTicket({ guildId, openerId, sku, code, now, id }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const existing = statements.openTicket.get(guildId, openerId, sku, code);
+        if (existing) {
+          db.exec("COMMIT");
+          return { ok: true, idempotent: true, ticket: mapTicket(existing) };
+        }
+        const item = statements.selectItem.get(guildId, sku, code);
+        if (!item || item.available !== 1 || item.price_cents == null) {
+          db.exec("ROLLBACK");
+          return { ok: false, code: item?.price_cents == null && sku === "t4-8" ? "sku_setup_required" : "sold_out" };
+        }
+        let reserved = 0;
+        if (item.stock != null) {
+          if (statements.decrementStock.run(guildId, sku, code).changes !== 1) {
+            db.exec("ROLLBACK");
+            return { ok: false, code: "out_of_stock" };
+          }
+          reserved = 1;
+        }
+        statements.insertTicket.run(
+          id,
+          guildId,
+          openerId,
+          sku,
+          code,
+          item.product_name,
+          item.label,
+          item.duration_days,
+          item.price_cents,
+          reserved,
+          now,
+        );
+        db.exec("COMMIT");
+        return { ok: true, idempotent: false, ticket: mapTicket(statements.selectTicket.get(id, guildId)) };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    markTicketOpen(id, channelId) {
+      return statements.attachChannel.run(channelId, id).changes === 1;
+    },
+    failPendingTicket(id) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const ticket = db.prepare("SELECT * FROM tickets WHERE id = ?").get(id);
+        if (!ticket || ticket.status !== "pending") {
+          db.exec("ROLLBACK");
+          return false;
+        }
+        statements.failTicket.run(id);
+        if (ticket.stock_reserved === 1) statements.incrementStock.run(ticket.guild_id, ticket.sku, ticket.code);
+        db.exec("COMMIT");
+        return true;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    getTicket(guildId, id) {
+      return mapTicket(statements.selectTicket.get(id, guildId));
+    },
+    claimTicket({ guildId, id, userId, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const changed = statements.claimTicket.run(userId, now, id, guildId).changes === 1;
+        const ticket = mapTicket(statements.selectTicket.get(id, guildId));
+        db.exec("COMMIT");
+        return { changed, ticket };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    clearTicketClaim({ guildId, id }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const changed = statements.clearClaim.run(id, guildId).changes === 1;
+        const ticket = mapTicket(statements.selectTicket.get(id, guildId));
+        db.exec("COMMIT");
+        return { changed, ticket };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    releaseTicket({ guildId, id, closedBy, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = statements.selectTicket.get(id, guildId);
+        if (!current || current.status !== "open") {
+          db.exec("COMMIT");
+          return { released: false, ticket: mapTicket(current) };
+        }
+        const changed = statements.closeTicket.run(now, closedBy, id, guildId).changes === 1;
+        if (changed && current.stock_reserved === 1) statements.incrementStock.run(guildId, current.sku, current.code);
+        const ticket = mapTicket(statements.selectTicket.get(id, guildId));
+        db.exec("COMMIT");
+        return { released: changed, ticket };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    getSettings(guildId) {
+      return statements.selectSettings.get(guildId) ?? null;
+    },
+    setGuildField(guildId, field, value, now) {
+      const allowed = new Set(["ticket_category_id", "staff_role_id", "transcript_channel_id"]);
+      if (!allowed.has(field)) throw new Error("Campo de configuração inválido.");
+      db.prepare(
+        `INSERT INTO guild_settings (guild_id, ${field}, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(guild_id) DO UPDATE SET ${field} = excluded.${field}, updated_at = excluded.updated_at`,
+      ).run(guildId, value, now);
     },
     isGuildAdmin(guildId, userId) {
       return Boolean(statements.selectAdmin.get(guildId, userId));

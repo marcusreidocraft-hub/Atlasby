@@ -2,19 +2,25 @@ export const Permissions = Object.freeze({
   KickMembers: 1n << 1n,
   BanMembers: 1n << 2n,
   Administrator: 1n << 3n,
+  ManageChannels: 1n << 4n,
   ManageGuild: 1n << 5n,
   ViewChannel: 1n << 10n,
   SendMessages: 1n << 11n,
   EmbedLinks: 1n << 14n,
+  AttachFiles: 1n << 15n,
+  ReadMessageHistory: 1n << 16n,
   ModerateMembers: 1n << 40n,
 });
 
 export const BOT_INVITE_PERMISSIONS =
   Permissions.KickMembers |
   Permissions.BanMembers |
+  Permissions.ManageChannels |
   Permissions.ViewChannel |
   Permissions.SendMessages |
   Permissions.EmbedLinks |
+  Permissions.AttachFiles |
+  Permissions.ReadMessageHistory |
   Permissions.ModerateMembers;
 
 export function hasPermission(bits, flag) {

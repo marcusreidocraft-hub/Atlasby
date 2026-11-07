@@ -1,39 +1,52 @@
-export const PRODUCT_NAME = "Tesla T4 · 4 vCPU";
 export const PRODUCT_LINE = "Nyx Cloud";
-
 const MAX_CENTS = 10_000_000;
+const MAX_STOCK = 1_000_000;
 
-export const PLAN_SPECS = Object.freeze([
+export const PRODUCTS = Object.freeze([
   Object.freeze({
-    code: "7d",
-    label: "7 dias",
-    durationDays: 7,
-    defaultPriceCents: 3590,
-    defaultAvailable: true,
-    temporaryPrice: false,
+    sku: "t4-4",
+    name: "Tesla T4 · 4 vCPU",
+    vcpu: 4,
+    durations: Object.freeze([
+      Object.freeze({ code: "7d", label: "7 dias", durationDays: 7, priceCents: 3590, available: true, stock: null }),
+      Object.freeze({ code: "15d", label: "Quinzenal", durationDays: 15, priceCents: 4990, available: true, stock: null }),
+      Object.freeze({ code: "30d", label: "Mensal", durationDays: 30, priceCents: null, available: false, stock: null }),
+    ]),
   }),
   Object.freeze({
-    code: "15d",
-    label: "Quinzenal",
-    durationDays: 15,
-    defaultPriceCents: 4990,
-    defaultAvailable: true,
-    temporaryPrice: true,
+    sku: "t4-8",
+    name: "Tesla T4 · 8 vCPU",
+    vcpu: 8,
+    durations: Object.freeze([
+      Object.freeze({ code: "7d", label: "7 dias", durationDays: 7, priceCents: null, available: false, stock: 0 }),
+      Object.freeze({ code: "15d", label: "Quinzenal", durationDays: 15, priceCents: null, available: false, stock: 0 }),
+      Object.freeze({ code: "30d", label: "Mensal", durationDays: 30, priceCents: null, available: false, stock: 0 }),
+    ]),
   }),
   Object.freeze({
-    code: "30d",
-    label: "Mensal",
-    durationDays: 30,
-    defaultPriceCents: null,
-    defaultAvailable: false,
-    temporaryPrice: false,
+    sku: "t4-16",
+    name: "Tesla T4 · 16 vCPU",
+    vcpu: 16,
+    durations: Object.freeze([
+      Object.freeze({ code: "7d", label: "7 dias", durationDays: 7, priceCents: 4500, available: true, stock: 0 }),
+      Object.freeze({ code: "15d", label: "Quinzenal", durationDays: 15, priceCents: 7500, available: true, stock: 0 }),
+      Object.freeze({ code: "30d", label: "Mensal", durationDays: 30, priceCents: null, available: false, stock: 0 }),
+    ]),
   }),
 ]);
 
-const SPEC_BY_CODE = new Map(PLAN_SPECS.map((spec) => [spec.code, spec]));
+const BY_SKU = new Map(PRODUCTS.map((product) => [product.sku, product]));
+
+export function productSpec(sku) {
+  return BY_SKU.get(sku) ?? null;
+}
+
+export function durationSpec(sku, code) {
+  return productSpec(sku)?.durations.find((item) => item.code === code) ?? null;
+}
 
 export function planSpec(code) {
-  return SPEC_BY_CODE.get(code) ?? null;
+  return durationSpec("t4-4", code);
 }
 
 export function formatBrl(cents) {
@@ -57,8 +70,18 @@ export function parseBrlToCents(input) {
   return { ok: true, cents };
 }
 
+export function parseStock(input) {
+  const text = typeof input === "number" ? String(input) : typeof input === "string" ? input.trim() : "";
+  if (!/^\d{1,7}$/.test(text)) return { ok: false, code: "stock_invalid" };
+  const stock = Number(text);
+  if (!Number.isInteger(stock) || stock < 0 || stock > MAX_STOCK) return { ok: false, code: "stock_invalid" };
+  return { ok: true, stock };
+}
+
 export function validatePlanUpdate(spec, { priceCents, available }) {
-  if (!spec || !SPEC_BY_CODE.has(spec.code)) return { ok: false, code: "plan_unknown" };
+  if (!spec || !BY_SKU.has(spec.sku ?? "t4-4") || !["7d", "15d", "30d"].includes(spec.code)) {
+    return { ok: false, code: "plan_unknown" };
+  }
   if (![7, 15, 30].includes(spec.durationDays)) return { ok: false, code: "plan_forbidden" };
   const on = Boolean(available);
   if (priceCents == null) {
@@ -71,9 +94,27 @@ export function validatePlanUpdate(spec, { priceCents, available }) {
   return { ok: true, priceCents, available: on };
 }
 
+export function offerState(item) {
+  if (item.price_cents == null || !item.available) {
+    if (item.sku === "t4-8" && item.price_cents == null) return { openable: false, code: "sku_setup_required" };
+    return { openable: false, code: "sold_out" };
+  }
+  if (item.stock === 0) return { openable: false, code: "out_of_stock" };
+  return { openable: true, code: "open" };
+}
+
+function planTitle(plan) {
+  return plan.label === "7 dias" ? "7 dias" : `${plan.label} · ${plan.duration_days} dias`;
+}
+
 export function publicPlanLine(plan) {
-  if (!plan.available) return `${plan.label} · ${plan.duration_days} dias · Esgotado`;
-  const price = formatBrl(plan.price_cents);
-  if (plan.temporary_price) return `${plan.label} · ${plan.duration_days} dias · ${price} · preço temporário`;
-  return `${plan.label} · ${price}`;
+  const state = offerState(plan);
+  const title = planTitle(plan);
+  if (state.code === "sku_setup_required") return `${title} · aguardando preço e estoque`;
+  if (state.code === "sold_out") {
+    return plan.price_cents == null ? `${title} · Esgotado` : `${title} · ${formatBrl(plan.price_cents)} · Esgotado`;
+  }
+  if (state.code === "out_of_stock") return `${title} · ${formatBrl(plan.price_cents)} · estoque 0`;
+  const stock = plan.stock == null ? "" : ` · estoque ${plan.stock}`;
+  return `${title} · ${formatBrl(plan.price_cents)}${stock}`;
 }

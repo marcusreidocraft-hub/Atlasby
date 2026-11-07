@@ -1,4 +1,5 @@
-import { ChannelType, ContainerBuilder, MessageFlags, TextDisplayBuilder } from "discord.js";
+import { AttachmentBuilder, ChannelType, ContainerBuilder, FileBuilder, MessageFlags, PermissionFlagsBits, TextDisplayBuilder } from "discord.js";
+import { renderTicket } from "./ui.js";
 
 const TITLES = {
   warn: "Aviso registrado",
@@ -59,9 +60,89 @@ export function createDiscordAdapter(client) {
       const permissions = channel.permissionsFor(me);
       return {
         guildId: channel.guildId,
-        type: channel.type === ChannelType.GuildText ? "GuildText" : "other",
+        type:
+          channel.type === ChannelType.GuildText
+            ? "GuildText"
+            : channel.type === ChannelType.GuildCategory
+              ? "GuildCategory"
+              : "other",
         permissions: permissions?.bitfield ?? 0n,
+        everyoneCanView: Boolean(channel.guild.roles.everyone && channel.permissionsFor(channel.guild.roles.everyone)?.has(PermissionFlagsBits.ViewChannel)),
       };
+    },
+
+    async guildIdentity(guildId) {
+      const guild = await client.guilds.fetch(guildId);
+      const me = guild.members.me ?? (await guild.members.fetch(client.user.id));
+      return { everyoneId: guild.roles.everyone.id, botId: client.user.id, botPermissions: me.permissions.bitfield };
+    },
+
+    async memberHasRole(guildId, userId, roleId) {
+      const guild = await client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      return member.roles.cache.has(roleId);
+    },
+
+    async createTicketChannel({ guildId, name, parentId, overwrites }) {
+      const guild = await client.guilds.fetch(guildId);
+      const channel = await guild.channels.create({
+        name,
+        type: ChannelType.GuildText,
+        parent: parentId,
+        permissionOverwrites: overwrites.map((entry) => ({
+          id: entry.id,
+          allow: entry.allow.map((name) => PermissionFlagsBits[name]),
+          deny: entry.deny.map((name) => PermissionFlagsBits[name]),
+        })),
+      });
+      return { id: channel.id };
+    },
+
+    async applyOverwrites(channelId, overwrites) {
+      const channel = await client.channels.fetch(channelId);
+      await channel.permissionOverwrites.set(
+        overwrites.map((entry) => ({
+          id: entry.id,
+          allow: entry.allow.map((name) => PermissionFlagsBits[name]),
+          deny: entry.deny.map((name) => PermissionFlagsBits[name]),
+        })),
+      );
+    },
+
+    async sendTicketPanel({ channelId, ticket, avatarUrl, staffRoleId, mention }) {
+      const channel = await client.channels.fetch(channelId);
+      const payload = renderTicket(ticket, { avatarUrl, staffText: mention.text });
+      await channel.send({ ...payload, allowedMentions: mention.allowedMentions });
+      return staffRoleId;
+    },
+
+    async fetchHistoryPage(channelId, before) {
+      const channel = await client.channels.fetch(channelId);
+      const batch = await channel.messages.fetch({ limit: 100, ...(before ? { before } : {}) });
+      return [...batch.values()]
+        .sort((left, right) => (BigInt(left.id) < BigInt(right.id) ? 1 : -1))
+        .map((message) => ({
+          id: message.id,
+          authorId: message.author.id,
+          authorName: message.author.username,
+          content: message.content ?? "",
+          timestamp: message.createdAt.toISOString(),
+          attachments: [...message.attachments.values()].map((file) => ({ url: file.url, name: file.name })),
+        }));
+    },
+
+    async deliverTranscript({ channelId, html, filename }) {
+      const channel = await client.channels.fetch(channelId);
+      const container = new ContainerBuilder()
+        .setAccentColor(0x2b2d31)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent("Transcrição do ticket. O arquivo está escapado e não executa HTML."))
+        .addFileComponents(new FileBuilder().setURL(`attachment://${filename}`));
+      await channel.send({
+        components: [container],
+        files: [new AttachmentBuilder(Buffer.from(html), { name: filename })],
+        flags: MessageFlags.IsComponentsV2,
+        allowedMentions: { parse: [] },
+      });
     },
 
     async timeoutMember(guildId, userId, durationMs, reason) {

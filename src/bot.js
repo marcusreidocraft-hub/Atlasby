@@ -2,7 +2,7 @@ import { Client, Events, GatewayIntentBits, REST, Routes } from "discord.js";
 import { createDiscordAdapter } from "./adapter.js";
 import { commands } from "./commands.js";
 import { isGuildAuthorized } from "./config.js";
-import { planSpec } from "./plans.js";
+import { durationSpec } from "./plans.js";
 import { describeResult } from "./messages.js";
 import { createService } from "./service.js";
 import {
@@ -13,6 +13,10 @@ import {
   renderCatalog,
   renderLogPicker,
   renderNotice,
+  renderProductAdmin,
+  renderTicket,
+  renderTicketSettings,
+  stockModal,
 } from "./ui.js";
 
 export { confirmationRow };
@@ -47,7 +51,7 @@ export async function handleInteraction(interaction, { config, service }) {
       await handleModal(interaction, service);
       return;
     }
-    if (interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isStringSelectMenu?.()) {
+    if (interaction.isChannelSelectMenu?.() || interaction.isUserSelectMenu?.() || interaction.isRoleSelectMenu?.() || interaction.isStringSelectMenu?.()) {
       await handleSelect(interaction, service);
       return;
     }
@@ -111,8 +115,41 @@ async function handleCommand(interaction, service) {
 
 async function handleButton(interaction, service) {
   const customId = interaction.customId ?? "";
-  if (customId.startsWith("atlasby:plan:soldout:")) {
+  if (customId.startsWith("atlasby:ticket:blocked:")) {
     await interaction.reply(renderNotice(describeResult({ code: "sold_out" })));
+    return;
+  }
+  const openTicket = /^atlasby:ticket:open:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
+  if (openTicket) {
+    const result = await service.openTicket({
+      guildId: interaction.guildId,
+      openerId: interaction.user.id,
+      sku: openTicket[1],
+      code: openTicket[2],
+      avatarUrl: interaction.user.displayAvatarURL?.({ extension: "png", size: 128 }) ?? null,
+    });
+    await interaction.reply(renderNotice(describeResult(result)));
+    return;
+  }
+  const ticketAction = /^atlasby:ticket:(claim|unclaim|transcript|close):([0-9a-f-]{36})$/.exec(customId);
+  if (ticketAction) {
+    const ticketId = ticketAction[2];
+    if (ticketAction[1] === "close") {
+      const result = await service.requestCloseTicket({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId });
+      await interaction.reply(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null));
+      return;
+    }
+    const result =
+      ticketAction[1] === "claim"
+        ? await service.claimTicket({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId })
+        : ticketAction[1] === "unclaim"
+          ? await service.clearTicketClaim({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId })
+          : await service.transcriptTicket({ guildId: interaction.guildId, actorId: interaction.user.id, ticketId });
+    if (result.ticket && ticketAction[1] !== "transcript") {
+      await interaction.update(renderTicket(result.ticket, { avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png", staffText: describeResult(result) }));
+      return;
+    }
+    await interaction.reply(renderNotice(describeResult(result)));
     return;
   }
   const confirm = /^atlasby:(confirm|cancel):([0-9a-f-]{36})$/.exec(customId);
@@ -145,25 +182,51 @@ async function handleButton(interaction, service) {
     await interaction.update(renderAdminPicker(view.admins, { update: true }));
     return;
   }
-  const price = /^atlasby:cfg:price:(7d|15d|30d)$/.exec(customId);
-  if (price) {
-    const spec = planSpec(price[1]);
-    await interaction.showModal(priceModal(spec.code, spec.label));
-    return;
-  }
-  const stock = /^atlasby:cfg:stock:(7d|15d|30d)$/.exec(customId);
-  if (stock) {
+  if (customId === "atlasby:cfg:tickets") {
     const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
     if (view.code !== "admin_panel") {
-      await interaction.update(renderNotice(describeResult(view)));
+      await interaction.update(renderNotice(describeResult(view), { update: true }));
       return;
     }
-    const plan = view.plans.find((item) => item.code === stock[1]);
+    await interaction.update(renderTicketSettings());
+    return;
+  }
+  const product = /^atlasby:cfg:product:(t4-4|t4-8|t4-16)$/.exec(customId);
+  if (product) {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.update(renderNotice(describeResult(view), { update: true }));
+      return;
+    }
+    await interaction.update(renderProductAdmin(view.plans.filter((plan) => plan.sku === product[1])));
+    return;
+  }
+  const price = /^atlasby:cfg:price:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
+  if (price) {
+    const spec = durationSpec(price[1], price[2]);
+    await interaction.showModal(priceModal(price[1], price[2], spec?.label ?? price[2]));
+    return;
+  }
+  const stock = /^atlasby:cfg:stock:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
+  if (stock) {
+    const spec = durationSpec(stock[1], stock[2]);
+    await interaction.showModal(stockModal(stock[1], stock[2], spec?.label ?? stock[2]));
+    return;
+  }
+  const avail = /^atlasby:cfg:avail:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(customId);
+  if (avail) {
+    const view = await service.adminView({ guildId: interaction.guildId, actorId: interaction.user.id });
+    if (view.code !== "admin_panel") {
+      await interaction.update(renderNotice(describeResult(view), { update: true }));
+      return;
+    }
+    const plan = view.plans.find((item) => item.sku === avail[1] && item.code === avail[2]);
     const result = await service.requestSetPlan({
       guildId: interaction.guildId,
       actorId: interaction.user.id,
-      code: stock[1],
-      available: plan ? !plan.available : true,
+      sku: avail[1],
+      code: avail[2],
+      available: plan ? !plan.available : false,
     });
     await interaction.update(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null, { update: true }));
   }
@@ -191,20 +254,53 @@ async function handleSelect(interaction, service) {
       actorId: interaction.user.id,
       userId: selected,
     });
+  } else if (customId === "atlasby:cfg:category") {
+    result = await service.requestGuildSetting({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      action: "set_category",
+      value: selected,
+      summary: `Categoria proposta: <#${selected}>.`,
+    });
+  } else if (customId === "atlasby:cfg:staff") {
+    result = await service.requestGuildSetting({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      action: "set_staff_role",
+      value: selected,
+      summary: `Cargo proposto: <@&${selected}>.`,
+    });
+  } else if (customId === "atlasby:cfg:transcript") {
+    result = await service.requestGuildSetting({
+      guildId: interaction.guildId,
+      actorId: interaction.user.id,
+      action: "set_transcript_channel",
+      value: selected,
+      summary: `Canal de transcrição proposto: <#${selected}>.`,
+    });
   } else return;
   await interaction.update(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null, { update: true }));
 }
 
 async function handleModal(interaction, service) {
-  const match = /^atlasby:modal:price:(7d|15d|30d)$/.exec(interaction.customId ?? "");
-  if (!match) return;
-  const raw = interaction.fields.getTextInputValue("preco");
-  const result = await service.parseAndRequestPrice({
-    guildId: interaction.guildId,
-    actorId: interaction.user.id,
-    code: match[1],
-    rawPrice: raw,
-  });
+  const priceMatch = /^atlasby:modal:price:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
+  const stockMatch = /^atlasby:modal:stock:(t4-4|t4-8|t4-16):(7d|15d|30d)$/.exec(interaction.customId ?? "");
+  if (!priceMatch && !stockMatch) return;
+  const result = priceMatch
+    ? await service.parseAndRequestPrice({
+        guildId: interaction.guildId,
+        actorId: interaction.user.id,
+        sku: priceMatch[1],
+        code: priceMatch[2],
+        rawPrice: interaction.fields.getTextInputValue("preco"),
+      })
+    : await service.requestSetStock({
+        guildId: interaction.guildId,
+        actorId: interaction.user.id,
+        sku: stockMatch[1],
+        code: stockMatch[2],
+        stock: interaction.fields.getTextInputValue("estoque"),
+      });
   await interaction.reply(notice(result, result.confirmationId ? confirmationRow(result.confirmationId) : null));
 }
 
@@ -223,7 +319,9 @@ export async function registerGuildCommands(config) {
 }
 
 export async function startBot({ config, store }) {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+  const intents = [GatewayIntentBits.Guilds];
+  if (config.messageContentIntent) intents.push(GatewayIntentBits.MessageContent);
+  const client = new Client({ intents });
   const service = createService({
     store,
     discord: createDiscordAdapter(client),
