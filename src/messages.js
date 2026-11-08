@@ -11,7 +11,8 @@ const SUBJECT = {
 };
 
 function isConfig(action) {
-  return action === "set_log_channel" || action === "set_plan" || action === "enroll_admin" || action === "remove_admin";
+  const name = String(action ?? "");
+  return name === "set_log_channel" || name === "set_plan" || name === "enroll_admin" || name === "remove_admin" || name.startsWith("set_form") || name.includes("form_question") || name.includes("application");
 }
 
 function subject(result) {
@@ -192,6 +193,65 @@ export function describeResult(result) {
       return "A quantidade de estoque não é mais usada. Nada foi alterado.";
     case "info_unconfigured":
       return "Este texto ainda não foi configurado.";
+    case "applications_closed":
+      return "As inscrições estão fechadas. Nada foi enviado.";
+    case "form_not_ready":
+      return "O formulário ainda não tem perguntas. Nada foi enviado.";
+    case "application_exists":
+      return "Você já tem uma candidatura em andamento neste servidor.";
+    case "application_missing":
+      return "Candidatura inexistente neste servidor. Nada foi alterado.";
+    case "application_step":
+      return "Esta etapa não confere com o rascunho. Nada foi enviado.";
+    case "answer_invalid":
+      return "Resposta ausente ou longa demais. Nada foi enviado.";
+    case "review_channel_missing":
+    case "review_channel_unsafe":
+      return "O canal de análise precisa ser privado e utilizável pelo bot. A candidatura não foi enviada.";
+    case "application_submitted":
+      return "Candidatura enviada. As respostas ficam só no canal privado de análise.";
+    case "application_panel_pending":
+      return "Candidatura registrada. O painel privado será reenviado sem criar outra candidatura.";
+    case "application_claimed":
+      return "Candidatura assumida.";
+    case "application_approved":
+      return "Candidatura aprovada e o cargo configurado foi concedido. O aviso direto foi enviado.";
+    case "application_approved_unnotified":
+      return "Candidatura aprovada e o cargo configurado foi concedido. O aviso direto não foi entregue; a pessoa pode usar /candidatura.";
+    case "application_rejected":
+      return "Candidatura recusada. Nenhum cargo foi concedido. O aviso direto foi enviado.";
+    case "application_rejected_unnotified":
+      return "Candidatura recusada. Nenhum cargo foi concedido. O aviso direto não foi entregue; a pessoa pode usar /candidatura.";
+    case "application_deleted":
+      return "Os dados desta candidatura foram apagados neste servidor. Um cargo já concedido não é removido.";
+    case "application_cancelled":
+      return "Rascunho apagado. Nada foi enviado.";
+    case "application_decided":
+      return "Esta candidatura já foi decidida. Nada foi alterado.";
+    case "application_busy":
+      return "Esta candidatura está no meio de uma decisão. Tente de novo sem criar outra.";
+    case "own_application":
+      return "Você não analisa a própria candidatura. Nada foi alterado.";
+    case "reviewer_only":
+      return "Só um avaliador configurado, o dono ou um administrador autorizado pode analisar. Nada foi alterado.";
+    case "role_unsafe":
+      return "Esse cargo não pode ser concedido. Ele é gerenciado, perigoso, o cargo da equipe dos tickets ou está acima de quem aprova ou do bot. Nada foi alterado.";
+    case "role_missing":
+      return "O cargo não foi encontrado. Nada foi concedido.";
+    case "user_left":
+      return "A pessoa não está mais no servidor. O cargo não foi concedido e a candidatura não foi marcada como aprovada.";
+    case "role_grant_failed":
+      return "O Discord não concedeu o cargo. A candidatura não foi marcada como aprovada e pode ser tentada de novo.";
+    case "bot_permission":
+      return "O bot precisa de Gerenciar cargos, abaixo do cargo dele. Nada foi concedido.";
+    case "question_invalid":
+      return "Pergunta inválida. Use até 45 caracteres no enunciado, curta ou longa, e sim ou nao. Nada foi gravado.";
+    case "question_limit":
+      return "O formulário aceita até 15 perguntas. Nada foi gravado.";
+    case "reviewer_limit":
+      return "Há no máximo 5 cargos avaliadores. Nada foi gravado.";
+    case "form_published":
+      return "Painel de candidatura publicado.";
     case "confirmation_mismatch":
       return "O pedido não confere com o alvo gravado. Nada foi aplicado.";
     case "internal":

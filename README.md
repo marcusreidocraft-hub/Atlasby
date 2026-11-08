@@ -15,7 +15,9 @@ O código pode ser executado e testado sem token. Este repositório não grava s
 | `/banir` | Ban Members | Pede confirmação e só então bane, sem apagar mensagens. |
 | `/canal-logs` | Dono ou administrador incluído | Pede confirmação para trocar o canal de logs. |
 | `/catalogo` | Qualquer membro do servidor autorizado | Mostra o catálogo, sem compra. |
-| `/configurar` | Dono ou administrador incluído | Painel de logs, preços, disponibilidade e administradores. |
+| `/configurar` | Dono ou administrador incluído | Painel de logs, preços, disponibilidade, administradores e formulários. |
+| `/formularios` | Dono ou administrador incluído | Publica o painel de candidatura no canal atual. |
+| `/candidatura` | Qualquer membro do servidor autorizado | Mostra em particular o estado da própria candidatura. |
 
 Aviso, timeout, remoção de timeout, expulsão, banimento e mudanças de configuração só acontecem se a mesma pessoa confirmar, no mesmo servidor e para o mesmo alvo, antes do prazo. O padrão é 60 segundos. Outro usuário, outro servidor, prazo vencido, cancelamento ou segundo clique não aplicam a ação. As respostas usam Components V2: texto em Text Display, dentro de Container, com a flag `IS_COMPONENTS_V2`. Não há embed legado no lugar dessa flag.
 
@@ -27,10 +29,10 @@ Os comandos são só de servidor (`GuildInstall`, contexto Guild, sem DM) e só 
 
 ## Permissões do bot
 
-O convite não pede Administrador. Além de Kick, Ban, Moderate Members, View Channel, Send Messages e Embed Links, o ticket precisa de Manage Channels, Read Message History e Attach Files. O valor é `1099511745558`.
+O convite não pede Administrador. Além de Kick, Ban, Moderate Members, View Channel, Send Messages e Embed Links, o ticket precisa de Manage Channels, Read Message History e Attach Files. A candidatura precisa de Manage Roles para conceder um cargo. O valor é `1099780181014`.
 
 ```text
-https://discord.com/oauth2/authorize?client_id=SEU_CLIENT_ID&scope=bot%20applications.commands&permissions=1099511745558
+https://discord.com/oauth2/authorize?client_id=SEU_CLIENT_ID&scope=bot%20applications.commands&permissions=1099780181014
 ```
 
 A intent padrão é só Guilds. A transcrição grava autor, horário e anexos mesmo assim. O texto das mensagens de outras pessoas só vem completo se a intent privilegiada Message Content estiver ligada no portal e `ENABLE_MESSAGE_CONTENT_INTENT=1` no host. Sem isso, o arquivo marca o trecho como conteúdo indisponível em vez de fingir que leu a mensagem. Ligar a intent sem o portal derruba o login, por isso ela fica desligada por padrão.
@@ -86,6 +88,16 @@ Antes do primeiro ticket, o dono abre `/configurar` e confirma a categoria, o ca
 
 Para preço e disponibilidade, o caminho é `/configurar`, depois **4 vCPU**, **8 vCPU** ou **16 vCPU**, depois a duração. O formulário pede preço em reais e `disponivel` ou `esgotado`. O resumo só grava depois de **Confirmar**. O 8 vCPU permanece fechado até receber um preço e ser marcado disponível. Não é preciso digitar ID de produto.
 
+## Candidatura à equipe
+
+`/configurar`, botão **Formulários**, guarda tudo por servidor. As inscrições nascem fechadas. O dono ou um administrador incluído confirma o canal público, o canal privado de análise, os cargos avaliadores e o cargo concedido na aprovação. `/formularios`, usado no canal público, publica o painel Components V2. Mudar abertura ou aparência edita esse painel no lugar.
+
+O painel tem **Fazer formulário** e **Minha candidatura**. O texto fixo avisa que só avaliadores autorizados leem as respostas e que elas não vão para um canal público. As perguntas iniciais são motivação, experiência e disponibilidade. Dá para adicionar, editar, remover e reordenar, até 15 perguntas. O enunciado tem no máximo 45 caracteres, o complemento 100, a resposta curta 200 e a longa 1000. O modal do Discord aceita 5 campos, então o formulário segue em etapas de 5. O rascunho fica no banco, pode ser retomado e só é enviado depois da revisão e da confirmação. Não há pergunta padrão de senha, documento, endereço ou e-mail.
+
+O canal de análise precisa ser de texto, invisível para `@everyone` e utilizável pelo bot. Se não for, o envio é recusado e o rascunho permanece. O painel de análise tem assumir, aprovar, recusar e apagar. Aprovar pede confirmação e concede somente o cargo escolhido. Recusar pede um motivo de 5 a 400 caracteres e não concede cargo. O candidato não analisa a própria candidatura. Um clique antigo, de outro servidor ou com ID inexistente não decide nada. Duas decisões ao mesmo tempo resultam em um único cargo. Se o Discord falhar, a pessoa sair ou o cargo sumir, a candidatura não fica marcada como aprovada e a aprovação pode ser tentada de novo.
+
+O cargo é recusado quando é `@everyone`, gerenciado, o cargo da equipe dos tickets, tem Administrador, Gerenciar cargos ou Gerenciar servidor, ou está acima do bot ou de quem aprova. O bot precisa da permissão Gerenciar cargos no servidor. O registro fica até a pessoa apagar os próprios dados em `/candidatura` ou um avaliador confirmar a exclusão. Apagar o registro não tira um cargo já concedido. O aviso direto é opcional: se a DM falhar, o bot não diz que ela foi enviada.
+
 Aparência fica em `/configurar`, botão **Aparência**. Dali saem **Visual do catálogo** (emoji, texto introdutório e banner HTTPS), **Mensagem do ticket** (emoji do título, saudação com `{produto}`, `{duracao}`, `{preco}`, `{usuario}` e `{equipe}`, mais banner), **Emojis dos botões** (assumir, liberar, transcrição e fechar), **Textos dos planos** (título, emoji e placeholder de cada seletor) e **FAQ e jogos** (textos privados; os botões só aparecem se houver texto). A prévia aparece antes da confirmação. Isso não muda o perfil global do bot e vale só para aquele servidor. Emoji inválido, URL que não seja HTTPS e menção solta são recusados.
 
 ## Host
@@ -100,4 +112,4 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
 5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
 6. O host que já usa `cursor/catalogo-components-v2-850e` não precisa trocar de branch. Este repositório não faz merge nem restart. O código novo só entra no processo quando quem opera o host reiniciar.
-7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preço e disponível ou esgotado. `/catalogo` publica os seletores. Um período disponível abre o ticket.
+7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preço e disponível ou esgotado. `/catalogo` publica os seletores. Um período disponível abre o ticket. Em **Formulários**, confirma canais, avaliadores, cargo de aprovação e abertura. `/formularios` publica o painel. Quem já tem o bot no servidor precisa marcar Gerenciar cargos no cargo do bot; este repositório não altera cargos ao vivo.

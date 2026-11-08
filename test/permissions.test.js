@@ -27,7 +27,8 @@ const base = {
 
 test("convite do bot não inclui Administrador", () => {
   assert.equal(BOT_INVITE_PERMISSIONS & Permissions.Administrator, 0n);
-  assert.equal(BOT_INVITE_PERMISSIONS, 1099511745558n);
+  assert.equal(BOT_INVITE_PERMISSIONS, 1099780181014n);
+  assert.equal(BOT_INVITE_PERMISSIONS & Permissions.ManageRoles, Permissions.ManageRoles);
   assert.equal((BOT_INVITE_PERMISSIONS & Permissions.ManageChannels), Permissions.ManageChannels);
   assert.equal((BOT_INVITE_PERMISSIONS & Permissions.ReadMessageHistory), Permissions.ReadMessageHistory);
   assert.equal((BOT_INVITE_PERMISSIONS & Permissions.AttachFiles), Permissions.AttachFiles);

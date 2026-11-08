@@ -17,11 +17,11 @@ test("migração é idempotente e aviso permanece depois de reabrir o banco", ()
     now: 10,
   });
   first.updateAction(recorded.actionId, { status: "succeeded", now: 11, detail: { logDelivered: true } });
-  assert.equal(first.migrationCount(), 5);
+  assert.equal(first.migrationCount(), 6);
   first.close();
 
   const second = openDatabase(dir);
-  assert.equal(second.migrationCount(), 5);
+  assert.equal(second.migrationCount(), 6);
   const warnings = second.listWarnings(GUILD);
   assert.equal(warnings.length, 1);
   assert.equal(warnings[0].reason, "spam em ticket");

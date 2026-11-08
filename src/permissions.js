@@ -9,6 +9,7 @@ export const Permissions = Object.freeze({
   EmbedLinks: 1n << 14n,
   AttachFiles: 1n << 15n,
   ReadMessageHistory: 1n << 16n,
+  ManageRoles: 1n << 28n,
   ModerateMembers: 1n << 40n,
 });
 
@@ -21,6 +22,7 @@ export const BOT_INVITE_PERMISSIONS =
   Permissions.EmbedLinks |
   Permissions.AttachFiles |
   Permissions.ReadMessageHistory |
+  Permissions.ManageRoles |
   Permissions.ModerateMembers;
 
 export function hasPermission(bits, flag) {
@@ -88,6 +90,31 @@ export function evaluateModeration(input) {
 
 export function evaluateLogConfig(input) {
   if (!hasPermission(input.actorPermissions, Permissions.ManageGuild)) return fail("actor_permission");
+  return { ok: true };
+}
+
+export function roleGrantsDangerousPower(bits) {
+  let value;
+  try {
+    value = BigInt(bits ?? 0);
+  } catch {
+    return true;
+  }
+  const dangerous = Permissions.Administrator | Permissions.ManageRoles | Permissions.ManageGuild;
+  return (value & dangerous) !== 0n;
+}
+
+export function evaluateApprovalRole({ role, actorIsOwner = false, actorHighestPosition, staffRoleId }) {
+  if (!role?.id) return fail("role_missing");
+  if (role.everyone || role.managed) return fail("role_unsafe");
+  if (staffRoleId && role.id === staffRoleId) return fail("role_unsafe");
+  if (roleGrantsDangerousPower(role.permissions)) return fail("role_unsafe");
+  if (!validPosition(role.position) || !validPosition(role.botHighestPosition)) return fail("hierarchy_unknown");
+  if (!(role.botHighestPosition > role.position)) return fail("bot_hierarchy");
+  if (!actorIsOwner && (!validPosition(actorHighestPosition) || !(actorHighestPosition > role.position))) {
+    return fail("actor_hierarchy");
+  }
+  if (!hasPermission(role.botPermissions, Permissions.ManageRoles)) return fail("bot_permission");
   return { ok: true };
 }
 

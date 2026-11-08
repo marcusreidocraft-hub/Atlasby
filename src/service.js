@@ -6,6 +6,7 @@ import { messageNeedsContentIntent, renderTranscriptDocument, resolveOpenerAvata
 import { renderCatalog, renderTicket } from "./ui.js";
 import { validateStyle } from "./style.js";
 import { canPostLogs, evaluateModeration, hasPermission, Permissions } from "./permissions.js";
+import { createFormController, FORM_ACTIONS } from "./forms.js";
 
 const REASON_MAX = 512;
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -539,7 +540,10 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
     return settings.transcript_channel_id;
   }
 
+  const forms = createFormController({ store, discord, now, openConfirmation, deny, assertAdmin });
+
   return {
+    forms,
     async warn(input) {
       return requestModeration("warn", input);
     },
@@ -992,6 +996,9 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         const ticket = store.getTicket(guildId, row.target_id);
         const allowed = ticket && (moderatorId === ticket.opener_id || (await canStaff(guildId, moderatorId)));
         if (!allowed) return deny(row.action, { code: "staff_only" });
+      } else if (FORM_ACTIONS.has(row.action)) {
+        const gate = await forms.prepare(row, moderatorId);
+        if (!gate.ok) return gate;
       } else if (CONFIG_ACTIONS.has(row.action)) {
         const ownerOnly = row.action === "enroll_admin" || row.action === "remove_admin";
         const auth = await assertAdmin(guildId, moderatorId, { ownerOnly });
@@ -1030,12 +1037,14 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
         ? await executeModeration(row, prepared)
         : row.action === "close_ticket"
           ? await executeClose(row)
-          : await executeConfig(row);
+          : FORM_ACTIONS.has(row.action)
+            ? await forms.execute(row)
+            : await executeConfig(row);
       try {
-        const completed = result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready";
+        const completed = result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready" || result.confirmed === true;
         store.finishConfirmation(confirmationId, completed ? "completed" : "failed", now());
       } catch {
-        if (result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready") {
+        if (result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready" || result.confirmed === true) {
           return { ...result, ok: false, code: "audit_failed", auditRecorded: false };
         }
         return { ...result, auditRecorded: false };

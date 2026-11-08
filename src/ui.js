@@ -187,6 +187,7 @@ export function renderAdmin(state) {
         new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-8").setLabel("8 vCPU").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:product:t4-16").setLabel("16 vCPU").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:appearance").setLabel("Aparência").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("atlasby:cfg:forms").setLabel("Formulários").setStyle(ButtonStyle.Secondary),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true }) };

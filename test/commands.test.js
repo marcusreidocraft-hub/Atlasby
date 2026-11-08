@@ -23,7 +23,7 @@ test("comandos são só de servidor e não pedem Administrador", () => {
   const built = commands.map((command) => command.toJSON());
   assert.deepEqual(
     built.map((command) => command.name),
-    ["aviso", "silenciar", "expulsar", "banir", "canal-logs", "catalogo", "configurar"],
+    ["aviso", "silenciar", "expulsar", "banir", "canal-logs", "catalogo", "configurar", "formularios", "candidatura"],
   );
   for (const command of built) {
     assert.equal(command.dm_permission, false);
@@ -137,7 +137,7 @@ test("configuração exige token e servidores; setup cria o banco sem credencial
   assert.equal(setup.status, 0, setup.stderr);
   assert.match(setup.stdout, /Migração aplicada/);
   const store = openDatabase(dir);
-  assert.equal(store.migrationCount(), 5);
+  assert.equal(store.migrationCount(), 6);
   store.close();
 
   const start = spawnSync(process.execPath, ["index.js"], {

@@ -99,4 +99,14 @@ export const commands = [
       .setName("configurar")
       .setDescription("Abre o painel para logs, planos e administradores."),
   ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("formularios")
+      .setDescription("Publica o painel de candidatura à equipe."),
+  ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("candidatura")
+      .setDescription("Mostra em particular o estado da sua candidatura."),
+  ),
 ];

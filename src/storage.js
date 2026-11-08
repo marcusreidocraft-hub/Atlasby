@@ -281,6 +281,111 @@ const MIGRATIONS = [
       ALTER TABLE guild_styles ADD COLUMN ticket_title_emoji TEXT;
     `,
   },
+  {
+    version: 6,
+    sql: `
+      CREATE TABLE application_settings (
+        guild_id TEXT PRIMARY KEY,
+        open INTEGER NOT NULL DEFAULT 0 CHECK (open IN (0, 1)),
+        panel_channel_id TEXT,
+        review_channel_id TEXT,
+        approval_role_id TEXT,
+        heading TEXT,
+        emoji TEXT,
+        intro TEXT,
+        banner_url TEXT,
+        button_emoji TEXT,
+        questions_seeded INTEGER NOT NULL DEFAULT 0 CHECK (questions_seeded IN (0, 1)),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE application_reviewers (
+        guild_id TEXT NOT NULL,
+        role_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, role_id)
+      );
+
+      CREATE TABLE application_questions (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        prompt TEXT NOT NULL,
+        hint TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('short', 'long')),
+        required INTEGER NOT NULL CHECK (required IN (0, 1)),
+        max_length INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (guild_id, position)
+      );
+
+      CREATE TABLE applications (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        applicant_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('draft', 'pending', 'claimed', 'approving', 'approved', 'rejected')),
+        avatar_url TEXT,
+        draft_json TEXT,
+        snapshot_json TEXT,
+        review_channel_id TEXT,
+        review_message_id TEXT,
+        claimed_by TEXT,
+        claimed_at INTEGER,
+        decision_by TEXT,
+        decision_reason TEXT,
+        decided_at INTEGER,
+        role_id TEXT,
+        role_applied INTEGER NOT NULL DEFAULT 0 CHECK (role_applied IN (0, 1)),
+        notify_state TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE UNIQUE INDEX applications_one_active
+        ON applications (guild_id, applicant_id)
+        WHERE status IN ('draft', 'pending', 'claimed', 'approving');
+
+      CREATE TABLE application_posts (
+        guild_id TEXT NOT NULL,
+        channel_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        PRIMARY KEY (guild_id, channel_id, message_id)
+      );
+
+      CREATE TABLE confirmations_v6 (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK (action IN (
+          'warn', 'timeout', 'timeout_remove', 'kick', 'ban',
+          'set_log_channel', 'set_plan', 'set_stock', 'set_offer', 'set_style',
+          'set_category', 'set_staff_role', 'set_transcript_channel',
+          'enroll_admin', 'remove_admin', 'close_ticket',
+          'submit_application', 'cancel_application', 'delete_application',
+          'approve_application', 'reject_application',
+          'set_form_panel', 'set_form_review', 'set_form_role', 'set_form_reviewer',
+          'set_form_open', 'set_form_style', 'set_form_question',
+          'remove_form_question', 'move_form_question'
+        )),
+        reason TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open', 'claimed', 'completed', 'failed', 'cancelled')),
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO confirmations_v6 (
+        id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      )
+      SELECT id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      FROM confirmations;
+
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_v6 RENAME TO confirmations;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -799,6 +904,336 @@ function createStore(db, file, options = {}) {
     },
     finishConfirmation(id, status, now) {
       statements.finishConfirmation.run(status, now, id);
+    },
+    getForm(guildId) {
+      const row = db.prepare("SELECT * FROM application_settings WHERE guild_id = ?").get(guildId);
+      if (!row) return null;
+      return { ...row, open: row.open === 1, questions_seeded: row.questions_seeded === 1 };
+    },
+    ensureForm(guildId, now) {
+      db.prepare(
+        `INSERT INTO application_settings (guild_id, open, questions_seeded, updated_at)
+         VALUES (?, 0, 0, ?)
+         ON CONFLICT(guild_id) DO NOTHING`,
+      ).run(guildId, now);
+      return this.getForm(guildId);
+    },
+    saveForm(guildId, patch, now) {
+      this.ensureForm(guildId, now);
+      const allowed = ["open", "panel_channel_id", "review_channel_id", "approval_role_id", "heading", "emoji", "intro", "banner_url", "button_emoji", "questions_seeded"];
+      for (const key of allowed) {
+        if (!(key in patch)) continue;
+        const value = key === "open" || key === "questions_seeded" ? (patch[key] ? 1 : 0) : patch[key];
+        db.prepare(`UPDATE application_settings SET ${key} = ?, updated_at = ? WHERE guild_id = ?`).run(value, now, guildId);
+      }
+      return this.getForm(guildId);
+    },
+    listReviewers(guildId) {
+      return db.prepare("SELECT role_id, created_at FROM application_reviewers WHERE guild_id = ? ORDER BY created_at").all(guildId);
+    },
+    addReviewer(guildId, roleId, now) {
+      return db.prepare(
+        `INSERT INTO application_reviewers (guild_id, role_id, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(guild_id, role_id) DO NOTHING`,
+      ).run(guildId, roleId, now).changes === 1;
+    },
+    removeReviewer(guildId, roleId) {
+      return db.prepare("DELETE FROM application_reviewers WHERE guild_id = ? AND role_id = ?").run(guildId, roleId).changes === 1;
+    },
+    listQuestions(guildId) {
+      return db.prepare("SELECT * FROM application_questions WHERE guild_id = ? ORDER BY position").all(guildId).map((row) => ({
+        ...row,
+        required: row.required === 1,
+      }));
+    },
+    getQuestion(guildId, id) {
+      const row = db.prepare("SELECT * FROM application_questions WHERE guild_id = ? AND id = ?").get(guildId, id);
+      return row ? { ...row, required: row.required === 1 } : null;
+    },
+    insertQuestion(row) {
+      db.prepare(
+        `INSERT INTO application_questions (
+           id, guild_id, position, prompt, hint, kind, required, max_length, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(row.id, row.guildId, row.position, row.prompt, row.hint, row.kind, row.required ? 1 : 0, row.maxLength, row.now);
+    },
+    nextQuestionPosition(guildId) {
+      return Number(db.prepare("SELECT COALESCE(MAX(position), 0) AS n FROM application_questions WHERE guild_id = ?").get(guildId).n) + 1;
+    },
+    saveQuestion(guildId, id, row) {
+      return db.prepare(
+        `UPDATE application_questions
+         SET prompt = ?, hint = ?, kind = ?, required = ?, max_length = ?, updated_at = ?
+         WHERE guild_id = ? AND id = ?`,
+      ).run(row.prompt, row.hint, row.kind, row.required ? 1 : 0, row.maxLength, row.now, guildId, id).changes === 1;
+    },
+    deleteQuestion(guildId, id) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const removed = db.prepare("DELETE FROM application_questions WHERE guild_id = ? AND id = ?").run(guildId, id).changes === 1;
+        if (removed) this.renumberQuestions(guildId);
+        db.exec("COMMIT");
+        return removed;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    renumberQuestions(guildId) {
+      const rows = db.prepare("SELECT id FROM application_questions WHERE guild_id = ? ORDER BY position").all(guildId);
+      rows.forEach((row, index) => {
+        db.prepare("UPDATE application_questions SET position = ? WHERE guild_id = ? AND id = ?").run(-(index + 1), guildId, row.id);
+      });
+      rows.forEach((row, index) => {
+        db.prepare("UPDATE application_questions SET position = ? WHERE guild_id = ? AND id = ?").run(index + 1, guildId, row.id);
+      });
+    },
+    moveQuestion(guildId, id, direction) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const rows = db.prepare("SELECT id, position FROM application_questions WHERE guild_id = ? ORDER BY position").all(guildId);
+        const index = rows.findIndex((row) => row.id === id);
+        const swap = direction === "up" ? index - 1 : index + 1;
+        if (index < 0 || swap < 0 || swap >= rows.length) {
+          db.exec("COMMIT");
+          return false;
+        }
+        const current = rows[index];
+        const neighbor = rows[swap];
+        db.prepare("UPDATE application_questions SET position = ? WHERE guild_id = ? AND id = ?").run(-1, guildId, current.id);
+        db.prepare("UPDATE application_questions SET position = ? WHERE guild_id = ? AND id = ?").run(current.position, guildId, neighbor.id);
+        db.prepare("UPDATE application_questions SET position = ? WHERE guild_id = ? AND id = ?").run(neighbor.position, guildId, current.id);
+        db.exec("COMMIT");
+        return true;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    mapApplication(row) {
+      if (!row) return null;
+      const parse = (value) => {
+        if (!value) return null;
+        try {
+          return JSON.parse(value);
+        } catch {
+          return null;
+        }
+      };
+      return {
+        ...row,
+        role_applied: row.role_applied === 1,
+        draft: parse(row.draft_json) ?? { step: 0, answers: {} },
+        snapshot: parse(row.snapshot_json),
+      };
+    },
+    getApplication(guildId, id) {
+      return this.mapApplication(db.prepare("SELECT * FROM applications WHERE guild_id = ? AND id = ?").get(guildId, id));
+    },
+    activeApplication(guildId, applicantId) {
+      return this.mapApplication(db.prepare(
+        `SELECT * FROM applications
+         WHERE guild_id = ? AND applicant_id = ? AND status IN ('draft', 'pending', 'claimed', 'approving')`,
+      ).get(guildId, applicantId));
+    },
+    latestApplication(guildId, applicantId) {
+      return this.mapApplication(db.prepare(
+        "SELECT * FROM applications WHERE guild_id = ? AND applicant_id = ? ORDER BY updated_at DESC LIMIT 1",
+      ).get(guildId, applicantId));
+    },
+    insertDraft(row) {
+      try {
+        db.prepare(
+          `INSERT INTO applications (
+             id, guild_id, applicant_id, status, avatar_url, draft_json, role_applied, created_at, updated_at
+           ) VALUES (?, ?, ?, 'draft', ?, ?, 0, ?, ?)`,
+        ).run(row.id, row.guildId, row.applicantId, row.avatarUrl, JSON.stringify({ step: 0, answers: {} }), row.now, row.now);
+        return { ok: true };
+      } catch (error) {
+        if (String(error?.message ?? "").toLowerCase().includes("unique")) return { ok: false, code: "application_exists" };
+        throw error;
+      }
+    },
+    saveDraft(guildId, id, applicantId, draft, now) {
+      return db.prepare(
+        `UPDATE applications SET draft_json = ?, updated_at = ?
+         WHERE guild_id = ? AND id = ? AND applicant_id = ? AND status = 'draft'`,
+      ).run(JSON.stringify(draft), now, guildId, id, applicantId).changes === 1;
+    },
+    submitApplication({ guildId, id, applicantId, snapshot, reviewChannelId, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = db.prepare("SELECT status, applicant_id FROM applications WHERE guild_id = ? AND id = ?").get(guildId, id);
+        if (!current || current.applicant_id !== applicantId || current.status !== "draft") {
+          db.exec("ROLLBACK");
+          return false;
+        }
+        const changed = db.prepare(
+          `UPDATE applications
+           SET status = 'pending', snapshot_json = ?, draft_json = NULL, review_channel_id = ?, updated_at = ?
+           WHERE guild_id = ? AND id = ? AND status = 'draft'`,
+        ).run(JSON.stringify(snapshot), reviewChannelId, now, guildId, id).changes === 1;
+        db.exec("COMMIT");
+        return changed;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    claimReviewPost(guildId, id, channelId) {
+      return db.prepare(
+        `UPDATE applications SET review_channel_id = ?, review_message_id = 'posting'
+         WHERE guild_id = ? AND id = ? AND review_message_id IS NULL`,
+      ).run(channelId, guildId, id).changes === 1;
+    },
+    finishReviewPost(guildId, id, messageId) {
+      return db.prepare(
+        `UPDATE applications SET review_message_id = ?
+         WHERE guild_id = ? AND id = ? AND review_message_id = 'posting'`,
+      ).run(messageId, guildId, id).changes === 1;
+    },
+    clearReviewPost(guildId, id) {
+      return db.prepare(
+        `UPDATE applications SET review_message_id = NULL
+         WHERE guild_id = ? AND id = ? AND review_message_id = 'posting'`,
+      ).run(guildId, id).changes === 1;
+    },
+    claimApplication({ guildId, id, userId, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = this.getApplication(guildId, id);
+        if (!current) {
+          db.exec("ROLLBACK");
+          return { ok: false, code: "application_missing" };
+        }
+        if (current.claimed_by === userId && current.status === "claimed") {
+          db.exec("COMMIT");
+          return { ok: true, idempotent: true, application: current };
+        }
+        const changed = db.prepare(
+          `UPDATE applications SET status = 'claimed', claimed_by = ?, claimed_at = ?, updated_at = ?
+           WHERE guild_id = ? AND id = ? AND status = 'pending' AND claimed_by IS NULL`,
+        ).run(userId, now, now, guildId, id).changes === 1;
+        db.exec("COMMIT");
+        return changed
+          ? { ok: true, idempotent: false, application: this.getApplication(guildId, id) }
+          : { ok: false, code: current.status === "pending" ? "claim_taken" : "application_decided", application: this.getApplication(guildId, id) };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    lockApproval({ guildId, id, reviewerId, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = this.getApplication(guildId, id);
+        if (!current) {
+          db.exec("ROLLBACK");
+          return { ok: false, code: "application_missing" };
+        }
+        if (current.status === "approved" && current.role_applied) {
+          db.exec("COMMIT");
+          return { ok: true, done: true, application: current };
+        }
+        if (current.status === "approving") {
+          db.exec("COMMIT");
+          return { ok: true, retry: true, application: current };
+        }
+        if (current.status !== "pending" && current.status !== "claimed") {
+          db.exec("COMMIT");
+          return { ok: false, code: "application_decided", application: current };
+        }
+        db.prepare(
+          `UPDATE applications SET status = 'approving', decision_by = ?, updated_at = ?
+           WHERE guild_id = ? AND id = ? AND status IN ('pending', 'claimed')`,
+        ).run(reviewerId, now, guildId, id);
+        db.exec("COMMIT");
+        return { ok: true, locked: true, previous: current.status, application: this.getApplication(guildId, id) };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    markApplicationApproved({ guildId, id, roleId, reviewerId, now, notifyState }) {
+      return db.prepare(
+        `UPDATE applications
+         SET status = 'approved', role_id = ?, role_applied = 1, decision_by = ?, decision_reason = NULL,
+             decided_at = ?, notify_state = ?, updated_at = ?
+         WHERE guild_id = ? AND id = ? AND status = 'approving'`,
+      ).run(roleId, reviewerId, now, notifyState, now, guildId, id).changes === 1;
+    },
+    revertApproval(guildId, id, status, now) {
+      return db.prepare(
+        `UPDATE applications SET status = ?, updated_at = ? WHERE guild_id = ? AND id = ? AND status = 'approving'`,
+      ).run(status, now, guildId, id).changes === 1;
+    },
+    rejectApplication({ guildId, id, reviewerId, reason, now }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = this.getApplication(guildId, id);
+        if (!current) {
+          db.exec("ROLLBACK");
+          return { ok: false, code: "application_missing" };
+        }
+        if (current.status === "rejected") {
+          db.exec("COMMIT");
+          return { ok: true, idempotent: true, application: current };
+        }
+        const changed = db.prepare(
+          `UPDATE applications
+           SET status = 'rejected', decision_by = ?, decision_reason = ?, decided_at = ?, role_applied = 0, updated_at = ?
+           WHERE guild_id = ? AND id = ? AND status IN ('pending', 'claimed')`,
+        ).run(reviewerId, reason, now, now, guildId, id).changes === 1;
+        db.exec("COMMIT");
+        return changed
+          ? { ok: true, idempotent: false, application: this.getApplication(guildId, id) }
+          : { ok: false, code: current.status === "approving" ? "application_busy" : "application_decided", application: this.getApplication(guildId, id) };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    setNotifyState(guildId, id, state) {
+      db.prepare("UPDATE applications SET notify_state = ? WHERE guild_id = ? AND id = ?").run(state, guildId, id);
+    },
+    releasePosting() {
+      db.prepare("UPDATE applications SET review_message_id = NULL WHERE review_message_id = 'posting'").run();
+    },
+    listUnpostedApplications() {
+      return db.prepare(
+        `SELECT * FROM applications
+         WHERE status IN ('pending', 'claimed', 'approving', 'approved', 'rejected') AND review_message_id IS NULL`,
+      ).all().map((row) => this.mapApplication(row));
+    },
+    listApprovingApplications() {
+      return db.prepare("SELECT * FROM applications WHERE status = 'approving'").all().map((row) => this.mapApplication(row));
+    },
+    deleteApplication(guildId, id) {
+      const current = this.getApplication(guildId, id);
+      if (!current || current.status === "approving") return { ok: false, application: current };
+      db.prepare("DELETE FROM applications WHERE guild_id = ? AND id = ? AND status != 'approving'").run(guildId, id);
+      return { ok: true, application: current };
+    },
+    deleteOwnApplications(guildId, applicantId) {
+      const rows = db.prepare("SELECT * FROM applications WHERE guild_id = ? AND applicant_id = ?").all(guildId, applicantId).map((row) => this.mapApplication(row));
+      const blocked = rows.filter((row) => row.status === "approving");
+      if (blocked.length) return { ok: false, code: "application_busy", applications: rows };
+      db.prepare("DELETE FROM applications WHERE guild_id = ? AND applicant_id = ?").run(guildId, applicantId);
+      return { ok: true, applications: rows };
+    },
+    trackFormPost({ guildId, channelId, messageId }) {
+      db.prepare(
+        `INSERT INTO application_posts (guild_id, channel_id, message_id) VALUES (?, ?, ?)
+         ON CONFLICT(guild_id, channel_id, message_id) DO NOTHING`,
+      ).run(guildId, channelId, messageId);
+    },
+    listFormPosts(guildId) {
+      return guildId
+        ? db.prepare("SELECT * FROM application_posts WHERE guild_id = ?").all(guildId)
+        : db.prepare("SELECT * FROM application_posts").all();
+    },
+    pruneFormPost(post) {
+      db.prepare("DELETE FROM application_posts WHERE guild_id = ? AND channel_id = ? AND message_id = ?").run(post.guild_id, post.channel_id, post.message_id);
     },
     getLogChannel(guildId) {
       return statements.selectLogChannel.get(guildId)?.log_channel_id ?? null;

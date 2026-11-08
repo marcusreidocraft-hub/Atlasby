@@ -50,7 +50,53 @@ export function createDiscordAdapter(client) {
         permissions: actor.permissions.bitfield,
         ownerId: guild.ownerId,
         isOwner: guild.ownerId === actor.id,
+        highestPosition: actor.roles.highest?.position ?? 0,
       };
+    },
+
+    async inspectRole(guildId, roleId) {
+      const guild = await client.guilds.fetch(guildId);
+      const role = await guild.roles.fetch(roleId);
+      const me = guild.members.me ?? (await guild.members.fetch(client.user.id));
+      return {
+        guildId,
+        id: role.id,
+        managed: Boolean(role.managed),
+        everyone: role.id === guild.roles.everyone.id,
+        position: role.position,
+        permissions: role.permissions.bitfield,
+        botHighestPosition: me.roles.highest?.position ?? 0,
+        botPermissions: me.permissions.bitfield,
+      };
+    },
+
+    async memberRoleIds(guildId, userId) {
+      const guild = await client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      return [...member.roles.cache.keys()];
+    },
+
+    async addRole(guildId, userId, roleId, reason) {
+      const guild = await client.guilds.fetch(guildId);
+      const member = await guild.members.fetch(userId);
+      await member.roles.add(roleId, reason);
+    },
+
+    async sendComponents(channelId, payload) {
+      const channel = await client.channels.fetch(channelId);
+      const message = await channel.send(payload);
+      return { id: message.id };
+    },
+
+    async deleteMessage(channelId, messageId) {
+      const channel = await client.channels.fetch(channelId);
+      const message = await channel.messages.fetch(messageId);
+      await message.delete();
+    },
+
+    async tryDm(userId, payload) {
+      const user = await client.users.fetch(userId);
+      await user.send(payload);
     },
 
     async inspectChannel(channelId) {

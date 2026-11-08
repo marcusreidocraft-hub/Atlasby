@@ -5,6 +5,7 @@ import { isGuildAuthorized } from "./config.js";
 import { durationSpec } from "./plans.js";
 import { describeResult } from "./messages.js";
 import { createService } from "./service.js";
+import { routeFormButton, routeFormModal, routeFormSelect } from "./form-route.js";
 import {
   confirmationRow,
   priceModal,
@@ -93,6 +94,24 @@ async function handleCommand(interaction, service) {
     await interaction.reply(result.code === "admin_panel" ? renderAdmin(result) : renderNotice(describeResult(result)));
     return;
   }
+  if (name === "formularios") {
+    const result = await service.forms.publish({ guildId, actorId, channelId: interaction.channelId });
+    if (!result.message) {
+      await interaction.reply(renderNotice(describeResult(result)));
+      return;
+    }
+    const message = await interaction.reply({ ...result.message, fetchReply: true });
+    if (message?.id && interaction.channelId) {
+      service.forms.track({ guildId, channelId: interaction.channelId, messageId: message.id });
+      await service.forms.schedule(guildId);
+    }
+    return;
+  }
+  if (name === "candidatura") {
+    const result = service.forms.status(guildId, actorId);
+    await interaction.reply(result.view);
+    return;
+  }
   if (name === "canal-logs") {
     const channel = interaction.options.getChannel("canal");
     const result = await service.requestSetLogChannel({ guildId, actorId, channelId: channel?.id ?? null });
@@ -123,6 +142,7 @@ async function handleCommand(interaction, service) {
 }
 
 async function handleButton(interaction, service) {
+  if (await routeFormButton(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
   if (customId.startsWith("atlasby:ticket:blocked:")) {
     await interaction.reply(renderNotice(describeResult({ code: "sold_out" })));
@@ -326,6 +346,7 @@ async function replyOpenedTicket(interaction, service, sku, code) {
 }
 
 async function handleSelect(interaction, service) {
+  if (await routeFormSelect(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
   const selected = interaction.values?.[0] ?? null;
   const period = /^atlasby:catalog:period:(t4-4|t4-8|t4-16)$/.exec(customId);
@@ -390,6 +411,7 @@ function blankToNull(value) {
 }
 
 async function handleModal(interaction, service) {
+  if (await routeFormModal(interaction, service.forms)) return;
   const styleMatch = /^atlasby:modal:style:(catalog|ticket|buttons)$/.exec(interaction.customId ?? "");
   if (styleMatch) {
     const read = (id) => blankToNull(interaction.fields.getTextInputValue(id));
@@ -525,6 +547,10 @@ export async function startBot({ config, store }) {
     service.reconcileCatalogs().catch((error) => {
       const message = error instanceof Error ? error.message : "erro";
       console.error(`Falha ao atualizar catálogos publicados: ${message}`);
+    });
+    service.forms.recover().catch((error) => {
+      const message = error instanceof Error ? error.message : "erro";
+      console.error(`Falha ao retomar candidaturas: ${message}`);
     });
     registerGuildCommands(config).catch((error) => {
       const message = error instanceof Error ? error.message : "erro";
