@@ -112,7 +112,7 @@ Credenciais e PIN só aparecem na resposta privada do cliente, e só se o admini
 
 Aumentar o disco não chama a Azure no clique do cliente. O pedido fica pendente e a equipe aprova em `/maquinas`. O tamanho novo precisa ser maior, até `AZURE_MAX_OS_DISK_GB` (2048 no exemplo), e a VM precisa estar desalocada. O disco nunca diminui.
 
-`/maquinas` mostra o bloco **Padrões Azure**: local, tamanho, sistema, disco máximo, snapshot, VNet e subnet. Esses valores só sugerem o cadastro. O formulário de nova VM já traz local, sistema e tamanho editáveis. Snapshot, rede e subnet ficam na configuração para uma criação futura a partir de snapshot. Este código não cria VM na Azure.
+`/maquinas` mostra o bloco **Padrões Azure**: local, tamanho, sistema, disco máximo, snapshot, VNet e subnet. Esses valores só sugerem o cadastro. O formulário manual de nova VM continua disponível. **Importar da Azure** lista as VMs da assinatura, 25 por página, com filtro de resource group. A seleção lê tamanho, sistema, Spot ou Regular, IPs, disco e estado. CPU, RAM e GPU saem do resource SKU ou da tabela do `Standard_NC4as_T4_v3`. O cliente, a validade e as credenciais são opcionais no resumo e só entram depois da confirmação. Nenhuma VM é criada ou alterada na Azure. Para listar, o service principal precisa de leitura na assinatura ou nos grupos, por exemplo o papel Reader. Sem essa leitura, o painel avisa que a permissão falta.
 
 `PANEL_COLOR` é a cor dos containers quando a aparência do servidor não define outra. Aceita hex com ou sem `#`. Valor inválido volta para `5865F2`.
 

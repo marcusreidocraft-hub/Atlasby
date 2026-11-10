@@ -225,7 +225,7 @@ export function renderVmAdmin(state) {
         button("atlasby:vmcfg:validity", "Validade", ButtonStyle.Secondary),
         button("atlasby:vmcfg:secret", "Credenciais", ButtonStyle.Secondary),
         button("atlasby:vmcfg:log", "Canal de log", ButtonStyle.Secondary),
-        button("atlasby:vmcfg:import", "Listar assinatura", ButtonStyle.Secondary),
+        button("atlasby:vmcfg:import", "Importar da Azure", ButtonStyle.Secondary),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true }) };
@@ -346,6 +346,118 @@ export function renderUnlinkPicker(vm, users) {
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderImportList({ page, pages, total, hidden, group, groupIndex = 0, groups, options }) {
+  const lines = [
+    "# Importar da Azure",
+    `Página ${page + 1} de ${pages}. ${total} máquina(s) disponível(is).`,
+    hidden ? `${hidden} já vinculada(s) foram ocultadas.` : "",
+    group ? `Filtro: ${group}` : "Filtro: todos os resource groups.",
+    "A lista só lê a assinatura. Nenhuma VM é criada ou alterada.",
+  ].filter(Boolean);
+  const container = new ContainerBuilder().setAccentColor(0x57f287).addTextDisplayComponents(text(lines.join("\n")));
+  if (groups.length > 1) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("atlasby:vmcfg:importfilter")
+          .setPlaceholder("Filtrar por resource group")
+          .addOptions([
+            { label: "Todos os grupos", value: "0", default: !group },
+            ...groups.slice(0, 24).map((name, index) => ({
+              label: name.slice(0, 100),
+              value: String(index + 1),
+              default: name === group,
+            })),
+          ]),
+      ),
+    );
+  }
+  if (options.length) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId("atlasby:vmcfg:importpick")
+          .setPlaceholder("Escolha a VM da assinatura")
+          .addOptions(options),
+      ),
+    );
+  }
+  if (pages > 1) {
+    container.addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        button(`atlasby:vmcfg:importpage:${Math.max(0, page - 1)}:${groupIndex}`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
+        button(`atlasby:vmcfg:importpage:${Math.min(pages - 1, page + 1)}:${groupIndex}`, "Próxima", ButtonStyle.Secondary).setDisabled(page >= pages - 1),
+      ),
+    );
+  }
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderImportSummary(details, { userLabel = "ninguém", key }) {
+  const lines = [
+    `# ${details.name}`,
+    `Grupo: ${details.resourceGroup}`,
+    `Região: ${details.location || "não informada"}`,
+    `Tamanho: ${details.size || "não informado"}`,
+    `Sistema: ${details.osType || "não informado"}`,
+    `Prioridade: ${details.priority || "Regular"}`,
+    `Estado: ${details.powerState || "desconhecido"}`,
+    `IP público: ${details.publicIp || "não informado"}`,
+    `IP privado: ${details.privateIp || "não informado"}`,
+    `Disco do SO: ${details.diskGb == null ? "não informado" : `${details.diskGb} GB`}`,
+    `CPU: ${details.cpu || "não informado"}`,
+    `RAM: ${details.ram || "não informado"}`,
+    `GPU: ${details.gpu || "não informado"}`,
+    `Cliente: ${userLabel}`,
+    "Nada é gravado até a confirmação. A Azure não é alterada.",
+  ];
+  const container = new ContainerBuilder()
+    .setAccentColor(panelAccent())
+    .addTextDisplayComponents(text(lines.join("\n")))
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        button(`atlasby:vmcfg:importuser:${key}`, "Adicionar usuário", ButtonStyle.Primary),
+        button(`atlasby:vmcfg:importvalidity:${key}`, "Validade", ButtonStyle.Secondary),
+        button(`atlasby:vmcfg:importsecret:${key}`, "Credenciais", ButtonStyle.Secondary),
+        button(`atlasby:vmcfg:importsave:${key}`, "Confirmar", ButtonStyle.Success),
+      ),
+    );
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderImportUserPicker(key) {
+  const container = new ContainerBuilder()
+    .setAccentColor(0x57f287)
+    .addTextDisplayComponents(text("Escolha o cliente desta VM. O vínculo só entra depois da confirmação."))
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new UserSelectMenuBuilder().setCustomId(`atlasby:vmcfg:importuserpick:${key}`).setPlaceholder("Adicionar usuário").setMinValues(1).setMaxValues(1),
+      ),
+    );
+  return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
+}
+
+export function renderImportValidityModal(key) {
+  return new ModalBuilder()
+    .setCustomId(`atlasby:modal:vm:importvalidity:${key}`)
+    .setTitle("Validade da importação")
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Data").setDescription("AAAA-MM-DD. Vazio deixa sem validade.").setTextInputComponent(optional("data", "2026-12-31", 10)),
+      new LabelBuilder().setLabel("Bloquear energia vencida").setDescription("sim ou nao.").setTextInputComponent(new TextInputBuilder().setCustomId("bloquear").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(3).setValue("sim")),
+    );
+}
+
+export function renderImportSecretModal(key) {
+  return new ModalBuilder()
+    .setCustomId(`atlasby:modal:vm:importsecret:${key}`)
+    .setTitle("Credenciais da importação")
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Usuário").setTextInputComponent(new TextInputBuilder().setCustomId("usuario").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(64)),
+      new LabelBuilder().setLabel("Senha").setTextInputComponent(new TextInputBuilder().setCustomId("senha").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(128)),
+      new LabelBuilder().setLabel("PIN").setDescription("Opcional.").setTextInputComponent(optional("pin", "0000", 8)),
+    );
 }
 
 export function renderVmConfirm(summary, confirmationId) {

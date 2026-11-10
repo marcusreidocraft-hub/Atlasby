@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { canPostLogs } from "./permissions.js";
 import { staffMention, ticketOverwrites } from "./tickets.js";
-import { openJson, probeTcp, sealJson } from "./azure.js";
+import { azureFailureCode, openJson, probeTcp, sealJson } from "./azure.js";
 import {
   AUTO_START_MAX_TRIES,
   AUTO_START_WINDOW_MS,
@@ -11,6 +11,8 @@ import {
   backoffMs,
   evictionOf,
   expired,
+  importKey,
+  pageWindow,
   isCapacityError,
   isPublicIpv4,
   normalizePower,
@@ -23,6 +25,11 @@ import {
   renderConnect,
   renderCredentials,
   renderDiskModal,
+  renderImportList,
+  renderImportSecretModal,
+  renderImportSummary,
+  renderImportUserPicker,
+  renderImportValidityModal,
   renderPendingAzure,
   renderPowerConfirm,
   renderStateNotice,
@@ -57,6 +64,7 @@ const EMPTY_DEFAULTS = {
 
 export function createVmController({ store, discord, now, openConfirmation, deny, assertAdmin, azure, credentialKey, probe = probeTcp, defaults = EMPTY_DEFAULTS }) {
   const azureDefaults = { ...EMPTY_DEFAULTS, ...defaults };
+  const importDrafts = new Map();
   function owned(guildId, userId, vmId) {
     const vm = store.getVm(guildId, vmId);
     if (!vm || !store.ownsVm(guildId, vmId, userId)) return null;
@@ -509,26 +517,161 @@ export function createVmController({ store, discord, now, openConfirmation, deny
         summary: `Registrar operações em <#${channelId}>.`,
       });
     },
-    async importList(guildId, actorId) {
-      const auth = await assertAdmin(guildId, actorId);
-      if (!auth.ok) return auth;
-      if (!azure?.configured) return deny("upsert_vm", { code: "azure_unconfigured" });
+    async catalogFromAzure() {
+      if (!azure?.configured || !azure.listVirtualMachines) return { ok: false, code: "azure_unconfigured" };
       try {
         const items = await azure.listVirtualMachines();
-        if (!items.length) return deny("upsert_vm", { code: "vm_none" });
-        return {
-          ok: true,
-          view: renderVmPicker("atlasby:vmcfg:import", items.map((item) => ({
-            id: `${item.resourceGroup}|${item.name}|${item.size ?? ""}`,
-            display_name: item.name,
-            resource_group: item.resourceGroup,
-            vm_name: item.name,
-          })), "Escolha uma VM da assinatura para cadastrar."),
-          update: true,
-        };
+        return { ok: true, items: items ?? [] };
       } catch (error) {
-        return deny("upsert_vm", { code: error.code || "azure_failed" });
+        return { ok: false, code: azureFailureCode(error) };
       }
+    },
+    linkedKeys(guildId) {
+      return new Set(store.listVms(guildId).map((vm) => importKey(vm.resource_group, vm.vm_name)));
+    },
+    async importList(guildId, actorId, page = 0, groupIndex = 0) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "upsert_vm" };
+      const listed = await this.catalogFromAzure();
+      if (!listed.ok) return deny("upsert_vm", { code: listed.code });
+      const groups = [...new Set(listed.items.map((item) => item.resourceGroup).filter(Boolean))].sort();
+      const shownGroups = groups.slice(0, 24);
+      const index = Number(groupIndex) || 0;
+      const group = index > 0 ? shownGroups[index - 1] ?? null : null;
+      const linked = this.linkedKeys(guildId);
+      const filtered = (group ? listed.items.filter((item) => item.resourceGroup === group) : listed.items)
+        .filter((item) => !linked.has(importKey(item.resourceGroup, item.name)));
+      const hidden = listed.items.length - filtered.length - (group ? listed.items.filter((item) => item.resourceGroup !== group).length : 0);
+      if (!listed.items.length) return deny("upsert_vm", { code: "azure_empty" });
+      const window = pageWindow(filtered, Number(page) || 0);
+      const options = window.items.map((item) => ({
+        label: String(item.name).slice(0, 100),
+        description: `${item.resourceGroup} · ${item.size || "tamanho"} · ${item.location || "região"}`.slice(0, 100),
+        value: importKey(item.resourceGroup, item.name),
+      }));
+      return {
+        ok: true,
+        update: true,
+        page: window.page,
+        pages: window.pages,
+        view: renderImportList({
+          page: window.page,
+          pages: window.pages,
+          total: window.total,
+          hidden: Math.max(0, hidden),
+          group,
+          groupIndex: group ? index : 0,
+          groups: shownGroups,
+          options,
+        }),
+      };
+    },
+    async findImported(guildId, key) {
+      const listed = await this.catalogFromAzure();
+      if (!listed.ok) return listed;
+      const item = listed.items.find((entry) => importKey(entry.resourceGroup, entry.name) === key);
+      if (!item) return { ok: false, code: "vm_missing" };
+      if (this.linkedKeys(guildId).has(key)) return { ok: false, code: "vm_exists" };
+      try {
+        const details = azure.describeVirtualMachine
+          ? await azure.describeVirtualMachine(item.resourceGroup, item.name)
+          : item;
+        return { ok: true, details: { ...item, ...details, resourceGroup: item.resourceGroup, name: item.name } };
+      } catch (error) {
+        return { ok: false, code: azureFailureCode(error) };
+      }
+    },
+    draftFor(guildId, actorId, key) {
+      const id = `${guildId}:${actorId}:${key}`;
+      if (!importDrafts.has(id)) importDrafts.set(id, {});
+      return { id, draft: importDrafts.get(id) };
+    },
+    async importPreview(guildId, actorId, key) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "upsert_vm" };
+      const found = await this.findImported(guildId, key);
+      if (!found.ok) return deny("upsert_vm", found);
+      const { draft } = this.draftFor(guildId, actorId, key);
+      draft.details = found.details;
+      return {
+        ok: true,
+        update: true,
+        view: renderImportSummary(found.details, { key, userLabel: draft.userId ? `<@${draft.userId}>` : "ninguém" }),
+      };
+    },
+    async stageImportUser(guildId, actorId, key, userId) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "upsert_vm" };
+      const { draft } = this.draftFor(guildId, actorId, key);
+      draft.userId = userId;
+      return this.importPreview(guildId, actorId, key);
+    },
+    importUserPicker(key) {
+      return { ok: true, update: true, view: renderImportUserPicker(key) };
+    },
+    importValidityModal(key) {
+      return renderImportValidityModal(key);
+    },
+    importSecretModal(key) {
+      return renderImportSecretModal(key);
+    },
+    stageImportValidity(guildId, actorId, key, raw, blockText) {
+      const parsed = parseValidity(raw);
+      if (!parsed.ok) return deny("set_vm_validity", parsed);
+      const block = String(blockText ?? "").trim().toLowerCase();
+      if (block && !["sim", "nao", "não"].includes(block)) return deny("set_vm_validity", { code: "validity_invalid" });
+      const { draft } = this.draftFor(guildId, actorId, key);
+      draft.until = parsed.until;
+      draft.block = block ? block === "sim" : true;
+      return this.importPreview(guildId, actorId, key);
+    },
+    stageImportSecret(guildId, actorId, key, username, password, pin) {
+      if (!credentialKey) return deny("set_vm_secret", { code: "credentials_key_missing" });
+      const user = String(username ?? "").trim();
+      const pass = String(password ?? "");
+      if (user.length < 1 || user.length > 64 || pass.length < 1 || pass.length > 128) return deny("set_vm_secret", { code: "vm_invalid" });
+      const cleanPin = String(pin ?? "").trim();
+      if (cleanPin && !/^\d{4,8}$/.test(cleanPin)) return deny("set_vm_secret", { code: "vm_invalid" });
+      const { draft } = this.draftFor(guildId, actorId, key);
+      draft.cipher = sealJson(credentialKey, { username: user, password: pass, pin: cleanPin || null });
+      return this.importPreview(guildId, actorId, key);
+    },
+    async requestImport(guildId, actorId, key) {
+      const auth = await assertAdmin(guildId, actorId);
+      if (!auth.ok) return { ...auth, action: "upsert_vm" };
+      const found = await this.findImported(guildId, key);
+      if (!found.ok) return deny("upsert_vm", found);
+      const { draft } = this.draftFor(guildId, actorId, key);
+      if (!draft.userId) return deny("upsert_vm", { code: "vm_user_required" });
+      const details = found.details;
+      return openConfirmation({
+        action: "upsert_vm",
+        guildId,
+        actorId,
+        targetId: `${details.resourceGroup}:${details.name}`.slice(0, 80),
+        reason: "Importar VM da assinatura",
+        payload: {
+          imported: true,
+          displayName: details.name,
+          resourceGroup: details.resourceGroup,
+          vmName: details.name,
+          osLabel: details.osType || azureDefaults.osType,
+          sizeLabel: details.size,
+          location: details.location,
+          cpuLabel: details.cpu,
+          ramLabel: details.ram,
+          gpuLabel: details.gpu,
+          diskGb: details.diskGb ?? null,
+          publicIp: details.publicIp ?? null,
+          privateIp: details.privateIp ?? null,
+          priority: details.priority || "Regular",
+          userId: draft.userId,
+          until: draft.until ?? null,
+          block: draft.block !== false,
+          cipher: draft.cipher ?? null,
+        },
+        summary: `Importar ${details.name} (${details.resourceGroup}) para <@${draft.userId}>. ${details.priority || "Regular"}, disco ${details.diskGb ?? "não informado"} GB. A Azure não será alterada.`,
+      });
     },
     async prepare(row, actorId) {
       let payload;
@@ -566,28 +709,31 @@ export function createVmController({ store, discord, now, openConfirmation, deny
         return done(row.action, "config_saved");
       }
       if (row.action === "upsert_vm") {
+        const id = randomUUID();
         try {
           store.insertVm({
-            id: randomUUID(),
+            id,
             guildId,
             displayName: payload.displayName,
             resourceGroup: payload.resourceGroup,
             vmName: payload.vmName,
             osLabel: payload.osLabel,
             sizeLabel: payload.sizeLabel ?? null,
-            cpuLabel: null,
-            ramLabel: null,
-            gpuLabel: null,
+            cpuLabel: payload.cpuLabel ?? null,
+            ramLabel: payload.ramLabel ?? null,
+            gpuLabel: payload.gpuLabel ?? null,
             diskGb: payload.diskGb,
             location: payload.location ?? null,
-            publicIp: null,
-            privateIp: null,
-            validityUntil: null,
-            blockWhenExpired: true,
+            publicIp: payload.publicIp ?? null,
+            privateIp: payload.privateIp ?? null,
+            validityUntil: payload.until ?? null,
+            blockWhenExpired: payload.block !== false,
             autoStart: false,
-            spot: payload.spot !== false,
+            spot: payload.priority ? payload.priority === "Spot" : payload.spot !== false,
             now: ts,
           });
+          if (payload.userId) store.linkVm(guildId, id, payload.userId, ts);
+          if (payload.cipher) store.updateVm(guildId, id, { credentials_cipher: payload.cipher }, ts);
         } catch (error) {
           if (String(error?.message ?? "").toLowerCase().includes("unique")) return deny(row.action, { code: "vm_exists" });
           throw error;

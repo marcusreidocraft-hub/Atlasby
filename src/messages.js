@@ -254,6 +254,12 @@ export function describeResult(result) {
       return "Painel de candidatura publicado.";
     case "azure_unconfigured":
       return "Integração Azure não configurada. Nada foi alterado na nuvem.";
+    case "azure_forbidden":
+      return "O service principal precisa de leitura na assinatura ou nos grupos de recursos. Nada foi listado nem alterado.";
+    case "azure_empty":
+      return "A assinatura não devolveu máquinas virtuais para este filtro.";
+    case "vm_user_required":
+      return "Escolha o cliente com Adicionar usuário antes de confirmar. Nada foi gravado.";
     case "vm_none":
       return "Nenhuma máquina virtual vinculada a você neste servidor.";
     case "vm_missing":

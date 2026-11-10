@@ -59,7 +59,23 @@ export async function routeVmButton(interaction, vms) {
   if (customId === "atlasby:vmcfg:secret") return go(interaction, await vms.chooseVm(guildId, userId, "secret")) ?? true;
   if (customId === "atlasby:vmcfg:policy") return go(interaction, await vms.requestPolicy({ guildId, actorId: userId })) ?? true;
   if (customId === "atlasby:vmcfg:log") return go(interaction, { ok: true, view: renderVmLogPicker(), update: true }) ?? true;
-  if (customId === "atlasby:vmcfg:import") return go(interaction, await vms.importList(guildId, userId)) ?? true;
+  if (customId === "atlasby:vmcfg:import") return go(interaction, await vms.importList(guildId, userId, 0, 0)) ?? true;
+  const importPage = /^atlasby:vmcfg:importpage:(\d+):(\d+)$/.exec(customId);
+  if (importPage) return go(interaction, await vms.importList(guildId, userId, Number(importPage[1]), Number(importPage[2]))) ?? true;
+  const importUser = /^atlasby:vmcfg:importuser:([0-9a-f]{32})$/.exec(customId);
+  if (importUser) return go(interaction, vms.importUserPicker(importUser[1])) ?? true;
+  const importValidity = /^atlasby:vmcfg:importvalidity:([0-9a-f]{32})$/.exec(customId);
+  if (importValidity) {
+    await interaction.showModal(vms.importValidityModal(importValidity[1]));
+    return true;
+  }
+  const importSecret = /^atlasby:vmcfg:importsecret:([0-9a-f]{32})$/.exec(customId);
+  if (importSecret) {
+    await interaction.showModal(vms.importSecretModal(importSecret[1]));
+    return true;
+  }
+  const importSave = /^atlasby:vmcfg:importsave:([0-9a-f]{32})$/.exec(customId);
+  if (importSave) return go(interaction, await vms.requestImport(guildId, userId, importSave[1])) ?? true;
   const power = /^atlasby:vm:power:(start|deallocate|restart):([0-9a-f-]{36})$/.exec(customId);
   if (power) return go(interaction, await vms.requestPower(guildId, userId, power[2], power[1])) ?? true;
   const yes = /^atlasby:vm:yes:(deallocate|restart):([0-9a-f-]{36})$/.exec(customId);
@@ -128,18 +144,17 @@ export async function routeVmSelect(interaction, vms) {
     await present(interaction, await vms.requestUnlink({ guildId, actorId: userId, vmId: unlink[1], userId: selected }));
     return true;
   }
-  if (customId === "atlasby:vmcfg:import") {
-    const [group, name, size] = String(selected).split("|");
-    await present(interaction, await vms.requestCreate({
-      guildId,
-      actorId: userId,
-      displayName: name,
-      resourceGroup: group,
-      vmName: name,
-      osLabel: null,
-      diskGb: null,
-      sizeLabel: size || null,
-    }));
+  if (customId === "atlasby:vmcfg:importfilter") {
+    await present(interaction, await vms.importList(guildId, userId, 0, Number(selected)));
+    return true;
+  }
+  if (customId === "atlasby:vmcfg:importpick") {
+    await present(interaction, await vms.importPreview(guildId, userId, selected));
+    return true;
+  }
+  const importUserPick = /^atlasby:vmcfg:importuserpick:([0-9a-f]{32})$/.exec(customId);
+  if (importUserPick) {
+    await present(interaction, await vms.stageImportUser(guildId, userId, importUserPick[1], selected));
     return true;
   }
   if (!customId.startsWith("atlasby:vm")) return false;
@@ -196,6 +211,29 @@ export async function routeVmModal(interaction, vms) {
       raw: read("data"),
       blockText: interaction.fields.getTextInputValue("bloquear"),
     }));
+    return true;
+  }
+  const importValidityModal = /^atlasby:modal:vm:importvalidity:([0-9a-f]{32})$/.exec(customId);
+  if (importValidityModal) {
+    await present(interaction, await vms.stageImportValidity(
+      interaction.guildId,
+      interaction.user.id,
+      importValidityModal[1],
+      read("data"),
+      interaction.fields.getTextInputValue("bloquear"),
+    ));
+    return true;
+  }
+  const importSecretModal = /^atlasby:modal:vm:importsecret:([0-9a-f]{32})$/.exec(customId);
+  if (importSecretModal) {
+    await present(interaction, await vms.stageImportSecret(
+      interaction.guildId,
+      interaction.user.id,
+      importSecretModal[1],
+      interaction.fields.getTextInputValue("usuario"),
+      interaction.fields.getTextInputValue("senha"),
+      read("pin"),
+    ));
     return true;
   }
   const disk = /^atlasby:modal:vm:disk:([0-9a-f-]{36})$/.exec(customId);

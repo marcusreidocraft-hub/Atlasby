@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 const VM_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?$/;
 const RESOURCE_GROUP = /^[\w().-]{1,90}$/;
 const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
@@ -7,6 +9,32 @@ export const MAX_DISK_GB = 2048;
 export const POWER_COOLDOWN_MS = 20_000;
 export const AUTO_START_MAX_TRIES = 6;
 export const AUTO_START_WINDOW_MS = 30 * 60_000;
+export const IMPORT_PAGE_SIZE = 25;
+
+const KNOWN_SKUS = {
+  Standard_NC4as_T4_v3: { cpu: "4", ram: "28 GB", gpu: "NVIDIA Tesla T4" },
+};
+
+export function importKey(group, name) {
+  return createHash("sha256").update(`${group}\n${name}`).digest("hex").slice(0, 32);
+}
+
+export function pageWindow(items, page, size = IMPORT_PAGE_SIZE) {
+  const total = items.length;
+  const pages = Math.max(1, Math.ceil(total / size) || 1);
+  const current = Math.min(Math.max(0, page), pages - 1);
+  return { page: current, pages, total, items: items.slice(current * size, current * size + size) };
+}
+
+export function skuFacts(size, capabilities = []) {
+  const known = KNOWN_SKUS[size] ?? {};
+  const map = Object.fromEntries((capabilities ?? []).map((item) => [item.name, item.value]));
+  return {
+    cpu: map.vCPUs ?? known.cpu ?? null,
+    ram: map.MemoryGB ? `${map.MemoryGB} GB` : known.ram ?? null,
+    gpu: known.gpu ?? (map.GPUs ? `${map.GPUs} GPU` : null),
+  };
+}
 
 export const VM_ACTIONS = new Set([
   "upsert_vm",

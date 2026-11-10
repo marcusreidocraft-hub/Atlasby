@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
 import net from "node:net";
-import { isPublicIpv4, MOONLIGHT_PORT, normalizePower } from "./vm-model.js";
+import { isPublicIpv4, MOONLIGHT_PORT, normalizePower, skuFacts } from "./vm-model.js";
 
 const SALT = "atlasby-vm-credentials-v1";
 
@@ -69,6 +69,21 @@ function resourceGroupOf(id) {
   return { group: parts[4], name: parts[8] };
 }
 
+export function azureFailureCode(error) {
+  const status = error?.statusCode ?? error?.status;
+  const code = String(error?.code ?? "");
+  const text = `${code} ${error?.message ?? ""}`;
+  if (code === "azure_unconfigured") return "azure_unconfigured";
+  if (code === "azure_forbidden" || status === 403 || code === "AuthorizationFailed" || /authorization|forbidden/i.test(text)) {
+    return "azure_forbidden";
+  }
+  return code || "azure_failed";
+}
+
+function rethrowAzure(error) {
+  throw Object.assign(error instanceof Error ? error : new Error("azure"), { code: azureFailureCode(error) });
+}
+
 export function createAzureClient(config, deps = {}) {
   const unconfigured = {
     configured: false,
@@ -88,6 +103,9 @@ export function createAzureClient(config, deps = {}) {
       throw coded("azure_unconfigured");
     },
     async listVirtualMachines() {
+      throw coded("azure_unconfigured");
+    },
+    async describeVirtualMachine() {
       throw coded("azure_unconfigured");
     },
     async resizeDisk() {
@@ -155,15 +173,74 @@ export function createAzureClient(config, deps = {}) {
     async listVirtualMachines() {
       const { compute } = await sdk();
       const items = [];
-      for await (const vm of compute.virtualMachines.listAll()) {
-        const parts = String(vm.id ?? "").split("/");
-        items.push({
-          name: vm.name,
-          resourceGroup: parts[4],
-          size: vm.hardwareProfile?.vmSize ?? null,
-        });
+      try {
+        for await (const vm of compute.virtualMachines.listAll()) {
+          const parts = String(vm.id ?? "").split("/");
+          items.push({
+            name: vm.name,
+            resourceGroup: parts[4],
+            size: vm.hardwareProfile?.vmSize ?? null,
+            location: vm.location ?? null,
+            osType: vm.storageProfile?.osDisk?.osType ?? null,
+            priority: vm.priority === "Spot" ? "Spot" : "Regular",
+          });
+        }
+      } catch (error) {
+        rethrowAzure(error);
       }
       return items;
+    },
+    async describeVirtualMachine(group, name) {
+      const { compute } = await sdk();
+      let vm;
+      try {
+        vm = await compute.virtualMachines.get(group, name);
+      } catch (error) {
+        rethrowAzure(error);
+      }
+      const view = await this.getInstanceView(group, name).catch(() => ({ powerState: "unknown", statuses: [] }));
+      const network = await this.readNetwork(group, name).catch(() => ({ publicIp: null, privateIp: null }));
+      let diskGb = vm.storageProfile?.osDisk?.diskSizeGB ?? null;
+      const diskId = vm.storageProfile?.osDisk?.managedDisk?.id;
+      if (diskId && compute.disks?.get) {
+        try {
+          const diskRef = resourceGroupOf(diskId);
+          const disk = await compute.disks.get(diskRef.group, diskRef.name);
+          diskGb = disk.diskSizeGB ?? diskGb;
+        } catch {
+          // O tamanho informado no perfil da VM permanece.
+        }
+      }
+      const size = vm.hardwareProfile?.vmSize ?? null;
+      let capabilities = [];
+      if (compute.resourceSkus?.list && vm.location && size) {
+        try {
+          for await (const sku of compute.resourceSkus.list({ filter: `location eq '${vm.location}'` })) {
+            if (sku.name === size) {
+              capabilities = sku.capabilities ?? [];
+              break;
+            }
+          }
+        } catch {
+          capabilities = [];
+        }
+      }
+      const facts = skuFacts(size, capabilities);
+      return {
+        name: vm.name,
+        resourceGroup: group,
+        location: vm.location ?? null,
+        size,
+        osType: vm.storageProfile?.osDisk?.osType ?? null,
+        priority: vm.priority === "Spot" ? "Spot" : "Regular",
+        publicIp: network.publicIp,
+        privateIp: network.privateIp,
+        diskGb,
+        powerState: view.powerState,
+        cpu: facts.cpu,
+        ram: facts.ram,
+        gpu: facts.gpu,
+      };
     },
     async resizeDisk(group, name, requestedGb) {
       const { compute } = await sdk();
