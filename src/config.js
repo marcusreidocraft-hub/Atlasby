@@ -1,5 +1,21 @@
 const SNOWFLAKE = /^\d{17,20}$/;
 
+function readAzureEnv(env) {
+  const tenantId = String(env.AZURE_TENANT_ID ?? "").trim();
+  const clientId = String(env.AZURE_CLIENT_ID ?? "").trim();
+  const clientSecret = String(env.AZURE_CLIENT_SECRET ?? "").trim();
+  const subscriptionId = String(env.AZURE_SUBSCRIPTION_ID ?? "").trim();
+  const credentialsKey = String(env.AZURE_CREDENTIALS_KEY ?? "").trim();
+  return {
+    tenantId,
+    clientId,
+    clientSecret,
+    subscriptionId,
+    credentialsKey,
+    configured: Boolean(tenantId && clientId && clientSecret && subscriptionId),
+  };
+}
+
 function parseGuilds(raw) {
   const parts = String(raw ?? "")
     .split(",")
@@ -35,6 +51,7 @@ export function loadConfig(env, options = {}) {
     clientId: (env.DISCORD_CLIENT_ID ?? "").trim(),
     allowedGuildIds: parseGuilds(env.ALLOWED_GUILD_IDS),
     messageContentIntent: (env.ENABLE_MESSAGE_CONTENT_INTENT ?? "").trim() === "1",
+    azure: readAzureEnv(env),
   };
 
   if (requireDiscord) {

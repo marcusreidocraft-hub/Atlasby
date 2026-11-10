@@ -109,4 +109,14 @@ export const commands = [
       .setName("candidatura")
       .setDescription("Mostra em particular o estado da sua candidatura."),
   ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("menu")
+      .setDescription("Abrir o menu das suas máquinas virtuais."),
+  ),
+  guildOnly(
+    new SlashCommandBuilder()
+      .setName("maquinas")
+      .setDescription("Cadastra máquinas Azure e vincula clientes."),
+  ),
 ];

@@ -7,6 +7,8 @@ import { renderCatalog, renderTicket } from "./ui.js";
 import { validateStyle } from "./style.js";
 import { canPostLogs, evaluateModeration, hasPermission, Permissions } from "./permissions.js";
 import { createFormController, FORM_ACTIONS } from "./forms.js";
+import { createVmController, VM_ACTIONS } from "./vms.js";
+import { createAzureClient, deriveCredentialKey } from "./azure.js";
 
 const REASON_MAX = 512;
 const SNOWFLAKE = /^\d{17,20}$/;
@@ -54,7 +56,7 @@ function readPayload(row) {
   }
 }
 
-export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) }) {
+export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), azure = null, credentialKey = null }) {
   if (!Number.isInteger(ttlMs) || ttlMs < 15_000 || ttlMs > 300_000) throw new Error("ttlMs inválido.");
   const catalogChains = new Map();
   async function refreshCatalog(guildId) {
@@ -541,9 +543,20 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
   }
 
   const forms = createFormController({ store, discord, now, openConfirmation, deny, assertAdmin });
+  const vms = createVmController({
+    store,
+    discord,
+    now,
+    openConfirmation,
+    deny,
+    assertAdmin,
+    azure: azure ?? createAzureClient({ configured: false }),
+    credentialKey,
+  });
 
   return {
     forms,
+    vms,
     async warn(input) {
       return requestModeration("warn", input);
     },
@@ -999,6 +1012,9 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
       } else if (FORM_ACTIONS.has(row.action)) {
         const gate = await forms.prepare(row, moderatorId);
         if (!gate.ok) return gate;
+      } else if (VM_ACTIONS.has(row.action)) {
+        const gate = await vms.prepare(row, moderatorId);
+        if (!gate.ok) return gate;
       } else if (CONFIG_ACTIONS.has(row.action)) {
         const ownerOnly = row.action === "enroll_admin" || row.action === "remove_admin";
         const auth = await assertAdmin(guildId, moderatorId, { ownerOnly });
@@ -1039,7 +1055,9 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
           ? await executeClose(row)
           : FORM_ACTIONS.has(row.action)
             ? await forms.execute(row)
-            : await executeConfig(row);
+            : VM_ACTIONS.has(row.action)
+              ? await vms.execute(row)
+              : await executeConfig(row);
       try {
         const completed = result.punishmentApplied || result.code === "config_saved" || result.code === "countdown_ready" || result.confirmed === true;
         store.finishConfirmation(confirmationId, completed ? "completed" : "failed", now());

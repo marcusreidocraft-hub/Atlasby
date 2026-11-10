@@ -111,10 +111,10 @@ test("migração 6 preserva ticket, preço e aviso", () => {
   first.updatePlan({ guildId: GUILD, sku: "t4-4", code: "7d", durationDays: 7, priceCents: 3590, available: true, now: 2 });
   const reserved = first.reserveTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "7d", now: 3, id: "11111111-1111-4111-8111-111111111111" });
   first.recordWarning({ guildId: GUILD, targetId: TARGET, moderatorId: ACTOR, reason: "histórico", now: 4 });
-  assert.equal(first.migrationCount(), 6);
+  assert.equal(first.migrationCount(), 7);
   first.close();
   const second = openDatabase(dir);
-  assert.equal(second.migrationCount(), 6);
+  assert.equal(second.migrationCount(), 7);
   assert.equal(second.getPlan(GUILD, "7d").price_cents, 3590);
   assert.equal(second.getTicket(GUILD, reserved.ticket.id).status, "pending");
   assert.equal(second.listWarnings(GUILD)[0].reason, "histórico");

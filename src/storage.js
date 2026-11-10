@@ -386,6 +386,119 @@ const MIGRATIONS = [
       ALTER TABLE confirmations_v6 RENAME TO confirmations;
     `,
   },
+  {
+    version: 7,
+    sql: `
+      CREATE TABLE azure_settings (
+        guild_id TEXT PRIMARY KEY,
+        log_channel_id TEXT,
+        auto_start_enabled INTEGER NOT NULL DEFAULT 1 CHECK (auto_start_enabled IN (0, 1)),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE azure_vms (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        display_name TEXT NOT NULL,
+        resource_group TEXT NOT NULL,
+        vm_name TEXT NOT NULL,
+        os_label TEXT,
+        size_label TEXT,
+        cpu_label TEXT,
+        ram_label TEXT,
+        gpu_label TEXT,
+        disk_gb INTEGER,
+        public_ip TEXT,
+        private_ip TEXT,
+        validity_until INTEGER,
+        block_when_expired INTEGER NOT NULL DEFAULT 1 CHECK (block_when_expired IN (0, 1)),
+        auto_start INTEGER NOT NULL DEFAULT 0 CHECK (auto_start IN (0, 1)),
+        spot INTEGER NOT NULL DEFAULT 1 CHECK (spot IN (0, 1)),
+        desired_power TEXT NOT NULL DEFAULT 'unknown',
+        last_power TEXT,
+        last_power_at INTEGER,
+        credentials_cipher TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE (guild_id, resource_group, vm_name)
+      );
+
+      CREATE TABLE azure_assignments (
+        guild_id TEXT NOT NULL,
+        vm_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, vm_id, user_id)
+      );
+
+      CREATE TABLE azure_locks (
+        vm_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        until_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE azure_retries (
+        vm_id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        attempts INTEGER NOT NULL,
+        next_at INTEGER NOT NULL,
+        last_notice TEXT,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE azure_disk_requests (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        vm_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        current_gb INTEGER,
+        requested_gb INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('pending', 'approved', 'rejected', 'failed')),
+        decided_by TEXT,
+        detail TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE confirmations_v7 (
+        id TEXT PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK (action IN (
+          'warn', 'timeout', 'timeout_remove', 'kick', 'ban',
+          'set_log_channel', 'set_plan', 'set_stock', 'set_offer', 'set_style',
+          'set_category', 'set_staff_role', 'set_transcript_channel',
+          'enroll_admin', 'remove_admin', 'close_ticket',
+          'submit_application', 'cancel_application', 'delete_application',
+          'approve_application', 'reject_application',
+          'set_form_panel', 'set_form_review', 'set_form_role', 'set_form_reviewer',
+          'set_form_open', 'set_form_style', 'set_form_question',
+          'remove_form_question', 'move_form_question',
+          'upsert_vm', 'delete_vm', 'link_vm', 'unlink_vm',
+          'set_vm_secret', 'set_vm_validity', 'set_vm_policy', 'approve_disk', 'set_vm_log', 'request_disk'
+        )),
+        reason TEXT NOT NULL,
+        payload TEXT,
+        status TEXT NOT NULL CHECK (status IN ('open', 'claimed', 'completed', 'failed', 'cancelled')),
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      INSERT INTO confirmations_v7 (
+        id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      )
+      SELECT id, guild_id, moderator_id, target_id, action, reason, payload, status, expires_at, created_at, updated_at
+      FROM confirmations;
+
+      DROP TABLE confirmations;
+      ALTER TABLE confirmations_v7 RENAME TO confirmations;
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -1234,6 +1347,163 @@ function createStore(db, file, options = {}) {
     },
     pruneFormPost(post) {
       db.prepare("DELETE FROM application_posts WHERE guild_id = ? AND channel_id = ? AND message_id = ?").run(post.guild_id, post.channel_id, post.message_id);
+    },
+    getAzureSettings(guildId) {
+      const row = db.prepare("SELECT * FROM azure_settings WHERE guild_id = ?").get(guildId);
+      if (!row) return { guild_id: guildId, log_channel_id: null, auto_start_enabled: true };
+      return { ...row, auto_start_enabled: row.auto_start_enabled === 1 };
+    },
+    saveAzureSettings(guildId, patch, now) {
+      db.prepare(
+        `INSERT INTO azure_settings (guild_id, auto_start_enabled, updated_at) VALUES (?, 1, ?)
+         ON CONFLICT(guild_id) DO NOTHING`,
+      ).run(guildId, now);
+      if ("log_channel_id" in patch) {
+        db.prepare("UPDATE azure_settings SET log_channel_id = ?, updated_at = ? WHERE guild_id = ?").run(patch.log_channel_id, now, guildId);
+      }
+      if ("auto_start_enabled" in patch) {
+        db.prepare("UPDATE azure_settings SET auto_start_enabled = ?, updated_at = ? WHERE guild_id = ?").run(patch.auto_start_enabled ? 1 : 0, now, guildId);
+      }
+      return this.getAzureSettings(guildId);
+    },
+    mapVm(row) {
+      if (!row) return null;
+      return {
+        ...row,
+        block_when_expired: row.block_when_expired === 1,
+        auto_start: row.auto_start === 1,
+        spot: row.spot === 1,
+      };
+    },
+    listVms(guildId) {
+      return db.prepare("SELECT * FROM azure_vms WHERE guild_id = ? ORDER BY display_name").all(guildId).map((row) => this.mapVm(row));
+    },
+    listAssignedVms(guildId, userId) {
+      return db.prepare(
+        `SELECT v.* FROM azure_vms v
+         JOIN azure_assignments a ON a.vm_id = v.id AND a.guild_id = v.guild_id
+         WHERE a.guild_id = ? AND a.user_id = ?
+         ORDER BY v.display_name`,
+      ).all(guildId, userId).map((row) => this.mapVm(row));
+    },
+    getVm(guildId, id) {
+      return this.mapVm(db.prepare("SELECT * FROM azure_vms WHERE guild_id = ? AND id = ?").get(guildId, id));
+    },
+    ownsVm(guildId, vmId, userId) {
+      return Boolean(db.prepare("SELECT 1 AS ok FROM azure_assignments WHERE guild_id = ? AND vm_id = ? AND user_id = ?").get(guildId, vmId, userId));
+    },
+    listVmUsers(guildId, vmId) {
+      return db.prepare("SELECT user_id, created_at FROM azure_assignments WHERE guild_id = ? AND vm_id = ? ORDER BY created_at").all(guildId, vmId);
+    },
+    insertVm(row) {
+      db.prepare(
+        `INSERT INTO azure_vms (
+           id, guild_id, display_name, resource_group, vm_name, os_label, size_label, cpu_label, ram_label, gpu_label,
+           disk_gb, public_ip, private_ip, validity_until, block_when_expired, auto_start, spot, desired_power,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
+      ).run(
+        row.id, row.guildId, row.displayName, row.resourceGroup, row.vmName, row.osLabel, row.sizeLabel, row.cpuLabel,
+        row.ramLabel, row.gpuLabel, row.diskGb, row.publicIp, row.privateIp, row.validityUntil,
+        row.blockWhenExpired ? 1 : 0, row.autoStart ? 1 : 0, row.spot ? 1 : 0, row.now, row.now,
+      );
+    },
+    updateVm(guildId, id, patch, now) {
+      const allowed = ["display_name", "os_label", "size_label", "cpu_label", "ram_label", "gpu_label", "disk_gb", "public_ip", "private_ip", "validity_until", "block_when_expired", "auto_start", "spot", "desired_power", "last_power", "last_power_at", "credentials_cipher"];
+      for (const key of allowed) {
+        if (!(key in patch)) continue;
+        let value = patch[key];
+        if (key === "block_when_expired" || key === "auto_start" || key === "spot") value = value ? 1 : 0;
+        db.prepare(`UPDATE azure_vms SET ${key} = ?, updated_at = ? WHERE guild_id = ? AND id = ?`).run(value, now, guildId, id);
+      }
+      return this.getVm(guildId, id);
+    },
+    deleteVm(guildId, id) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        db.prepare("DELETE FROM azure_assignments WHERE guild_id = ? AND vm_id = ?").run(guildId, id);
+        db.prepare("DELETE FROM azure_locks WHERE guild_id = ? AND vm_id = ?").run(guildId, id);
+        db.prepare("DELETE FROM azure_retries WHERE guild_id = ? AND vm_id = ?").run(guildId, id);
+        const changes = db.prepare("DELETE FROM azure_vms WHERE guild_id = ? AND id = ?").run(guildId, id).changes;
+        db.exec("COMMIT");
+        return changes === 1;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    linkVm(guildId, vmId, userId, now) {
+      return db.prepare(
+        `INSERT INTO azure_assignments (guild_id, vm_id, user_id, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(guild_id, vm_id, user_id) DO NOTHING`,
+      ).run(guildId, vmId, userId, now).changes === 1;
+    },
+    unlinkVm(guildId, vmId, userId) {
+      return db.prepare("DELETE FROM azure_assignments WHERE guild_id = ? AND vm_id = ? AND user_id = ?").run(guildId, vmId, userId).changes === 1;
+    },
+    acquireVmLock({ vmId, guildId, operation, actorId, now, holdMs }) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const current = db.prepare("SELECT until_at FROM azure_locks WHERE vm_id = ? AND guild_id = ?").get(vmId, guildId);
+        if (current && current.until_at > now) {
+          db.exec("COMMIT");
+          return false;
+        }
+        db.prepare(
+          `INSERT INTO azure_locks (vm_id, guild_id, operation, actor_id, until_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(vm_id) DO UPDATE SET
+             guild_id = excluded.guild_id, operation = excluded.operation, actor_id = excluded.actor_id,
+             until_at = excluded.until_at, created_at = excluded.created_at`,
+        ).run(vmId, guildId, operation, actorId, now + holdMs, now);
+        db.exec("COMMIT");
+        return true;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+    listAutoStartVms() {
+      return db.prepare(
+        `SELECT v.* FROM azure_vms v
+         LEFT JOIN azure_settings s ON s.guild_id = v.guild_id
+         WHERE v.auto_start = 1 AND v.spot = 1 AND v.desired_power = 'running'
+           AND COALESCE(s.auto_start_enabled, 1) = 1`,
+      ).all().map((row) => this.mapVm(row));
+    },
+    getVmRetry(vmId) {
+      return db.prepare("SELECT * FROM azure_retries WHERE vm_id = ?").get(vmId) ?? null;
+    },
+    saveVmRetry({ vmId, guildId, attempts, nextAt, lastNotice, now }) {
+      db.prepare(
+        `INSERT INTO azure_retries (vm_id, guild_id, attempts, next_at, last_notice, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(vm_id) DO UPDATE SET attempts = excluded.attempts, next_at = excluded.next_at,
+           last_notice = excluded.last_notice, updated_at = excluded.updated_at`,
+      ).run(vmId, guildId, attempts, nextAt, lastNotice, now);
+    },
+    clearVmRetry(vmId) {
+      db.prepare("DELETE FROM azure_retries WHERE vm_id = ?").run(vmId);
+    },
+    insertDiskRequest(row) {
+      db.prepare(
+        `INSERT INTO azure_disk_requests (
+           id, guild_id, vm_id, user_id, current_gb, requested_gb, status, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      ).run(row.id, row.guildId, row.vmId, row.userId, row.currentGb, row.requestedGb, row.now, row.now);
+    },
+    listDiskRequests(guildId) {
+      return db.prepare("SELECT * FROM azure_disk_requests WHERE guild_id = ? ORDER BY created_at").all(guildId);
+    },
+    getDiskRequest(guildId, id) {
+      return db.prepare("SELECT * FROM azure_disk_requests WHERE guild_id = ? AND id = ?").get(guildId, id) ?? null;
+    },
+    finishDiskRequest(guildId, id, status, decidedBy, detail, now) {
+      return db.prepare(
+        `UPDATE azure_disk_requests
+         SET status = ?, decided_by = ?, detail = ?, updated_at = ?
+         WHERE guild_id = ? AND id = ? AND status = 'pending'`,
+      ).run(status, decidedBy, detail, now, guildId, id).changes === 1;
     },
     getLogChannel(guildId) {
       return statements.selectLogChannel.get(guildId)?.log_channel_id ?? null;

@@ -18,6 +18,8 @@ O código pode ser executado e testado sem token. Este repositório não grava s
 | `/configurar` | Dono ou administrador incluído | Painel de logs, preços, disponibilidade, administradores e formulários. |
 | `/formularios` | Dono ou administrador incluído | Publica o painel de candidatura no canal atual. |
 | `/candidatura` | Qualquer membro do servidor autorizado | Mostra em particular o estado da própria candidatura. |
+| `/menu` | Cliente com VM vinculada | Menu privado das máquinas virtuais. |
+| `/maquinas` | Dono ou administrador incluído | Cadastro de VMs, clientes, validade e credenciais. |
 
 Aviso, timeout, remoção de timeout, expulsão, banimento e mudanças de configuração só acontecem se a mesma pessoa confirmar, no mesmo servidor e para o mesmo alvo, antes do prazo. O padrão é 60 segundos. Outro usuário, outro servidor, prazo vencido, cancelamento ou segundo clique não aplicam a ação. As respostas usam Components V2: texto em Text Display, dentro de Container, com a flag `IS_COMPONENTS_V2`. Não há embed legado no lugar dessa flag.
 
@@ -100,6 +102,28 @@ O cargo é recusado quando é `@everyone`, gerenciado, o cargo da equipe dos tic
 
 Aparência fica em `/configurar`, botão **Aparência**. Dali saem **Visual do catálogo** (emoji, texto introdutório e banner HTTPS), **Mensagem do ticket** (emoji do título, saudação com `{produto}`, `{duracao}`, `{preco}`, `{usuario}` e `{equipe}`, mais banner), **Emojis dos botões** (assumir, liberar, transcrição e fechar), **Textos dos planos** (título, emoji e placeholder de cada seletor) e **FAQ e jogos** (textos privados; os botões só aparecem se houver texto). A prévia aparece antes da confirmação. Isso não muda o perfil global do bot e vale só para aquele servidor. Emoji inválido, URL que não seja HTTPS e menção solta são recusados.
 
+## Máquinas virtuais
+
+`/menu` abre o menu privado das VMs vinculadas à pessoa. `/maquinas`, ou o botão **Máquinas** em `/configurar`, é só do dono ou de um administrador incluído. A marca do painel é Atlas.
+
+O menu mostra estado, IPs, tamanho, CPU, RAM, GPU, disco e validade. O que não foi cadastrado aparece como não informado. O seletor de categoria troca os botões na mesma mensagem: Energia, Conexão, Plano e validade, Armazenamento e Suporte. Ligar pede a Azure na hora. Desligar e reiniciar pedem confirmação e depois editam a mesma resposta para “Enviando solicitação para o Azure”. Uma operação de energia por VM fica bloqueada por 20 segundos.
+
+Credenciais e PIN só aparecem na resposta privada do cliente, e só se o administrador gravou. A senha fica cifrada no SQLite com `AZURE_CREDENTIALS_KEY` ou, na falta dela, com o segredo do service principal. Trocar essa chave torna o texto antigo ilegível. Liberar PIN não entra na VM: registra o pedido para a equipe. Testar conexão olha o estado, o IP público e a porta TCP 47989. IPs privados não são consultados.
+
+Aumentar o disco não chama a Azure no clique do cliente. O pedido fica pendente e a equipe aprova em `/maquinas`. O tamanho novo precisa ser maior, até 2048 GB, e a VM precisa estar desalocada. O disco nunca diminui.
+
+Auto ligamento fica no menu de Energia e também pode ser pausado para o servidor inteiro. A cada minuto, se a Azure estiver configurada, o bot lê o instance view das VMs Spot marcadas para continuar ligadas. Se o estado desejado é `running` e a VM aparece `deallocated`, isso é tratado como eviction. Desligar pelo bot grava a intenção `stopped` e não religa. Falha de capacidade Spot espera 1, 2, 4, 8 e no máximo 15 minutos, até 6 tentativas, e depois descansa 30 minutos. Scheduled Events da Azure só existem de dentro da VM, então a distinção é feita por esse estado e pelo texto de eviction/preempt no instance view, não por um agente.
+
+Sem `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` e `AZURE_SUBSCRIPTION_ID` o bot sobe normalmente e o menu avisa que a integração não está configurada. Para criar o service principal com o papel mínimo no grupo de recursos:
+
+```bash
+az ad sp create-for-rbac --name atlasby-vm --role "Virtual Machine Contributor" --scopes /subscriptions/ASSINATURA/resourceGroups/GRUPO
+```
+
+O papel Contributor também altera outros recursos da VM. Um papel personalizado mais estreito precisa de leitura, instance view, start, deallocate, restart e, só se forem aprovar aumento de disco, escrita do disco do sistema, além da leitura da interface de rede e do IP público. Ligar uma VM volta a cobrar computação. Spot é mais barata e pode ser interrompida. Desalocar para a cobrança de computação e mantém o disco. Pausar o auto ligamento evita que o bot religue sozinho.
+
+O canal de log das VMs precisa ser privado. Senha e PIN não entram nesse registro.
+
 ## Host
 
 O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manual inativo estão em [docs/bot-hosting.md](docs/bot-hosting.md). Entry file: `index.js`. Não use Replace all nem troca de tipo de runtime num servidor que já tem dados. Push para o GitHub não publica no host: não há webhook de push documentado na API verificada.
@@ -113,3 +137,4 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 5. Preencher `DISCORD_TOKEN`, `DISCORD_CLIENT_ID` e `ALLOWED_GUILD_IDS`. Canal de logs, preços e administradores não vão no ambiente.
 6. O host que já usa `cursor/catalogo-components-v2-850e` não precisa trocar de branch. Este repositório não faz merge nem restart. O código novo só entra no processo quando quem opera o host reiniciar.
 7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preço e disponível ou esgotado. `/catalogo` publica os seletores. Um período disponível abre o ticket. Em **Formulários**, confirma canais, avaliadores, cargo de aprovação e abertura. `/formularios` publica o painel. Quem já tem o bot no servidor precisa marcar Gerenciar cargos no cargo do bot; este repositório não altera cargos ao vivo.
+8. Para as VMs, preencha no host só `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` e `AZURE_SUBSCRIPTION_ID`. Depois use `/maquinas` para cadastrar e vincular. Sem essas variáveis o menu continua no ar e avisa que a Azure não está configurada.

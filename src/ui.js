@@ -189,6 +189,11 @@ export function renderAdmin(state) {
         new ButtonBuilder().setCustomId("atlasby:cfg:appearance").setLabel("Aparência").setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId("atlasby:cfg:forms").setLabel("Formulários").setStyle(ButtonStyle.Secondary),
       ),
+    )
+    .addActionRowComponents(
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("atlasby:cfg:vms").setLabel("Máquinas").setStyle(ButtonStyle.Secondary),
+      ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true }) };
 }

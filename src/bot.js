@@ -6,6 +6,8 @@ import { durationSpec } from "./plans.js";
 import { describeResult } from "./messages.js";
 import { createService } from "./service.js";
 import { routeFormButton, routeFormModal, routeFormSelect } from "./form-route.js";
+import { routeVmButton, routeVmModal, routeVmSelect } from "./vm-route.js";
+import { createAzureClient, deriveCredentialKey } from "./azure.js";
 import {
   confirmationRow,
   priceModal,
@@ -112,6 +114,16 @@ async function handleCommand(interaction, service) {
     await interaction.reply(result.view);
     return;
   }
+  if (name === "menu") {
+    const result = service.vms.menu(guildId, actorId);
+    await interaction.reply(result.view ?? renderNotice(describeResult(result)));
+    return;
+  }
+  if (name === "maquinas") {
+    const result = await service.vms.admin(guildId, actorId);
+    await interaction.reply(result.view ?? renderNotice(describeResult(result)));
+    return;
+  }
   if (name === "canal-logs") {
     const channel = interaction.options.getChannel("canal");
     const result = await service.requestSetLogChannel({ guildId, actorId, channelId: channel?.id ?? null });
@@ -142,6 +154,7 @@ async function handleCommand(interaction, service) {
 }
 
 async function handleButton(interaction, service) {
+  if (await routeVmButton(interaction, service.vms)) return;
   if (await routeFormButton(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
   if (customId.startsWith("atlasby:ticket:blocked:")) {
@@ -346,6 +359,7 @@ async function replyOpenedTicket(interaction, service, sku, code) {
 }
 
 async function handleSelect(interaction, service) {
+  if (await routeVmSelect(interaction, service.vms)) return;
   if (await routeFormSelect(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
   const selected = interaction.values?.[0] ?? null;
@@ -411,6 +425,7 @@ function blankToNull(value) {
 }
 
 async function handleModal(interaction, service) {
+  if (await routeVmModal(interaction, service.vms)) return;
   if (await routeFormModal(interaction, service.forms)) return;
   const styleMatch = /^atlasby:modal:style:(catalog|ticket|buttons)$/.exec(interaction.customId ?? "");
   if (styleMatch) {
@@ -531,6 +546,8 @@ export async function startBot({ config, store }) {
     discord: createDiscordAdapter(client),
     ttlMs: config.confirmationTtlMs,
     messageContentIntent: config.messageContentIntent,
+    azure: createAzureClient(config.azure),
+    credentialKey: deriveCredentialKey(config.azure),
   });
   client.on(Events.InteractionCreate, (interaction) => {
     handleInteraction(interaction, { config, service }).catch((error) => {
@@ -552,6 +569,15 @@ export async function startBot({ config, store }) {
       const message = error instanceof Error ? error.message : "erro";
       console.error(`Falha ao retomar candidaturas: ${message}`);
     });
+    if (config.azure?.configured) {
+      const timer = setInterval(() => {
+        service.vms.autoStartPass().catch((error) => {
+          const message = error instanceof Error ? error.message : "erro";
+          console.error(`Falha no auto ligamento: ${message}`);
+        });
+      }, 60_000);
+      timer.unref?.();
+    }
     registerGuildCommands(config).catch((error) => {
       const message = error instanceof Error ? error.message : "erro";
       console.error(`Falha ao registrar comandos: ${message}`);

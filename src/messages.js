@@ -12,7 +12,7 @@ const SUBJECT = {
 
 function isConfig(action) {
   const name = String(action ?? "");
-  return name === "set_log_channel" || name === "set_plan" || name === "enroll_admin" || name === "remove_admin" || name.startsWith("set_form") || name.includes("form_question") || name.includes("application");
+  return name === "set_log_channel" || name === "set_plan" || name === "enroll_admin" || name === "remove_admin" || name.startsWith("set_form") || name.includes("form_question") || name.includes("application") || name.includes("_vm") || name === "request_disk" || name === "approve_disk";
 }
 
 function subject(result) {
@@ -252,6 +252,65 @@ export function describeResult(result) {
       return "Há no máximo 5 cargos avaliadores. Nada foi gravado.";
     case "form_published":
       return "Painel de candidatura publicado.";
+    case "azure_unconfigured":
+      return "Integração Azure não configurada. Nada foi alterado na nuvem.";
+    case "vm_none":
+      return "Nenhuma máquina virtual vinculada a você neste servidor.";
+    case "vm_missing":
+      return "Esta máquina não existe ou não é sua. Nada foi alterado.";
+    case "vm_invalid":
+      return "Dados da máquina inválidos. Nada foi gravado.";
+    case "vm_exists":
+      return "Essa VM já está cadastrada neste servidor.";
+    case "vm_expired":
+      return "A assinatura está vencida. Energia bloqueada. Dá para ver o estado e pedir suporte.";
+    case "vm_busy":
+      return "Já existe uma operação de energia nesta VM. Espere o intervalo e tente de novo.";
+    case "vm_requested":
+      return "Solicitação aceita pelo Azure.";
+    case "azure_capacity":
+      return "A Azure não tinha capacidade Spot agora. A tentativa será repetida com intervalo maior.";
+    case "azure_failed":
+      return "A Azure não concluiu a operação. Nada foi marcado como sucesso.";
+    case "vm_pin_requested":
+      return "Não há agente dentro da VM, então o PIN não foi digitado daqui. O pedido foi registrado para a equipe se o canal privado existir.";
+    case "vm_probe_ok":
+      return "A porta 47989 do Moonlight respondeu no IP público. Isso não garante que o jogo abriu.";
+    case "vm_probe_closed":
+      return "A porta 47989 do Moonlight não respondeu no IP público.";
+    case "vm_probe_skipped":
+      return "Não há IP público alcançável para testar. IPs privados não são consultados daqui.";
+    case "credentials_key_missing":
+      return "Defina AZURE_CREDENTIALS_KEY ou o segredo do service principal antes de gravar senha. Nada foi salvo.";
+    case "credentials_unreadable":
+      return "As credenciais não puderam ser lidas com a chave atual. Peça à administração para gravar de novo.";
+    case "vm_plan":
+      return "Consulta de validade. Não há cobrança.";
+    case "vm_renewal":
+      return "Pedido de renovação registrado. Não há cobrança automática.";
+    case "vm_disk_requested":
+      return "Pedido de aumento registrado. A equipe confirma antes. O disco nunca diminui, e a VM precisa estar desalocada.";
+    case "disk_invalid":
+      return "Informe um total inteiro entre 1 e 2048 GB. Nada foi alterado.";
+    case "disk_not_increase":
+      return "O novo tamanho precisa ser maior que o atual. O disco não diminui.";
+    case "disk_needs_deallocated":
+      return "A Azure só aumenta o disco do sistema com a VM desalocada. Nada foi alterado.";
+    case "vm_support_opened":
+      return "Canal privado de suporte criado.";
+    case "vm_support_logged":
+      return "Pedido de suporte registrado no canal privado.";
+    case "vm_support_unconfigured":
+      return "Configure a categoria dos tickets ou um canal privado de log das VMs antes de pedir suporte.";
+    case "vm_support_failed":
+      return "O canal de suporte não pôde ser criado. Nada foi anunciado como aberto.";
+    case "vm_auto_disabled":
+      return "A administração pausou o auto ligamento neste servidor.";
+    case "vm_log_missing":
+    case "vm_log_unsafe":
+      return "O canal de log das VMs precisa ser privado e utilizável pelo bot. Nada foi enviado nele.";
+    case "validity_invalid":
+      return "Data inválida. Use AAAA-MM-DD. Nada foi gravado.";
     case "confirmation_mismatch":
       return "O pedido não confere com o alvo gravado. Nada foi aplicado.";
     case "internal":
