@@ -1,6 +1,7 @@
+import { MessageFlags } from "discord.js";
 import { confirmationRow, renderNotice } from "./ui.js";
 import { describeResult } from "./messages.js";
-import { renderPendingAzure, renderVmLogPicker } from "./vm-ui.js";
+import { renderAzureWait, renderPendingAzure, renderVmLogPicker } from "./vm-ui.js";
 
 function blank(value) {
   const text = typeof value === "string" ? value.trim() : "";
@@ -12,17 +13,83 @@ async function go(interaction, result) {
   return true;
 }
 
+function editFlags(interaction) {
+  if (interaction.azureDeferred === "reply") return MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral;
+  return MessageFlags.IsComponentsV2;
+}
+
+async function report(interaction, payload) {
+  const flags = payload.flags ?? editFlags(interaction);
+  const body = { ...payload, flags };
+  try {
+    if (interaction.deferred || interaction.replied) await interaction.editReply(body);
+    else await interaction.reply(body);
+  } catch {
+    try {
+      await interaction.followUp(body);
+    } catch {
+      // A interação já expirou. O erro não fica só no console.
+    }
+  }
+}
+
+async function beginAzure(interaction, { fresh = false } = {}) {
+  if (interaction.deferred || interaction.replied) return;
+  if (fresh || interaction.isModalSubmit?.()) {
+    await interaction.deferReply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
+    interaction.azureDeferred = "reply";
+  } else {
+    await interaction.deferUpdate();
+    interaction.azureDeferred = "update";
+  }
+  await interaction.editReply({ ...renderAzureWait(), flags: editFlags(interaction) });
+}
+
+async function finishAzure(interaction, result) {
+  const flags = editFlags(interaction);
+  if (result?.view) {
+    await report(interaction, { ...result.view, flags });
+    if (result.notice) {
+      await interaction.followUp({ ...result.notice, flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral }).catch(() => {});
+    }
+    return;
+  }
+  const row = result?.confirmationId ? confirmationRow(result.confirmationId) : null;
+  const base = describeResult(result ?? { code: "azure_failed" });
+  const extra = result?.summary && result.code !== "confirmation_required" ? `\n${result.summary}` : "";
+  await report(interaction, { ...renderNotice(`${base}${extra}`, { row, update: true }), flags });
+}
+
+async function azureGo(interaction, work, options) {
+  try {
+    await beginAzure(interaction, options);
+    const result = await work();
+    if (result?.pending && result.task) {
+      const finished = await result.task();
+      await finishAzure(interaction, finished);
+      return true;
+    }
+    await finishAzure(interaction, result);
+  } catch (error) {
+    const code = error?.code === "azure_timeout" ? "azure_timeout" : error?.code === "azure_forbidden" ? "azure_forbidden" : "azure_failed";
+    await report(interaction, { ...renderNotice(describeResult({ code }), { update: true }), flags: editFlags(interaction) });
+  }
+  return true;
+}
+
 async function present(interaction, result) {
   if (result?.modal) {
     await interaction.showModal(result.modal);
     return;
   }
   if (result?.pending && result.task) {
-    await interaction.update(renderPendingAzure());
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.deferUpdate();
+      interaction.azureDeferred = "update";
+    }
+    await interaction.editReply({ ...renderPendingAzure(), flags: editFlags(interaction) });
     const finished = await result.task();
-    const payload = finished.view ?? renderNotice(describeResult(finished));
-    await interaction.editReply(payload);
-    if (finished.notice) await interaction.followUp(finished.notice);
+    await finishAzure(interaction, finished);
     return;
   }
   if (result?.view) {
@@ -59,9 +126,9 @@ export async function routeVmButton(interaction, vms) {
   if (customId === "atlasby:vmcfg:secret") return go(interaction, await vms.chooseVm(guildId, userId, "secret")) ?? true;
   if (customId === "atlasby:vmcfg:policy") return go(interaction, await vms.requestPolicy({ guildId, actorId: userId })) ?? true;
   if (customId === "atlasby:vmcfg:log") return go(interaction, { ok: true, view: renderVmLogPicker(), update: true }) ?? true;
-  if (customId === "atlasby:vmcfg:import") return go(interaction, await vms.importList(guildId, userId, 0, 0)) ?? true;
-  const importPage = /^atlasby:vmcfg:importpage:(\d+):(\d+)$/.exec(customId);
-  if (importPage) return go(interaction, await vms.importList(guildId, userId, Number(importPage[1]), Number(importPage[2]))) ?? true;
+  if (customId === "atlasby:vmcfg:import") return azureGo(interaction, () => vms.importList(guildId, userId, 0, 0));
+  const importPage = /^atlasby:vmcfg:importpage:(\d+):(all|[0-9a-f]{32}|\d+)$/.exec(customId);
+  if (importPage) return azureGo(interaction, () => vms.importList(guildId, userId, Number(importPage[1]), importPage[2]));
   const importUser = /^atlasby:vmcfg:importuser:([0-9a-f]{32})$/.exec(customId);
   if (importUser) return go(interaction, vms.importUserPicker(importUser[1])) ?? true;
   const importValidity = /^atlasby:vmcfg:importvalidity:([0-9a-f]{32})$/.exec(customId);
@@ -75,11 +142,23 @@ export async function routeVmButton(interaction, vms) {
     return true;
   }
   const importSave = /^atlasby:vmcfg:importsave:([0-9a-f]{32})$/.exec(customId);
-  if (importSave) return go(interaction, await vms.requestImport(guildId, userId, importSave[1])) ?? true;
+  if (importSave) return azureGo(interaction, () => vms.requestImport(guildId, userId, importSave[1]));
   const power = /^atlasby:vm:power:(start|deallocate|restart):([0-9a-f-]{36})$/.exec(customId);
-  if (power) return go(interaction, await vms.requestPower(guildId, userId, power[2], power[1])) ?? true;
+  if (power) {
+    return azureGo(interaction, async () => {
+      const result = await vms.requestPower(guildId, userId, power[2], power[1]);
+      if (result?.task) return result.task();
+      return result;
+    });
+  }
   const yes = /^atlasby:vm:yes:(deallocate|restart):([0-9a-f-]{36})$/.exec(customId);
-  if (yes) return go(interaction, await vms.confirmPower(guildId, userId, yes[2], yes[1])) ?? true;
+  if (yes) {
+    return azureGo(interaction, async () => {
+      const result = await vms.confirmPower(guildId, userId, yes[2], yes[1]);
+      if (result?.task) return result.task();
+      return result;
+    });
+  }
   const no = /^atlasby:vm:no:([0-9a-f-]{36})$/.exec(customId);
   if (no) return go(interaction, { ...vms.menu(guildId, userId, no[1]), update: true }) ?? true;
   const simple = /^atlasby:vm:(connect|pin|creds|probe|plan|renew|sign|storage|support|refresh|auto|disk):([0-9a-f-]{36})$/.exec(customId);
@@ -89,11 +168,11 @@ export async function routeVmButton(interaction, vms) {
     if (action === "connect") return go(interaction, vms.connect(guildId, userId, vmId)) ?? true;
     if (action === "pin") return go(interaction, await vms.releasePin(guildId, userId, vmId)) ?? true;
     if (action === "creds") return go(interaction, vms.credentials(guildId, userId, vmId)) ?? true;
-    if (action === "probe") return go(interaction, await vms.probe(guildId, userId, vmId)) ?? true;
+    if (action === "probe") return azureGo(interaction, () => vms.probe(guildId, userId, vmId));
     if (action === "plan" || action === "sign" || action === "storage") return go(interaction, vms.plan(guildId, userId, vmId)) ?? true;
     if (action === "renew") return go(interaction, await vms.renew(guildId, userId, vmId)) ?? true;
     if (action === "support") return go(interaction, await vms.support(guildId, userId, vmId)) ?? true;
-    if (action === "refresh") return go(interaction, await vms.refresh(guildId, userId, vmId)) ?? true;
+    if (action === "refresh") return azureGo(interaction, () => vms.refresh(guildId, userId, vmId));
     if (action === "auto") return go(interaction, await vms.toggleAuto(guildId, userId, vmId)) ?? true;
     if (action === "disk") {
       const result = vms.diskModal(guildId, userId, vmId);
@@ -145,17 +224,14 @@ export async function routeVmSelect(interaction, vms) {
     return true;
   }
   if (customId === "atlasby:vmcfg:importfilter") {
-    await present(interaction, await vms.importList(guildId, userId, 0, Number(selected)));
-    return true;
+    return azureGo(interaction, () => vms.importList(guildId, userId, 0, selected === "0" ? 0 : selected));
   }
   if (customId === "atlasby:vmcfg:importpick") {
-    await present(interaction, await vms.importPreview(guildId, userId, selected));
-    return true;
+    return azureGo(interaction, () => vms.importPreview(guildId, userId, selected));
   }
   const importUserPick = /^atlasby:vmcfg:importuserpick:([0-9a-f]{32})$/.exec(customId);
   if (importUserPick) {
-    await present(interaction, await vms.stageImportUser(guildId, userId, importUserPick[1], selected));
-    return true;
+    return azureGo(interaction, () => vms.stageImportUser(guildId, userId, importUserPick[1], selected));
   }
   if (!customId.startsWith("atlasby:vm")) return false;
   return true;
@@ -215,26 +291,24 @@ export async function routeVmModal(interaction, vms) {
   }
   const importValidityModal = /^atlasby:modal:vm:importvalidity:([0-9a-f]{32})$/.exec(customId);
   if (importValidityModal) {
-    await present(interaction, await vms.stageImportValidity(
+    return azureGo(interaction, () => vms.stageImportValidity(
       interaction.guildId,
       interaction.user.id,
       importValidityModal[1],
       read("data"),
       interaction.fields.getTextInputValue("bloquear"),
-    ));
-    return true;
+    ), { fresh: true });
   }
   const importSecretModal = /^atlasby:modal:vm:importsecret:([0-9a-f]{32})$/.exec(customId);
   if (importSecretModal) {
-    await present(interaction, await vms.stageImportSecret(
+    return azureGo(interaction, () => vms.stageImportSecret(
       interaction.guildId,
       interaction.user.id,
       importSecretModal[1],
       interaction.fields.getTextInputValue("usuario"),
       interaction.fields.getTextInputValue("senha"),
       read("pin"),
-    ));
-    return true;
+    ), { fresh: true });
   }
   const disk = /^atlasby:modal:vm:disk:([0-9a-f-]{36})$/.exec(customId);
   if (disk) {

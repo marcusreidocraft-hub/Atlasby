@@ -256,6 +256,8 @@ export function describeResult(result) {
       return "Integração Azure não configurada. Nada foi alterado na nuvem.";
     case "azure_forbidden":
       return "O service principal precisa de leitura na assinatura ou nos grupos de recursos. Nada foi listado nem alterado.";
+    case "azure_timeout":
+      return "A Azure não respondeu em 20 segundos. Nada foi alterado. Tente de novo.";
     case "azure_empty":
       return "A assinatura não devolveu máquinas virtuais para este filtro.";
     case "vm_user_required":

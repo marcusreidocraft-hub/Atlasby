@@ -73,7 +73,7 @@ export function azureFailureCode(error) {
   const status = error?.statusCode ?? error?.status;
   const code = String(error?.code ?? "");
   const text = `${code} ${error?.message ?? ""}`;
-  if (code === "azure_unconfigured") return "azure_unconfigured";
+  if (code === "azure_unconfigured" || code === "azure_timeout") return code;
   if (code === "azure_forbidden" || status === 403 || code === "AuthorizationFailed" || /authorization|forbidden/i.test(text)) {
     return "azure_forbidden";
   }
@@ -82,6 +82,45 @@ export function azureFailureCode(error) {
 
 function rethrowAzure(error) {
   throw Object.assign(error instanceof Error ? error : new Error("azure"), { code: azureFailureCode(error) });
+}
+
+export const AZURE_TIMEOUT_MS = 20_000;
+const SKU_TTL_MS = 6 * 60 * 60 * 1000;
+const skuCache = new Map();
+
+export function withTimeout(work, ms = AZURE_TIMEOUT_MS) {
+  const promise = typeof work === "function" ? work() : work;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(Object.assign(new Error("A Azure não respondeu a tempo."), { code: "azure_timeout" })), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function capabilitiesFor(compute, location, size) {
+  const known = skuFacts(size, []);
+  if (known.cpu && known.ram && known.gpu) return [];
+  if (!compute.resourceSkus?.list || !location || !size) return [];
+  const cached = skuCache.get(location);
+  if (cached && Date.now() - cached.at < SKU_TTL_MS) return cached.byName.get(size) ?? [];
+  const byName = new Map();
+  try {
+    for await (const sku of compute.resourceSkus.list({ filter: `location eq '${location}'` })) {
+      byName.set(sku.name, sku.capabilities ?? []);
+    }
+  } catch {
+    return [];
+  }
+  skuCache.set(location, { at: Date.now(), byName });
+  return byName.get(size) ?? [];
 }
 
 export function createAzureClient(config, deps = {}) {
@@ -132,28 +171,36 @@ export function createAzureClient(config, deps = {}) {
   return {
     configured: true,
     async getInstanceView(group, name) {
-      const { compute } = await sdk();
-      const view = await compute.virtualMachines.instanceView(group, name);
-      const power = (view.statuses ?? []).find((status) => String(status.code ?? "").startsWith("PowerState/"));
-      return {
-        powerState: normalizePower(power?.code),
-        statuses: view.statuses ?? [],
-      };
+      return withTimeout(async () => {
+        const { compute } = await sdk();
+        const view = await compute.virtualMachines.instanceView(group, name);
+        const power = (view.statuses ?? []).find((status) => String(status.code ?? "").startsWith("PowerState/"));
+        return {
+          powerState: normalizePower(power?.code),
+          statuses: view.statuses ?? [],
+        };
+      });
     },
     async start(group, name) {
-      const { compute } = await sdk();
-      const poller = await compute.virtualMachines.beginStart(group, name);
-      await poller.pollUntilDone();
+      return withTimeout(async () => {
+        const { compute } = await sdk();
+        const poller = await compute.virtualMachines.beginStart(group, name);
+        await poller.pollUntilDone();
+      });
     },
     async deallocate(group, name) {
-      const { compute } = await sdk();
-      const poller = await compute.virtualMachines.beginDeallocate(group, name);
-      await poller.pollUntilDone();
+      return withTimeout(async () => {
+        const { compute } = await sdk();
+        const poller = await compute.virtualMachines.beginDeallocate(group, name);
+        await poller.pollUntilDone();
+      });
     },
     async restart(group, name) {
-      const { compute } = await sdk();
-      const poller = await compute.virtualMachines.beginRestart(group, name);
-      await poller.pollUntilDone();
+      return withTimeout(async () => {
+        const { compute } = await sdk();
+        const poller = await compute.virtualMachines.beginRestart(group, name);
+        await poller.pollUntilDone();
+      });
     },
     async readNetwork(group, name) {
       const { compute, network } = await sdk();
@@ -171,6 +218,7 @@ export function createAzureClient(config, deps = {}) {
       return { publicIp: address.ipAddress ?? null, privateIp };
     },
     async listVirtualMachines() {
+      return withTimeout(async () => {
       const { compute } = await sdk();
       const items = [];
       try {
@@ -189,8 +237,10 @@ export function createAzureClient(config, deps = {}) {
         rethrowAzure(error);
       }
       return items;
+      });
     },
     async describeVirtualMachine(group, name) {
+      return withTimeout(async () => {
       const { compute } = await sdk();
       let vm;
       try {
@@ -198,33 +248,26 @@ export function createAzureClient(config, deps = {}) {
       } catch (error) {
         rethrowAzure(error);
       }
-      const view = await this.getInstanceView(group, name).catch(() => ({ powerState: "unknown", statuses: [] }));
-      const network = await this.readNetwork(group, name).catch(() => ({ publicIp: null, privateIp: null }));
-      let diskGb = vm.storageProfile?.osDisk?.diskSizeGB ?? null;
-      const diskId = vm.storageProfile?.osDisk?.managedDisk?.id;
-      if (diskId && compute.disks?.get) {
-        try {
-          const diskRef = resourceGroupOf(diskId);
-          const disk = await compute.disks.get(diskRef.group, diskRef.name);
-          diskGb = disk.diskSizeGB ?? diskGb;
-        } catch {
-          // O tamanho informado no perfil da VM permanece.
-        }
-      }
       const size = vm.hardwareProfile?.vmSize ?? null;
-      let capabilities = [];
-      if (compute.resourceSkus?.list && vm.location && size) {
-        try {
-          for await (const sku of compute.resourceSkus.list({ filter: `location eq '${vm.location}'` })) {
-            if (sku.name === size) {
-              capabilities = sku.capabilities ?? [];
-              break;
+      const diskId = vm.storageProfile?.osDisk?.managedDisk?.id;
+      const [view, network, diskGb, capabilities] = await Promise.all([
+        this.getInstanceView(group, name).catch(() => ({ powerState: "unknown", statuses: [] })),
+        this.readNetworkFrom(vm, compute).catch(() => ({ publicIp: null, privateIp: null })),
+        (async () => {
+          let value = vm.storageProfile?.osDisk?.diskSizeGB ?? null;
+          if (diskId && compute.disks?.get) {
+            try {
+              const diskRef = resourceGroupOf(diskId);
+              const disk = await compute.disks.get(diskRef.group, diskRef.name);
+              value = disk.diskSizeGB ?? value;
+            } catch {
+              // O tamanho informado no perfil da VM permanece.
             }
           }
-        } catch {
-          capabilities = [];
-        }
-      }
+          return value;
+        })(),
+        capabilitiesFor(compute, vm.location, size),
+      ]);
       const facts = skuFacts(size, capabilities);
       return {
         name: vm.name,
@@ -241,6 +284,21 @@ export function createAzureClient(config, deps = {}) {
         ram: facts.ram,
         gpu: facts.gpu,
       };
+      });
+    },
+    async readNetworkFrom(vm) {
+      const { network } = await sdk();
+      const nicId = vm.networkProfile?.networkInterfaces?.[0]?.id;
+      if (!nicId) return { publicIp: null, privateIp: null };
+      const nicRef = resourceGroupOf(nicId);
+      const nic = await network.networkInterfaces.get(nicRef.group, nicRef.name);
+      const ipConfig = nic.ipConfigurations?.[0];
+      const privateIp = ipConfig?.privateIPAddress ?? null;
+      const publicId = ipConfig?.publicIPAddress?.id;
+      if (!publicId) return { publicIp: null, privateIp };
+      const publicRef = resourceGroupOf(publicId);
+      const address = await network.publicIPAddresses.get(publicRef.group, publicRef.name);
+      return { publicIp: address.ipAddress ?? null, privateIp };
     },
     async resizeDisk(group, name, requestedGb) {
       const { compute } = await sdk();

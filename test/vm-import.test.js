@@ -3,8 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { withTimeout } from "../src/azure.js";
 import { createService } from "../src/service.js";
 import { openDatabase } from "../src/storage.js";
+import { routeVmButton, routeVmSelect } from "../src/vm-route.js";
 import { importKey, skuFacts } from "../src/vm-model.js";
 import { textOf, validateV2Message } from "../src/ui.js";
 import { ACTOR, GUILD, OWNER, TARGET, fakeDiscord } from "../src/fixtures.js";
@@ -151,6 +153,90 @@ test("filtro de grupo e erro de permissão", async () => {
   const bare = harness({ configured: false });
   assert.equal((await bare.service.vms.importList(GUILD, OWNER, 0, 0)).code, "azure_unconfigured");
   bare.close();
+  app.close();
+});
+
+function componentInteraction(customId, values = []) {
+  const events = [];
+  return {
+    events,
+    edits: [],
+    customId,
+    values,
+    guildId: GUILD,
+    user: { id: OWNER },
+    deferred: false,
+    replied: false,
+    isModalSubmit() {
+      return false;
+    },
+    async deferUpdate() {
+      events.push("defer");
+      this.deferred = true;
+    },
+    async deferReply() {
+      events.push("defer");
+      this.deferred = true;
+    },
+    async editReply(payload) {
+      events.push("edit");
+      this.edits.push(payload);
+    },
+    async followUp() {
+      events.push("follow");
+    },
+    async update() {
+      events.push("update");
+    },
+    async reply() {
+      events.push("reply");
+    },
+  };
+}
+
+test("o select da Azure só é consultado depois do defer", async () => {
+  const key = importKey("rg-atlas", "vm-1");
+  const interaction = componentInteraction("atlasby:vmcfg:importpick", [key]);
+  const azure = azureOf(machines(1).map((item) => ({ ...item, name: "vm-1" })));
+  azure.describeVirtualMachine = async () => {
+    interaction.events.push("azure");
+    return {
+      name: "vm-1",
+      resourceGroup: "rg-atlas",
+      location: "brazilsouth",
+      size: "Standard_NC4as_T4_v3",
+      osType: "Windows",
+      priority: "Spot",
+      publicIp: "20.1.2.3",
+      privateIp: "10.0.0.4",
+      diskGb: 128,
+      powerState: "running",
+      ...skuFacts("Standard_NC4as_T4_v3"),
+    };
+  };
+  const app = harness(azure);
+  await routeVmSelect(interaction, app.service.vms);
+  assert.equal(interaction.events[0], "defer");
+  assert.ok(interaction.events.indexOf("defer") < interaction.events.indexOf("azure"));
+  assert.equal(interaction.events.includes("update"), false);
+  assert.match(textOf(interaction.edits.at(-1)), /vm-1/);
+  assert.equal(interaction.edits.at(-1).flags & 32768, 32768);
+  app.close();
+});
+
+test("timeout da Azure vira erro visível depois do defer", async () => {
+  await assert.rejects(withTimeout(() => new Promise(() => {}), 20), (error) => error.code === "azure_timeout");
+  const key = importKey("rg-atlas", "vm-1");
+  const interaction = componentInteraction("atlasby:vmcfg:importpick", [key]);
+  const azure = azureOf(machines(1).map((item) => ({ ...item, name: "vm-1" })));
+  azure.describeVirtualMachine = async () => {
+    interaction.events.push("azure");
+    throw Object.assign(new Error("lento"), { code: "azure_timeout" });
+  };
+  const app = harness(azure);
+  await routeVmSelect(interaction, app.service.vms);
+  assert.equal(interaction.events[0], "defer");
+  assert.match(textOf(interaction.edits.at(-1)), /20 segundos/);
   app.close();
 });
 

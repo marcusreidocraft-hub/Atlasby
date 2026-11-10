@@ -536,8 +536,14 @@ export function createVmController({ store, discord, now, openConfirmation, deny
       if (!listed.ok) return deny("upsert_vm", { code: listed.code });
       const groups = [...new Set(listed.items.map((item) => item.resourceGroup).filter(Boolean))].sort();
       const shownGroups = groups.slice(0, 24);
-      const index = Number(groupIndex) || 0;
-      const group = index > 0 ? shownGroups[index - 1] ?? null : null;
+      const token = String(groupIndex ?? "0");
+      const group = token === "0" || token === "all"
+        ? null
+        : /^[0-9a-f]{32}$/.test(token)
+          ? shownGroups.find((name) => importKey("group", name) === token) ?? null
+          : /^\d+$/.test(token) && Number(token) > 0
+            ? shownGroups[Number(token) - 1] ?? null
+            : null;
       const linked = this.linkedKeys(guildId);
       const filtered = (group ? listed.items.filter((item) => item.resourceGroup === group) : listed.items)
         .filter((item) => !linked.has(importKey(item.resourceGroup, item.name)));
@@ -560,7 +566,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
           total: window.total,
           hidden: Math.max(0, hidden),
           group,
-          groupIndex: group ? index : 0,
+          groupToken: group ? importKey("group", group) : "all",
           groups: shownGroups,
           options,
         }),

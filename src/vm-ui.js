@@ -16,7 +16,7 @@ import {
   UserSelectMenuBuilder,
 } from "discord.js";
 import { confirmationRow, panelAccent, v2Flags } from "./ui.js";
-import { powerLabel, validityText } from "./vm-model.js";
+import { importKey, powerLabel, validityText } from "./vm-model.js";
 
 function text(content) {
   return new TextDisplayBuilder().setContent(content.slice(0, 3900));
@@ -348,7 +348,14 @@ export function renderUnlinkPicker(vm, users) {
   return { components: [container], flags: v2Flags({ ephemeral: true, update: true }) };
 }
 
-export function renderImportList({ page, pages, total, hidden, group, groupIndex = 0, groups, options }) {
+export function renderAzureWait() {
+  return {
+    components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text("Buscando detalhes na Azure…"))],
+    flags: v2Flags({ ephemeral: true, update: true }),
+  };
+}
+
+export function renderImportList({ page, pages, total, hidden, group, groupToken = "all", groups, options }) {
   const lines = [
     "# Importar da Azure",
     `Página ${page + 1} de ${pages}. ${total} máquina(s) disponível(is).`,
@@ -364,10 +371,10 @@ export function renderImportList({ page, pages, total, hidden, group, groupIndex
           .setCustomId("atlasby:vmcfg:importfilter")
           .setPlaceholder("Filtrar por resource group")
           .addOptions([
-            { label: "Todos os grupos", value: "0", default: !group },
-            ...groups.slice(0, 24).map((name, index) => ({
+            { label: "Todos os grupos", value: "all", default: !group },
+            ...groups.slice(0, 24).map((name) => ({
               label: name.slice(0, 100),
-              value: String(index + 1),
+              value: importKey("group", name),
               default: name === group,
             })),
           ]),
@@ -387,8 +394,8 @@ export function renderImportList({ page, pages, total, hidden, group, groupIndex
   if (pages > 1) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
-        button(`atlasby:vmcfg:importpage:${Math.max(0, page - 1)}:${groupIndex}`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
-        button(`atlasby:vmcfg:importpage:${Math.min(pages - 1, page + 1)}:${groupIndex}`, "Próxima", ButtonStyle.Secondary).setDisabled(page >= pages - 1),
+        button(`atlasby:vmcfg:importpage:${Math.max(0, page - 1)}:${groupToken}`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
+        button(`atlasby:vmcfg:importpage:${Math.min(pages - 1, page + 1)}:${groupToken}`, "Próxima", ButtonStyle.Secondary).setDisabled(page >= pages - 1),
       ),
     );
   }
