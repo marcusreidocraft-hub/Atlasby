@@ -503,6 +503,19 @@ const MIGRATIONS = [
     version: 8,
     sql: `ALTER TABLE azure_vms ADD COLUMN location TEXT;`,
   },
+  {
+    version: 9,
+    sql: `
+      CREATE TABLE azure_entra_links (
+        guild_id TEXT NOT NULL,
+        vm_id TEXT NOT NULL,
+        entra_id TEXT NOT NULL,
+        user_principal_name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (guild_id, vm_id)
+      );
+    `,
+  },
 ];
 
 function migrate(db) {
@@ -1508,6 +1521,22 @@ function createStore(db, file, options = {}) {
          SET status = ?, decided_by = ?, detail = ?, updated_at = ?
          WHERE guild_id = ? AND id = ? AND status = 'pending'`,
       ).run(status, decidedBy, detail, now, guildId, id).changes === 1;
+    },
+    linkEntra({ guildId, vmId, entraId, userPrincipalName, now }) {
+      db.prepare(
+        `INSERT INTO azure_entra_links (guild_id, vm_id, entra_id, user_principal_name, created_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(guild_id, vm_id) DO UPDATE SET
+           entra_id = excluded.entra_id,
+           user_principal_name = excluded.user_principal_name,
+           created_at = excluded.created_at`,
+      ).run(guildId, vmId, entraId, userPrincipalName, now);
+    },
+    entraLinkForVm(guildId, vmId) {
+      return db.prepare("SELECT * FROM azure_entra_links WHERE guild_id = ? AND vm_id = ?").get(guildId, vmId) ?? null;
+    },
+    entraLinksForAccount(guildId, entraId) {
+      return db.prepare("SELECT * FROM azure_entra_links WHERE guild_id = ? AND entra_id = ?").all(guildId, entraId);
     },
     getLogChannel(guildId) {
       return statements.selectLogChannel.get(guildId)?.log_channel_id ?? null;

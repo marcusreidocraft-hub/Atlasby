@@ -8,6 +8,7 @@ import { validateStyle } from "./style.js";
 import { canPostLogs, evaluateModeration, hasPermission, Permissions } from "./permissions.js";
 import { createFormController, FORM_ACTIONS } from "./forms.js";
 import { createVmController, VM_ACTIONS } from "./vms.js";
+import { createEntraController } from "./entra.js";
 import { createAzureClient, deriveCredentialKey } from "./azure.js";
 
 const REASON_MAX = 512;
@@ -56,7 +57,7 @@ function readPayload(row) {
   }
 }
 
-export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), azure = null, credentialKey = null, vmDefaults = null }) {
+export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), azure = null, credentialKey = null, vmDefaults = null, graph = null }) {
   if (!Number.isInteger(ttlMs) || ttlMs < 15_000 || ttlMs > 300_000) throw new Error("ttlMs inválido.");
   const catalogChains = new Map();
   async function refreshCatalog(guildId) {
@@ -554,10 +555,18 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
     credentialKey,
     defaults: vmDefaults ?? undefined,
   });
+  const entra = createEntraController({
+    store,
+    discord,
+    now,
+    assertAdmin,
+    graph: graph ?? { configured: false },
+  });
 
   return {
     forms,
     vms,
+    entra,
     async warn(input) {
       return requestModeration("warn", input);
     },

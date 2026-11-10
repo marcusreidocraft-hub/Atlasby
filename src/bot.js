@@ -8,7 +8,9 @@ import { describeResult } from "./messages.js";
 import { createService } from "./service.js";
 import { routeFormButton, routeFormModal, routeFormSelect } from "./form-route.js";
 import { routeVmButton, routeVmModal, routeVmSelect } from "./vm-route.js";
+import { routeEntraButton, routeEntraModal, routeEntraSelect } from "./entra-route.js";
 import { createAzureClient, deriveCredentialKey } from "./azure.js";
+import { createGraphClient } from "./graph.js";
 import {
   confirmationRow,
   priceModal,
@@ -155,6 +157,7 @@ async function handleCommand(interaction, service) {
 }
 
 async function handleButton(interaction, service) {
+  if (await routeEntraButton(interaction, service.entra)) return;
   if (await routeVmButton(interaction, service.vms)) return;
   if (await routeFormButton(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
@@ -360,6 +363,7 @@ async function replyOpenedTicket(interaction, service, sku, code) {
 }
 
 async function handleSelect(interaction, service) {
+  if (await routeEntraSelect(interaction, service.entra)) return;
   if (await routeVmSelect(interaction, service.vms)) return;
   if (await routeFormSelect(interaction, service.forms)) return;
   const customId = interaction.customId ?? "";
@@ -426,6 +430,7 @@ function blankToNull(value) {
 }
 
 async function handleModal(interaction, service) {
+  if (await routeEntraModal(interaction, service.entra)) return;
   if (await routeVmModal(interaction, service.vms)) return;
   if (await routeFormModal(interaction, service.forms)) return;
   const styleMatch = /^atlasby:modal:style:(catalog|ticket|buttons)$/.exec(interaction.customId ?? "");
@@ -549,6 +554,7 @@ export async function startBot({ config, store }) {
     ttlMs: config.confirmationTtlMs,
     messageContentIntent: config.messageContentIntent,
     azure: createAzureClient(config.azure),
+    graph: createGraphClient(config.azure),
     credentialKey: deriveCredentialKey(config.azure),
     vmDefaults: {
       location: config.azure.location,

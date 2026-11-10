@@ -314,6 +314,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
           autoGlobal: settings.auto_start_enabled,
           defaults: azureDefaults,
           users: (vmId) => store.listVmUsers(guildId, vmId),
+          entra: (vmId) => store.entraLinkForVm(guildId, vmId),
         }),
       };
     },

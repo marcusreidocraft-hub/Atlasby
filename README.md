@@ -114,6 +114,20 @@ Aumentar o disco não chama a Azure no clique do cliente. O pedido fica pendente
 
 `/maquinas` mostra o bloco **Padrões Azure**: local, tamanho, sistema, disco máximo, snapshot, VNet e subnet. Esses valores só sugerem o cadastro. O formulário manual de nova VM continua disponível. **Importar da Azure** lista as VMs da assinatura, 25 por página, com filtro de resource group. A seleção lê tamanho, sistema, Spot ou Regular, IPs, disco e estado. CPU, RAM e GPU saem do resource SKU ou da tabela do `Standard_NC4as_T4_v3`. O cliente, a validade e as credenciais são opcionais no resumo e só entram depois da confirmação. Nenhuma VM é criada ou alterada na Azure. Para listar, o service principal precisa de leitura na assinatura ou nos grupos, por exemplo o papel Reader. Sem essa leitura, o painel avisa que a permissão falta.
 
+**Contas Azure**, no mesmo painel, lista usuários do tenant do `AZURE_TENANT_ID` pelo Microsoft Graph, com o mesmo service principal. Não há variável nova: as quatro credenciais da Azure ligam o Graph. A lista é paginada, com busca por nome ou e-mail, e mostra nome, UPN, e-mail e se a conta está ativa. Só o dono ou um administrador do bot chega nessa tela. Cliente do catálogo não vê.
+
+Ver e-mail mostra o UPN, o mail e os otherMails. Gerar senha cria uma senha forte no momento da confirmação. Digitar senha exige complexidade no modal, e esse envio já é a confirmação. `forceChangePasswordNextSignIn` fica desligado, a menos que o administrador peça. A senha nova aparece uma vez, só na resposta privada de quem confirmou. Ela não é gravada, não vai para o canal de logs e não entra no registro de auditoria. O registro diz quem fez, a ação e a conta.
+
+Remover autenticação lista os métodos e permite apagar um ou todos os que não são senha: Authenticator, telefone, FIDO2, OTP, e-mail, Windows Hello e passe temporário. A confirmação é vermelha. Há opção de encerrar as sessões. Se o método for o padrão, os outros saem primeiro.
+
+O Graph usa o escopo `https://graph.microsoft.com/.default`. No registro do aplicativo, em Permissões de API, adicione permissões de **aplicativo** e conceda o consentimento de administrador:
+
+- `User.Read.All`
+- `User-PasswordProfile.ReadWrite.All` (ou `User.ReadWrite.All`)
+- `UserAuthenticationMethod.ReadWrite.All`
+
+Permissão de aplicativo não basta para redefinir senha e MFA. O service principal precisa de um papel de diretório que alcance a conta. Authentication Administrator ou User Administrator cobre usuários comuns. Privileged Authentication Administrator é o papel que alcança administradores. Contas pessoais da Microsoft, fora deste tenant, não aparecem e não são suportadas. Se o Graph responder 403, o painel explica essas permissões.
+
 `PANEL_COLOR` é a cor dos containers quando a aparência do servidor não define outra. Aceita hex com ou sem `#`. Valor inválido volta para `5865F2`.
 
 `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY` e `AI_ASSISTANT_ENABLED` ficam reservados para um assistente futuro. Com `AI_ASSISTANT_ENABLED=false` nada disso é chamado.
@@ -144,3 +158,4 @@ O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manu
 6. O host que já usa `cursor/catalogo-components-v2-850e` não precisa trocar de branch. Este repositório não faz merge nem restart. O código novo só entra no processo quando quem opera o host reiniciar.
 7. No Discord, o dono usa `/configurar` e confirma categoria, cargo, preço e disponível ou esgotado. `/catalogo` publica os seletores. Um período disponível abre o ticket. Em **Formulários**, confirma canais, avaliadores, cargo de aprovação e abertura. `/formularios` publica o painel. Quem já tem o bot no servidor precisa marcar Gerenciar cargos no cargo do bot; este repositório não altera cargos ao vivo.
 8. Para as VMs, preencha no host só `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` e `AZURE_SUBSCRIPTION_ID`. Depois use `/maquinas` para cadastrar e vincular. Sem essas variáveis o menu continua no ar e avisa que a Azure não está configurada.
+9. Para contas do Entra, no mesmo aplicativo: Permissões de API, permissões de aplicativo `User.Read.All`, `User-PasswordProfile.ReadWrite.All` e `UserAuthenticationMethod.ReadWrite.All`, depois Conceder consentimento do administrador. Em Funções e administradores do Entra, atribua Authentication Administrator ou User Administrator ao service principal. Para redefinir administradores, use Privileged Authentication Administrator. Em `/maquinas`, o botão Contas Azure usa essas permissões. Nenhuma variável extra é obrigatória.

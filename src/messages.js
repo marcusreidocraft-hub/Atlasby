@@ -254,6 +254,16 @@ export function describeResult(result) {
       return "Painel de candidatura publicado.";
     case "azure_unconfigured":
       return "Integração Azure não configurada. Nada foi alterado na nuvem.";
+    case "entra_forbidden":
+      return "O aplicativo não tem permissão no Microsoft Graph. Conceda User.Read.All, User-PasswordProfile.ReadWrite.All e UserAuthenticationMethod.ReadWrite.All, com consentimento de administrador, e um papel no Entra que alcance a conta. Nada foi alterado.";
+    case "entra_default_method":
+      return "Esse é o método padrão. Remova os outros métodos de autenticação antes deste.";
+    case "entra_password_weak":
+      return "A senha precisa ter de 12 a 64 caracteres, sem espaço, e misturar letras, número e símbolo.";
+    case "entra_method_invalid":
+      return "Esse método de autenticação não está mais disponível.";
+    case "entra_method_removed":
+      return "Os métodos de autenticação foram removidos. A senha da conta continua válida.";
     case "azure_forbidden":
       return "O service principal precisa de leitura na assinatura ou nos grupos de recursos. Nada foi listado nem alterado.";
     case "azure_timeout":

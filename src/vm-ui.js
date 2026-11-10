@@ -207,7 +207,8 @@ export function renderVmAdmin(state) {
   if (!state.vms.length) lines.push("Nenhuma VM cadastrada.");
   for (const vm of state.vms.slice(0, 10)) {
     const users = state.users(vm.id).map((row) => `<@${row.user_id}>`).join(", ") || "sem cliente";
-    lines.push(`**${vm.display_name}** · ${vm.resource_group}/${vm.vm_name} · ${users}`);
+    const account = state.entra?.(vm.id);
+    lines.push(`**${vm.display_name}** · ${vm.resource_group}/${vm.vm_name} · ${users}${account ? ` · ${account.user_principal_name}` : ""}`);
   }
   const container = new ContainerBuilder()
     .setAccentColor(0x57f287)
@@ -224,8 +225,9 @@ export function renderVmAdmin(state) {
       new ActionRowBuilder().addComponents(
         button("atlasby:vmcfg:validity", "Validade", ButtonStyle.Secondary),
         button("atlasby:vmcfg:secret", "Credenciais", ButtonStyle.Secondary),
-        button("atlasby:vmcfg:log", "Canal de log", ButtonStyle.Secondary),
+button("atlasby:vmcfg:log", "Canal de log", ButtonStyle.Secondary),
         button("atlasby:vmcfg:import", "Importar da Azure", ButtonStyle.Secondary),
+        button("atlasby:vmcfg:entra", "Contas Azure", ButtonStyle.Secondary),
       ),
     );
   return { components: [container], flags: v2Flags({ ephemeral: true }) };

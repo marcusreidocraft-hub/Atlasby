@@ -120,7 +120,7 @@ test("migração 7 preserva ticket e o menu sem Azure não liga nada", async () 
   const reserved = app.store.reserveTicket({ guildId: GUILD, openerId: OWNER, sku: "t4-4", code: "7d", now: 3, id: "33333333-3333-4333-8333-333333333333" });
   app.close();
   const reopened = openDatabase(app.dir);
-  assert.equal(reopened.migrationCount(), 8);
+  assert.equal(reopened.migrationCount(), 9);
   assert.equal(reopened.getTicket(GUILD, reserved.ticket.id).opener_id, OWNER);
   const service = createService({ store: reopened, discord: app.discord, now: () => 1, ttlMs: 60_000, azure: { configured: false }, credentialKey: KEY });
   const menu = service.vms.menu(GUILD, TARGET);
