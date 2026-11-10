@@ -1,5 +1,6 @@
 import { Client, Events, GatewayIntentBits, REST, Routes } from "discord.js";
 import { createDiscordAdapter } from "./adapter.js";
+import { setPanelAccent } from "./ui.js";
 import { commands } from "./commands.js";
 import { isGuildAuthorized } from "./config.js";
 import { durationSpec } from "./plans.js";
@@ -541,6 +542,7 @@ export async function startBot({ config, store }) {
   const intents = [GatewayIntentBits.Guilds];
   if (config.messageContentIntent) intents.push(GatewayIntentBits.MessageContent);
   const client = new Client({ intents });
+  setPanelAccent(config.panelColor);
   const service = createService({
     store,
     discord: createDiscordAdapter(client),
@@ -548,6 +550,15 @@ export async function startBot({ config, store }) {
     messageContentIntent: config.messageContentIntent,
     azure: createAzureClient(config.azure),
     credentialKey: deriveCredentialKey(config.azure),
+    vmDefaults: {
+      location: config.azure.location,
+      vmSize: config.azure.vmSize,
+      osType: config.azure.osType,
+      snapshotId: config.azure.snapshotId,
+      virtualNetwork: config.azure.virtualNetwork,
+      subnet: config.azure.subnet,
+      maxOsDiskGb: config.azure.maxOsDiskGb,
+    },
   });
   client.on(Events.InteractionCreate, (interaction) => {
     handleInteraction(interaction, { config, service }).catch((error) => {

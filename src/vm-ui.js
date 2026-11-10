@@ -15,8 +15,8 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
 } from "discord.js";
-import { confirmationRow, v2Flags } from "./ui.js";
-import { MAX_DISK_GB, powerLabel, validityText } from "./vm-model.js";
+import { confirmationRow, panelAccent, v2Flags } from "./ui.js";
+import { powerLabel, validityText } from "./vm-model.js";
 
 function text(content) {
   return new TextDisplayBuilder().setContent(content.slice(0, 3900));
@@ -53,7 +53,7 @@ export function renderVmMenu(vm, { now, category = "energy", choices = [], azure
     azureConfigured ? "" : "Integração Azure não configurada. Dá para ver o cadastro, mas ligar, desligar e consultar a nuvem ficam indisponíveis.",
   ].filter(Boolean);
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(lines.join("\n\n")))
     .addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small));
   if (choices.length > 1) {
@@ -141,14 +141,14 @@ export function renderPowerConfirm(vm, operation) {
 
 export function renderPendingAzure() {
   return {
-    components: [new ContainerBuilder().setAccentColor(0x5865f2).addTextDisplayComponents(text("Enviando solicitação para o Azure. Acompanhe enquanto a operação é processada."))],
+    components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text("Enviando solicitação para o Azure. Acompanhe enquanto a operação é processada."))],
     flags: v2Flags({ ephemeral: true, update: true }),
   };
 }
 
 export function renderStateNotice(vm, from, to) {
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(`# Estado da VM atualizado\nO estado passou de VM ${from} para VM ${to}.\n\nAtlas • VM ${vm.display_name}`));
   return { components: [container], flags: v2Flags({ ephemeral: true }) };
 }
@@ -164,32 +164,46 @@ export function renderConnect(vm) {
     "4. Se a conexão falhar, use Falar com a equipe. O bot não entra na VM.",
     "Atlas • VM " + vm.display_name,
   ];
-  return { components: [new ContainerBuilder().setAccentColor(0x5865f2).addTextDisplayComponents(text(body.join("\n")))], flags: v2Flags({ ephemeral: true }) };
+  return { components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text(body.join("\n")))], flags: v2Flags({ ephemeral: true }) };
 }
 
 export function renderCredentials(vm, secret) {
   const body = secret
     ? `# Credenciais\nUsuário: ${secret.username}\nSenha: ${secret.password}${secret.pin ? `\nPIN anotado: ${secret.pin}` : ""}\nIsto só aparece para você. Não encaminhe esta mensagem.\n\nAtlas • VM ${vm.display_name}`
     : `# Credenciais\nCredenciais desta VM ainda não foram cadastradas. Peça à administração para configurar.\n\nAtlas • VM ${vm.display_name}`;
-  return { components: [new ContainerBuilder().setAccentColor(0x5865f2).addTextDisplayComponents(text(body))], flags: v2Flags({ ephemeral: true }) };
+  return { components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text(body))], flags: v2Flags({ ephemeral: true }) };
 }
 
-export function renderDiskModal(vm) {
+export function renderDiskModal(vm, maxGb = 2048) {
   return new ModalBuilder()
     .setCustomId(`atlasby:modal:vm:disk:${vm.id}`)
     .setTitle("Aumentar disco do sistema")
     .addLabelComponents(
       new LabelBuilder()
         .setLabel("Novo total em GB")
-        .setDescription(`Maior que o atual e no máximo ${MAX_DISK_GB}. A equipe confirma antes.`)
+        .setDescription(`Maior que o atual e no máximo ${maxGb}. A equipe confirma antes.`)
         .setTextInputComponent(
-          new TextInputBuilder().setCustomId("gb").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(4).setPlaceholder(String(MAX_DISK_GB)),
+          new TextInputBuilder().setCustomId("gb").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(String(maxGb).length).setPlaceholder(String(maxGb)),
         ),
     );
 }
 
 export function renderVmAdmin(state) {
-  const lines = ["# Máquinas", state.azureConfigured ? "A integração Azure está configurada." : "Integração Azure não configurada.", `Auto ligamento global: ${state.autoGlobal ? "ativado" : "desativado"}`];
+  const defaults = state.defaults ?? {};
+  const lines = [
+    "# Máquinas",
+    state.azureConfigured ? "A integração Azure está configurada." : "Integração Azure não configurada.",
+    `Auto ligamento global: ${state.autoGlobal ? "ativado" : "desativado"}`,
+    "**Padrões Azure**",
+    `Local: ${defaults.location || "brazilsouth"}`,
+    `Tamanho: ${defaults.vmSize || "Standard_NC4as_T4_v3"}`,
+    `Sistema: ${defaults.osType || "Windows"}`,
+    `Disco máximo: ${defaults.maxOsDiskGb || 2048} GB`,
+    `Snapshot: ${defaults.snapshotId || "não definido"}`,
+    `VNet: ${defaults.virtualNetwork || "não definida"}`,
+    `Subnet: ${defaults.subnet || "não definida"}`,
+    "Esses padrões só preenchem o cadastro. Nenhuma VM é criada na Azure agora.",
+  ];
   if (!state.vms.length) lines.push("Nenhuma VM cadastrada.");
   for (const vm of state.vms.slice(0, 10)) {
     const users = state.users(vm.id).map((row) => `<@${row.user_id}>`).join(", ") || "sem cliente";
@@ -248,7 +262,12 @@ function optional(customId, placeholder, max = 40) {
   return new TextInputBuilder().setCustomId(customId).setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(max).setPlaceholder(placeholder);
 }
 
-export function renderVmModal() {
+function withValue(builder, value) {
+  if (value) builder.setValue(String(value).slice(0, 40));
+  return builder;
+}
+
+export function renderVmModal(defaults = {}) {
   return new ModalBuilder()
     .setCustomId("atlasby:modal:vm:create")
     .setTitle("Cadastrar VM")
@@ -256,20 +275,23 @@ export function renderVmModal() {
       new LabelBuilder().setLabel("Nome visível").setTextInputComponent(new TextInputBuilder().setCustomId("nome").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(40)),
       new LabelBuilder().setLabel("Resource group").setTextInputComponent(new TextInputBuilder().setCustomId("grupo").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(90)),
       new LabelBuilder().setLabel("Nome da VM no Azure").setTextInputComponent(new TextInputBuilder().setCustomId("vm").setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(64)),
-      new LabelBuilder().setLabel("Sistema").setDescription("Opcional. Vazio não inventa Windows.").setTextInputComponent(optional("sistema", "Windows", 24)),
-      new LabelBuilder().setLabel("Disco atual em GB").setDescription("Opcional.").setTextInputComponent(optional("disco", "128", 4)),
+      new LabelBuilder().setLabel("Sistema").setDescription("Sugestão editável. Vazio usa o padrão.").setTextInputComponent(withValue(optional("sistema", defaults.osType || "Windows", 24), defaults.osType)),
+      new LabelBuilder().setLabel("Local").setDescription("Sugestão editável.").setTextInputComponent(withValue(optional("local", defaults.location || "brazilsouth", 32), defaults.location)),
     );
 }
 
-export function renderVmDetailsModal(vm) {
+export function renderVmDetailsModal(vm, defaults = {}) {
+  const size = vm.size_label || defaults.vmSize || "Standard_NC4as_T4_v3";
+  const place = vm.location || defaults.location || "brazilsouth";
   return new ModalBuilder()
     .setCustomId(`atlasby:modal:vm:details:${vm.id}`)
     .setTitle("Detalhes da VM")
     .addLabelComponents(
-      new LabelBuilder().setLabel("Tamanho Azure").setTextInputComponent(optional("tamanho", "Standard_NC4as_T4_v3", 40)),
-      new LabelBuilder().setLabel("CPU").setTextInputComponent(optional("cpu", "4", 20)),
-      new LabelBuilder().setLabel("RAM").setTextInputComponent(optional("ram", "28 GB", 20)),
-      new LabelBuilder().setLabel("GPU").setTextInputComponent(optional("gpu", "Tesla T4", 40)),
+      new LabelBuilder().setLabel("Tamanho Azure").setTextInputComponent(withValue(optional("tamanho", size, 64), size)),
+      new LabelBuilder().setLabel("Local").setTextInputComponent(withValue(optional("local", place, 32), place)),
+      new LabelBuilder().setLabel("CPU").setTextInputComponent(optional("cpu", vm.cpu_label || "4", 20)),
+      new LabelBuilder().setLabel("RAM").setTextInputComponent(optional("ram", vm.ram_label || "28 GB", 20)),
+      new LabelBuilder().setLabel("GPU").setTextInputComponent(optional("gpu", vm.gpu_label || "Tesla T4", 40)),
     );
 }
 
@@ -328,7 +350,7 @@ export function renderUnlinkPicker(vm, users) {
 
 export function renderVmConfirm(summary, confirmationId) {
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(summary))
     .addActionRowComponents(confirmationRow(confirmationId));
   return { components: [container], flags: v2Flags({ ephemeral: true }) };

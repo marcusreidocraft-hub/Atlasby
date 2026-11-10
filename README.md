@@ -110,7 +110,13 @@ O menu mostra estado, IPs, tamanho, CPU, RAM, GPU, disco e validade. O que não 
 
 Credenciais e PIN só aparecem na resposta privada do cliente, e só se o administrador gravou. A senha fica cifrada no SQLite com `AZURE_CREDENTIALS_KEY` ou, na falta dela, com o segredo do service principal. Trocar essa chave torna o texto antigo ilegível. Liberar PIN não entra na VM: registra o pedido para a equipe. Testar conexão olha o estado, o IP público e a porta TCP 47989. IPs privados não são consultados.
 
-Aumentar o disco não chama a Azure no clique do cliente. O pedido fica pendente e a equipe aprova em `/maquinas`. O tamanho novo precisa ser maior, até 2048 GB, e a VM precisa estar desalocada. O disco nunca diminui.
+Aumentar o disco não chama a Azure no clique do cliente. O pedido fica pendente e a equipe aprova em `/maquinas`. O tamanho novo precisa ser maior, até `AZURE_MAX_OS_DISK_GB` (2048 no exemplo), e a VM precisa estar desalocada. O disco nunca diminui.
+
+`/maquinas` mostra o bloco **Padrões Azure**: local, tamanho, sistema, disco máximo, snapshot, VNet e subnet. Esses valores só sugerem o cadastro. O formulário de nova VM já traz local, sistema e tamanho editáveis. Snapshot, rede e subnet ficam na configuração para uma criação futura a partir de snapshot. Este código não cria VM na Azure.
+
+`PANEL_COLOR` é a cor dos containers quando a aparência do servidor não define outra. Aceita hex com ou sem `#`. Valor inválido volta para `5865F2`.
+
+`OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY` e `AI_ASSISTANT_ENABLED` ficam reservados para um assistente futuro. Com `AI_ASSISTANT_ENABLED=false` nada disso é chamado.
 
 Auto ligamento fica no menu de Energia e também pode ser pausado para o servidor inteiro. A cada minuto, se a Azure estiver configurada, o bot lê o instance view das VMs Spot marcadas para continuar ligadas. Se o estado desejado é `running` e a VM aparece `deallocated`, isso é tratado como eviction. Desligar pelo bot grava a intenção `stopped` e não religa. Falha de capacidade Spot espera 1, 2, 4, 8 e no máximo 15 minutos, até 6 tentativas, e depois descansa 30 minutos. Scheduled Events da Azure só existem de dentro da VM, então a distinção é feita por esse estado e pelo texto de eviction/preempt no instance view, não por um agente.
 

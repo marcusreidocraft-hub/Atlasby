@@ -499,6 +499,10 @@ const MIGRATIONS = [
       ALTER TABLE confirmations_v7 RENAME TO confirmations;
     `,
   },
+  {
+    version: 8,
+    sql: `ALTER TABLE azure_vms ADD COLUMN location TEXT;`,
+  },
 ];
 
 function migrate(db) {
@@ -1400,16 +1404,16 @@ function createStore(db, file, options = {}) {
         `INSERT INTO azure_vms (
            id, guild_id, display_name, resource_group, vm_name, os_label, size_label, cpu_label, ram_label, gpu_label,
            disk_gb, public_ip, private_ip, validity_until, block_when_expired, auto_start, spot, desired_power,
-           created_at, updated_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)`,
+           location, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?, ?)`,
       ).run(
         row.id, row.guildId, row.displayName, row.resourceGroup, row.vmName, row.osLabel, row.sizeLabel, row.cpuLabel,
         row.ramLabel, row.gpuLabel, row.diskGb, row.publicIp, row.privateIp, row.validityUntil,
-        row.blockWhenExpired ? 1 : 0, row.autoStart ? 1 : 0, row.spot ? 1 : 0, row.now, row.now,
+        row.blockWhenExpired ? 1 : 0, row.autoStart ? 1 : 0, row.spot ? 1 : 0, row.location ?? null, row.now, row.now,
       );
     },
     updateVm(guildId, id, patch, now) {
-      const allowed = ["display_name", "os_label", "size_label", "cpu_label", "ram_label", "gpu_label", "disk_gb", "public_ip", "private_ip", "validity_until", "block_when_expired", "auto_start", "spot", "desired_power", "last_power", "last_power_at", "credentials_cipher"];
+      const allowed = ["display_name", "os_label", "size_label", "cpu_label", "ram_label", "gpu_label", "disk_gb", "public_ip", "private_ip", "validity_until", "location", "block_when_expired", "auto_start", "spot", "desired_power", "last_power", "last_power_at", "credentials_cipher"];
       for (const key of allowed) {
         if (!(key in patch)) continue;
         let value = patch[key];

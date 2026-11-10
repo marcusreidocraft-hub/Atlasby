@@ -29,6 +29,17 @@ const TOP_LEVEL = new Set([1, 9, 10, 12, 13, 14, 17]);
 const CONTAINER_CHILDREN = new Set([1, 9, 10, 12, 13, 14]);
 const SELECT_TYPES = new Set([3, 5, 6, 7, 8]);
 
+const DEFAULT_ACCENT = 0x5865f2;
+let panelAccentValue = DEFAULT_ACCENT;
+
+export function setPanelAccent(value) {
+  panelAccentValue = Number.isInteger(value) && value >= 0 && value <= 0xffffff ? value : DEFAULT_ACCENT;
+}
+
+export function panelAccent(style) {
+  return Number.isInteger(style?.accent_color) ? style.accent_color : panelAccentValue;
+}
+
 export function v2Flags({ ephemeral = true, update = false } = {}) {
   if (update) return V2_FLAG;
   return ephemeral ? V2_FLAG | MessageFlags.Ephemeral : V2_FLAG;
@@ -45,7 +56,7 @@ function text(content) {
   return new TextDisplayBuilder().setContent(content);
 }
 
-export function renderNotice(content, { ephemeral = true, update = false, row = null, accent = 0x5865f2 } = {}) {
+export function renderNotice(content, { ephemeral = true, update = false, row = null, accent = panelAccent() } = {}) {
   const container = new ContainerBuilder().setAccentColor(accent).addTextDisplayComponents(text(content));
   if (row) {
     container.addSeparatorComponents(new SeparatorBuilder().setDivider(true).setSpacing(SeparatorSpacingSize.Small)).addActionRowComponents(row);
@@ -143,7 +154,7 @@ export function renderTicket(ticket, { avatarUrl, staffText, style = null }) {
     )
     .setThumbnailAccessory(new ThumbnailBuilder({ description: "Avatar de quem abriu o ticket" }).setURL(avatarUrl));
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addSectionComponents(section);
   if (style?.ticket_banner_url) {
     container.addMediaGalleryComponents(
@@ -319,7 +330,7 @@ export function infoModal() {
 
 export function renderStylePreview(style, confirmationId) {
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(
       text(`# ${style.catalogEmoji ? `${style.catalogEmoji} ` : ""}${style.catalogHeading || "Atlas"}\nPrévia. Nada foi gravado até confirmar.`),
     );

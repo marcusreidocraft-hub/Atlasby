@@ -291,7 +291,7 @@ export function describeResult(result) {
     case "vm_disk_requested":
       return "Pedido de aumento registrado. A equipe confirma antes. O disco nunca diminui, e a VM precisa estar desalocada.";
     case "disk_invalid":
-      return "Informe um total inteiro entre 1 e 2048 GB. Nada foi alterado.";
+      return `Informe um total inteiro entre 1 e ${result.maxDisk ?? "o limite de AZURE_MAX_OS_DISK_GB"} GB. Nada foi alterado.`;
     case "disk_not_increase":
       return "O novo tamanho precisa ser maior que o atual. O disco não diminui.";
     case "disk_needs_deallocated":

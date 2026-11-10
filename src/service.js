@@ -56,7 +56,7 @@ function readPayload(row) {
   }
 }
 
-export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), azure = null, credentialKey = null }) {
+export function createService({ store, discord, now = () => Date.now(), ttlMs, messageContentIntent = false, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), azure = null, credentialKey = null, vmDefaults = null }) {
   if (!Number.isInteger(ttlMs) || ttlMs < 15_000 || ttlMs > 300_000) throw new Error("ttlMs inválido.");
   const catalogChains = new Map();
   async function refreshCatalog(guildId) {
@@ -552,6 +552,7 @@ export function createService({ store, discord, now = () => Date.now(), ttlMs, m
     assertAdmin,
     azure: azure ?? createAzureClient({ configured: false }),
     credentialKey,
+    defaults: vmDefaults ?? undefined,
   });
 
   return {

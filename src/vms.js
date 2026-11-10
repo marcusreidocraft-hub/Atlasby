@@ -45,7 +45,18 @@ function done(action, code, extra = {}) {
   return { ok: true, action, code, confirmed: true, punishmentApplied: false, logDelivered: false, auditRecorded: false, ...extra };
 }
 
-export function createVmController({ store, discord, now, openConfirmation, deny, assertAdmin, azure, credentialKey, probe = probeTcp }) {
+const EMPTY_DEFAULTS = {
+  location: "brazilsouth",
+  vmSize: "Standard_NC4as_T4_v3",
+  osType: "Windows",
+  snapshotId: "",
+  virtualNetwork: "",
+  subnet: "",
+  maxOsDiskGb: 2048,
+};
+
+export function createVmController({ store, discord, now, openConfirmation, deny, assertAdmin, azure, credentialKey, probe = probeTcp, defaults = EMPTY_DEFAULTS }) {
+  const azureDefaults = { ...EMPTY_DEFAULTS, ...defaults };
   function owned(guildId, userId, vmId) {
     const vm = store.getVm(guildId, vmId);
     if (!vm || !store.ownsVm(guildId, vmId, userId)) return null;
@@ -223,12 +234,12 @@ export function createVmController({ store, discord, now, openConfirmation, deny
     diskModal(guildId, userId, vmId) {
       const vm = owned(guildId, userId, vmId);
       if (!vm) return deny("request_disk", { code: "vm_missing" });
-      return { ok: true, modal: renderDiskModal(vm) };
+      return { ok: true, modal: renderDiskModal(vm, azureDefaults.maxOsDiskGb) };
     },
     async requestDisk({ guildId, userId, vmId, raw }) {
       const vm = owned(guildId, userId, vmId);
       if (!vm) return deny("request_disk", { code: "vm_missing" });
-      const valid = validateDiskIncrease(vm.disk_gb, Number(String(raw).trim()));
+      const valid = validateDiskIncrease(vm.disk_gb, Number(String(raw).trim()), azureDefaults.maxOsDiskGb);
       if (!valid.ok) return deny("request_disk", valid);
       return openConfirmation({
         action: "request_disk",
@@ -293,6 +304,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
           vms,
           azureConfigured: Boolean(azure?.configured),
           autoGlobal: settings.auto_start_enabled,
+          defaults: azureDefaults,
           users: (vmId) => store.listVmUsers(guildId, vmId),
         }),
       };
@@ -308,12 +320,12 @@ export function createVmController({ store, discord, now, openConfirmation, deny
       return { ok: true, view: renderVmPicker(`atlasby:vmcfg:link:${userId}`, vms, `Vincular <@${userId}> a uma VM.`), update: true };
     },
     createModal() {
-      return renderVmModal();
+      return renderVmModal(azureDefaults);
     },
     detailsModal(guildId, vmId) {
       const vm = store.getVm(guildId, vmId);
       if (!vm) return deny("upsert_vm", { code: "vm_missing" });
-      return { ok: true, modal: renderVmDetailsModal(vm) };
+      return { ok: true, modal: renderVmDetailsModal(vm, azureDefaults) };
     },
     secretModal(guildId, vmId) {
       const vm = store.getVm(guildId, vmId);
@@ -332,24 +344,33 @@ export function createVmController({ store, discord, now, openConfirmation, deny
       if (!vms.length) return deny("upsert_vm", { code: "vm_none" });
       return { ok: true, view: renderVmPicker(`atlasby:vmcfg:choose:${purpose}`, vms, "Escolha a VM."), update: true };
     },
-    async requestCreate({ guildId, actorId, displayName, resourceGroup, vmName, osLabel, diskGb, sizeLabel }) {
+    async requestCreate({ guildId, actorId, displayName, resourceGroup, vmName, osLabel, diskGb, sizeLabel, location }) {
       const auth = await assertAdmin(guildId, actorId);
       if (!auth.ok) return { ...auth, action: "upsert_vm" };
       const valid = validateVmIdentity({ displayName, resourceGroup, vmName });
       if (!valid.ok) return deny("upsert_vm", valid);
       const disk = diskGb == null || diskGb === "" ? null : Number(diskGb);
-      if (disk != null && (!Number.isInteger(disk) || disk < 1 || disk > 2048)) return deny("upsert_vm", { code: "disk_invalid" });
+      if (disk != null && (!Number.isInteger(disk) || disk < 1 || disk > azureDefaults.maxOsDiskGb)) {
+        return deny("upsert_vm", { code: "disk_invalid", maxDisk: azureDefaults.maxOsDiskGb });
+      }
       return openConfirmation({
         action: "upsert_vm",
         guildId,
         actorId,
         targetId: `${valid.resourceGroup}:${valid.vmName}`.slice(0, 80),
         reason: "Cadastrar VM",
-        payload: { ...valid, osLabel: osLabel || null, diskGb: disk, sizeLabel: sizeLabel || null, spot: true },
-        summary: `Cadastrar ${valid.displayName} (${valid.resourceGroup}/${valid.vmName}).`,
+        payload: {
+          ...valid,
+          osLabel: osLabel || azureDefaults.osType,
+          diskGb: disk,
+          sizeLabel: sizeLabel || azureDefaults.vmSize,
+          location: location || azureDefaults.location,
+          spot: true,
+        },
+        summary: `Cadastrar ${valid.displayName} (${valid.resourceGroup}/${valid.vmName}) em ${location || azureDefaults.location}, tamanho ${sizeLabel || azureDefaults.vmSize}. Nenhuma VM é criada na Azure agora.`,
       });
     },
-    async requestDetails({ guildId, actorId, vmId, sizeLabel, cpuLabel, ramLabel, gpuLabel }) {
+    async requestDetails({ guildId, actorId, vmId, sizeLabel, cpuLabel, ramLabel, gpuLabel, location }) {
       const auth = await assertAdmin(guildId, actorId);
       if (!auth.ok) return { ...auth, action: "upsert_vm" };
       if (!store.getVm(guildId, vmId)) return deny("upsert_vm", { code: "vm_missing" });
@@ -359,7 +380,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
         actorId,
         targetId: vmId,
         reason: "Editar detalhes da VM",
-        payload: { vmId, sizeLabel: sizeLabel || null, cpuLabel: cpuLabel || null, ramLabel: ramLabel || null, gpuLabel: gpuLabel || null, details: true },
+        payload: { vmId, sizeLabel: sizeLabel || null, cpuLabel: cpuLabel || null, ramLabel: ramLabel || null, gpuLabel: gpuLabel || null, location: location || null, details: true },
         summary: "Atualizar tamanho, CPU, RAM e GPU informados. Nada disso é inventado pelo bot.",
       });
     },
@@ -540,6 +561,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
           cpu_label: payload.cpuLabel,
           ram_label: payload.ramLabel,
           gpu_label: payload.gpuLabel,
+          location: payload.location,
         }, ts);
         return done(row.action, "config_saved");
       }
@@ -557,6 +579,7 @@ export function createVmController({ store, discord, now, openConfirmation, deny
             ramLabel: null,
             gpuLabel: null,
             diskGb: payload.diskGb,
+            location: payload.location ?? null,
             publicIp: null,
             privateIp: null,
             validityUntil: null,

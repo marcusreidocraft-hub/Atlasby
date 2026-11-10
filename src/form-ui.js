@@ -19,7 +19,7 @@ import {
   TextInputStyle,
   ThumbnailBuilder,
 } from "discord.js";
-import { confirmationRow, v2Flags } from "./ui.js";
+import { confirmationRow, panelAccent, v2Flags } from "./ui.js";
 import { PRIVACY_LINE, STEP_SIZE } from "./forms-model.js";
 
 function text(content) {
@@ -35,7 +35,7 @@ export function renderApplicationPanel(form) {
   const heading = `${form?.emoji ? `${form.emoji} ` : ""}${form?.heading || "Atlas"}`;
   const intro = form?.intro || "Candidate-se à equipe. O formulário é privado.";
   const state = form?.open ? "Inscrições abertas." : "Inscrições fechadas.";
-  const container = new ContainerBuilder().setAccentColor(0x5865f2);
+  const container = new ContainerBuilder().setAccentColor(panelAccent());
   const body = `# ${heading}\n${intro}\n${PRIVACY_LINE}\n${state}`;
   if (form?.banner_url) {
     container.addSectionComponents(
@@ -278,7 +278,7 @@ export function renderDraftReview(application, questions) {
     return `**${question.prompt}**\n${value}`;
   });
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(["# Revise antes de enviar", PRIVACY_LINE, ...lines].join("\n\n").slice(0, 3900)))
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -292,7 +292,7 @@ export function renderDraftReview(application, questions) {
 
 export function renderStepSaved(application, step, total) {
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(`Etapa ${step} de ${total} salva neste servidor. Você pode continuar agora ou depois.`))
     .addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -306,7 +306,7 @@ export function renderStepSaved(application, step, total) {
 export function renderStatus(application) {
   if (!application) {
     return {
-      components: [new ContainerBuilder().setAccentColor(0x5865f2).addTextDisplayComponents(text("Você não tem candidatura neste servidor."))],
+      components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text("Você não tem candidatura neste servidor."))],
       flags: v2Flags({ ephemeral: true }),
     };
   }
@@ -319,7 +319,7 @@ export function renderStatus(application) {
     rejected: `Recusada.${application.decision_reason ? ` Motivo: ${application.decision_reason}` : ""}`,
   };
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(`# Minha candidatura\n${labels[application.status] || "Estado desconhecido."}\n${PRIVACY_LINE}`));
   const row = new ActionRowBuilder();
   if (application.status === "draft") {
@@ -355,7 +355,7 @@ export function renderReviewPanel(application, page) {
   const section = new SectionBuilder()
     .addTextDisplayComponents(text(body))
     .setThumbnailAccessory(new ThumbnailBuilder({ description: "Avatar de quem se candidatou" }).setURL(application.avatar_url));
-  const container = new ContainerBuilder().setAccentColor(0x5865f2).addSectionComponents(section);
+  const container = new ContainerBuilder().setAccentColor(panelAccent()).addSectionComponents(section);
   if (pages.length > 1) {
     container.addActionRowComponents(
       new ActionRowBuilder().addComponents(
@@ -401,14 +401,14 @@ function pack(snapshot) {
 
 export function renderPrivateDecision(content) {
   return {
-    components: [new ContainerBuilder().setAccentColor(0x5865f2).addTextDisplayComponents(text(content))],
+    components: [new ContainerBuilder().setAccentColor(panelAccent()).addTextDisplayComponents(text(content))],
     flags: v2Flags({ ephemeral: false }),
   };
 }
 
 export function renderConfirm(summary, confirmationId) {
   const container = new ContainerBuilder()
-    .setAccentColor(0x5865f2)
+    .setAccentColor(panelAccent())
     .addTextDisplayComponents(text(summary))
     .addActionRowComponents(confirmationRow(confirmationId));
   return { components: [container], flags: v2Flags({ ephemeral: true }) };

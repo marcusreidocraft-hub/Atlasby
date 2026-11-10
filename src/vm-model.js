@@ -88,9 +88,10 @@ export function validateVmIdentity({ displayName, resourceGroup, vmName }) {
   return { ok: true, displayName: name, resourceGroup: group, vmName: vm };
 }
 
-export function validateDiskIncrease(current, requested) {
+export function validateDiskIncrease(current, requested, maxGb = MAX_DISK_GB) {
+  const limit = Number.isInteger(maxGb) && maxGb >= 1 ? maxGb : MAX_DISK_GB;
   const next = Number(requested);
-  if (!Number.isInteger(next) || next < 1 || next > MAX_DISK_GB) return { ok: false, code: "disk_invalid" };
+  if (!Number.isInteger(next) || next < 1 || next > limit) return { ok: false, code: "disk_invalid", maxDisk: limit };
   if (current != null && next <= current) return { ok: false, code: "disk_not_increase" };
   return { ok: true, requestedGb: next };
 }

@@ -157,7 +157,7 @@ export async function routeVmModal(interaction, vms) {
       resourceGroup: interaction.fields.getTextInputValue("grupo"),
       vmName: interaction.fields.getTextInputValue("vm"),
       osLabel: read("sistema"),
-      diskGb: read("disco"),
+      location: read("local"),
     }));
     return true;
   }
@@ -168,6 +168,7 @@ export async function routeVmModal(interaction, vms) {
       actorId: interaction.user.id,
       vmId: details[1],
       sizeLabel: read("tamanho"),
+      location: read("local"),
       cpuLabel: read("cpu"),
       ramLabel: read("ram"),
       gpuLabel: read("gpu"),
