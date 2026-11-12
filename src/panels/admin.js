@@ -12,6 +12,20 @@ import { vmOptionValue } from "../services/provider.js";
 import { GPUS, PLAN_LABEL, formatDate } from "../services/plans.js";
 import { container, heading, mark, press, text } from "./ui.js";
 
+function installButtons(targets) {
+  const chosen = targets.filter((item) => item.clientId && item.infraId).slice(0, 10);
+  const rows = [];
+  for (let index = 0; index < chosen.length; index += 5) {
+    const slice = chosen.slice(index, index + 5);
+    rows.push(new ActionRowBuilder().addComponents(slice.map((item) => press(
+      `atlas:admin:agent:${item.clientId}`,
+      chosen.length === 1 ? "Instalar/Reinstalar agente" : `Instalar/Reinstalar · ${item.label}`,
+      ButtonStyle.Primary,
+    ))));
+  }
+  return rows;
+}
+
 function clip(value, max) {
   return String(value ?? "").trim().slice(0, max);
 }
@@ -239,6 +253,9 @@ export function renderAzureVmList({ accent, rows, page, pages }) {
   ];
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(lines.join("\n")));
+    for (const row of installButtons(rows.map((vm) => ({ clientId: vm.clientId, infraId: vm.clientId ? vm.id : "", label: vm.name })))) {
+      root.addActionRowComponents(row);
+    }
     if (pages > 1) {
       root.addActionRowComponents(new ActionRowBuilder().addComponents(
         press(`atlas:admin:azurepage:${page}:prev`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
@@ -262,6 +279,9 @@ export function renderClientList(rows, { accent, page, pages, title, emojis = {}
   const lines = [heading(emojis, "member", title), rows.length ? rows.map((row) => `**${row.clientName}** · ${row.machineName} · <@${row.userId}> · ${PLAN_LABEL[row.planType] || row.planType}${row.agentLabel ? ` · ${row.agentLabel}` : ""}`).join("\n") : "Nenhum cliente encontrado."];
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(lines.join("\n")));
+    for (const row of installButtons(rows.map((item) => ({ clientId: item.id, infraId: item.infraId, label: item.machineName })))) {
+      root.addActionRowComponents(row);
+    }
     if (pages > 1) {
       root.addActionRowComponents(new ActionRowBuilder().addComponents(
         press(`atlas:admin:list:prev:${page}`, "Anterior", ButtonStyle.Secondary, emojis.arrow).setDisabled(page <= 0),

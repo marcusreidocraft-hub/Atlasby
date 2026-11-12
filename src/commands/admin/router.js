@@ -256,7 +256,17 @@ export async function routeAdminComponent(interaction, app) {
   const save = new RegExp(`^atlas:admin:save:${UUID}$`).exec(id);
   if (save) {
     await ack(interaction, true);
-    await present(interaction, await app.admin.save(guildId, actor, save[1]));
+    await present(interaction, await app.admin.save(guildId, actor, save[1], {
+      onProgress: (view) => present(interaction, view),
+    }));
+    return true;
+  }
+  const agentInstall = new RegExp(`^atlas:admin:agent:${UUID}$`).exec(id);
+  if (agentInstall) {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.installAgent(guildId, actor, agentInstall[1], {
+      onProgress: (view) => present(interaction, view),
+    }));
     return true;
   }
   const renew = new RegExp(`^atlas:admin:renew:save:${UUID}$`).exec(id);

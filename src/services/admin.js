@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { buildAgentInstallScript } from "./agent-install.js";
 import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, specsModal, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
@@ -223,7 +224,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra, a
         const links = new Map(repo.listInfraLinks(guildId).map((link) => [link.infraId, link]));
         const rows = vms.map((vm) => {
           const link = links.get(vm.id);
-          return { ...vm, clientName: link?.clientName || "", agentLabel: link && agents ? agents.statusFor(link.clientId) : "" };
+          return { ...vm, clientId: link?.clientId || "", clientName: link?.clientName || "", agentLabel: link && agents ? agents.statusFor(link.clientId) : "" };
         });
         const pages = Math.max(1, Math.ceil(rows.length / size));
         const safePage = Math.min(Math.max(0, page), pages - 1);
@@ -251,7 +252,43 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra, a
       storeDraft(draft);
       return { payload: renderReview(repo.getDraft(draft.id), config.panelColor, emojis.pack(guildId)) };
     },
-    async save(guildId, actor, draftId) {
+    async installSummary(guildId, clientId, options = {}) {
+      const client = repo.getById(guildId, clientId);
+      if (!client) return "Este cliente não está cadastrado. O agente não foi instalado.";
+      if (!client.infraId) return `A máquina ${client.machineName} não tem Resource ID. O agente não foi instalado.`;
+      if (!config.publicBotUrl) return "Defina PUBLIC_BOT_URL com o endereço público do bot, por exemplo http://IP:PORT. O agente não foi instalado.";
+      if (!infra?.configured || typeof infra.runCommand !== "function") return "A Azure não está configurada. O agente não foi instalado.";
+      if (options.onProgress) await options.onProgress(notice("Instalando o agente na VM. Isso pode levar um minuto.", config.panelColor));
+      const token = randomBytes(32).toString("base64url");
+      let script = "";
+      try {
+        script = buildAgentInstallScript({ botUrl: config.publicBotUrl, token, installSunshine: config.installSunshine });
+      } catch (error) {
+        logInteractionError(error);
+        return "O arquivo do agente não está neste processo. O agente não foi instalado.";
+      }
+      try {
+        const result = await infra.runCommand(client.infraId, script);
+        if (result?.reason === "stopped" || result?.status === "desligada") {
+          return `A VM de ${client.machineName} está desligada. Ligue a máquina e use Instalar/Reinstalar agente.`;
+        }
+        if (result?.mode !== "azure") return "A Azure não está configurada. O agente não foi instalado.";
+        if (result.reason) return `A Azure não concluiu a instalação do agente em ${client.machineName}. O token novo não foi gravado.`;
+      } catch (error) {
+        logInteractionError(error);
+        return `A Azure não concluiu a instalação do agente em ${client.machineName}. O token novo não foi gravado.`;
+      }
+      agents.rememberToken(guildId, client, token);
+      const status = await agents.waitForSeen(client.id, options.seenWaitMs ?? 20_000);
+      await logged(options.actor, "agente_instalado", client.userId, client.machineName, `Agente instalado em ${client.machineName}.`, [token]);
+      return `Agente instalado em ${client.machineName}. Situação: ${status}. Usuário e senha do Sunshine ficam somente na VM.`;
+    },
+    async installAgent(guildId, actor, clientId, options = {}) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      return notice(await this.installSummary(guildId, clientId, { ...options, actor }), config.panelColor);
+    },
+    async save(guildId, actor, draftId, options = {}) {
       const blocked = gate(actor);
       if (blocked) return blocked;
       const draft = requireDraft(guildId, actor.id, draftId);
@@ -283,7 +320,9 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra, a
       else repo.insertClient(row);
       repo.deleteDraft(draft.id);
       await logged(actor, draft.kind === "edit" ? "editar_cliente" : "adicionar_cliente", data.targetUserId, data.machineName, `Cliente salvo: ${data.machineName}.`);
-      return notice(`Cliente salvo: ${data.clientName} · ${data.machineName}.`, config.panelColor);
+      let message = `Cliente salvo: ${data.clientName} · ${data.machineName}.`;
+      if (row.infraId) message = `${message}\n${await this.installSummary(guildId, row.id, { ...options, actor })}`;
+      return notice(message, config.panelColor);
     },
     cancel(guildId, actor, draftId) {
       const draft = requireDraft(guildId, actor.id, draftId);
