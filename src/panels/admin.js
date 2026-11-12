@@ -8,6 +8,7 @@ import {
   TextInputStyle,
   UserSelectMenuBuilder,
 } from "discord.js";
+import { vmOptionValue } from "../services/provider.js";
 import { GPUS, PLAN_LABEL, formatDate } from "../services/plans.js";
 import { container, heading, mark, press, text } from "./ui.js";
 
@@ -185,6 +186,61 @@ export function formatModal(confirmationId) {
   return modal(`atlas:modal:format:${confirmationId}`, "Confirmar formatação", [
     input("frase", "Nome da máquina ou CONFIRMAR", "A frase precisa ser exata, sem diferenciar maiúsculas.", TextInputStyle.Short, { min: 2, max: 48 }),
   ]);
+}
+
+const VM_PAGE = 24;
+
+export function renderVmPicker({ accent, draftId, vms, page, notice: note, chosen }) {
+  const pages = Math.max(1, Math.ceil(vms.length / VM_PAGE));
+  const safePage = Math.min(Math.max(0, page), pages - 1);
+  const slice = vms.slice(safePage * VM_PAGE, safePage * VM_PAGE + VM_PAGE);
+  const lines = [
+    "## Escolha a VM",
+    "A lista é da assinatura Azure. VMs já vinculadas a outro cliente não aparecem.",
+    chosen || "Nenhuma VM escolhida ainda. O Resource ID manual continua opcional no próximo passo.",
+  ];
+  if (note) lines.push(note);
+  const options = [{ label: "Nenhuma VM agora", value: "none", description: "Segue sem Resource ID, ou cole um no próximo passo." }];
+  for (const vm of slice) {
+    options.push({
+      label: vm.name.slice(0, 100),
+      value: vmOptionValue(vm.id),
+      description: `${vm.resourceGroup} · ${vm.size || "tamanho não informado"} · ${vm.location || "região não informada"}${vm.own ? " · deste cliente" : ""}`.slice(0, 100),
+    });
+  }
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text(lines.join("\n")));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId(`atlas:admin:vmpick:${draftId}`).setPlaceholder("Escolha a VM").setMinValues(1).setMaxValues(1).addOptions(options),
+    ));
+    if (pages > 1) {
+      root.addActionRowComponents(new ActionRowBuilder().addComponents(
+        press(`atlas:admin:vmpage:${safePage}:prev:${draftId}`, "Anterior", ButtonStyle.Secondary).setDisabled(safePage === 0),
+        press(`atlas:admin:vmpage:${safePage}:next:${draftId}`, "Próxima", ButtonStyle.Secondary).setDisabled(safePage + 1 >= pages),
+      ));
+    }
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press(`atlas:admin:vmdates:${draftId}`, "Continuar para as datas", ButtonStyle.Primary),
+    ));
+  });
+}
+
+export function renderAzureVmList({ accent, rows, page, pages }) {
+  const lines = [
+    `## VMs da assinatura · página ${page + 1} de ${pages}`,
+    rows.length
+      ? rows.map((vm) => `**${vm.name}** · ${vm.resourceGroup} · ${vm.size || "tamanho não informado"} · ${vm.location || "região não informada"} · ${vm.power || "estado não consultado"} · ${vm.clientName || "sem cliente"}`).join("\n")
+      : "A assinatura não devolveu máquinas virtuais.",
+  ];
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text(lines.join("\n")));
+    if (pages > 1) {
+      root.addActionRowComponents(new ActionRowBuilder().addComponents(
+        press(`atlas:admin:azurepage:${page}:prev`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
+        press(`atlas:admin:azurepage:${page}:next`, "Próxima", ButtonStyle.Secondary).setDisabled(page + 1 >= pages),
+      ));
+    }
+  });
 }
 
 export function renderRemoveConfirm(client, accent, emojis = {}) {

@@ -79,6 +79,10 @@ export async function routeCommand(interaction, app) {
     await present(interaction, app.admin.list(interaction.guildId, actor, 0));
     return;
   }
+  if (name === "listar-vms") {
+    await present(interaction, await app.admin.listAzureVms(interaction.guildId, actor, 0));
+    return;
+  }
   if (name === "renovar-plano") {
     const start = interaction.options.getString("inicio") || "";
     const expiry = interaction.options.getString("vencimento") || "";
@@ -150,6 +154,11 @@ export async function routeAdminComponent(interaction, app) {
   }
   const draftButton = new RegExp(`^atlas:admin:draft:([23]):${UUID}$`).exec(id);
   if (draftButton) {
+    if (draftButton[1] === "3") {
+      await ack(interaction, true);
+      await present(interaction, await app.admin.vmPicker(guildId, actor, draftButton[2], 0));
+      return true;
+    }
     const opened = app.admin.continueModal(guildId, actor, draftButton[2], draftButton[1]);
     if (opened.error) {
       await ack(interaction, true);
@@ -196,6 +205,37 @@ export async function routeAdminComponent(interaction, app) {
       });
     }
     await present(interaction, result.payload);
+    return true;
+  }
+  const vmPick = new RegExp(`^atlas:admin:vmpick:${UUID}$`).exec(id);
+  if (vmPick) {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.pickVm(guildId, actor, vmPick[1], interaction.values?.[0] ?? ""));
+    return true;
+  }
+  const vmPage = new RegExp(`^atlas:admin:vmpage:(\\d+):(prev|next):${UUID}$`).exec(id);
+  if (vmPage) {
+    await ack(interaction, true);
+    const next = vmPage[2] === "next" ? Number(vmPage[1]) + 1 : Number(vmPage[1]) - 1;
+    await present(interaction, await app.admin.vmPicker(guildId, actor, vmPage[3], next));
+    return true;
+  }
+  const vmDates = new RegExp(`^atlas:admin:vmdates:${UUID}$`).exec(id);
+  if (vmDates) {
+    const opened = app.admin.continueModal(guildId, actor, vmDates[1], "3");
+    if (opened.error) {
+      await ack(interaction, true);
+      await present(interaction, opened.error);
+      return true;
+    }
+    await interaction.showModal(opened.modal);
+    return true;
+  }
+  const azurePage = /^atlas:admin:azurepage:(\d+):(prev|next)$/.exec(id);
+  if (azurePage) {
+    await ack(interaction, true);
+    const next = azurePage[2] === "next" ? Number(azurePage[1]) + 1 : Number(azurePage[1]) - 1;
+    await present(interaction, await app.admin.listAzureVms(guildId, actor, next));
     return true;
   }
   const save = new RegExp(`^atlas:admin:save:${UUID}$`).exec(id);

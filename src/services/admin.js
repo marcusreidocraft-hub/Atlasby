@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { renderAddPicker, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
+import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
 import { notice } from "../panels/ui.js";
+import { logInteractionError } from "../components/reply.js";
+import { vmOptionValue } from "./provider.js";
 import { validateAccess, validateIdentity, validateSchedule } from "./fields.js";
 import { expiryFrom, formatDate, startOfToday } from "./plans.js";
 
@@ -24,7 +26,7 @@ function sealValue(sealer, value) {
   return { ok: true, cipher: sealer.seal(value) };
 }
 
-export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
+export function createAdmin({ config, repo, audit, sealer, emojis, now, infra }) {
   function gate(actor) {
     return isAdmin(actor, config) ? null : denied(config.panelColor);
   }
@@ -123,7 +125,83 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
         expiryText: formatDate(expiryFrom(start, access.value.plan)),
       };
       storeDraft(draft);
-      return { payload: renderContinue(config.panelColor, draft.id, 3, "Acesso anotado. Ajuste as datas se precisar. A senha e o PIN não aparecem nesta tela.", emojis.pack(guildId)) };
+      return { payload: renderContinue(config.panelColor, draft.id, 3, "Acesso anotado. O próximo passo lista as VMs da Azure. A senha e o PIN não aparecem nesta tela.", emojis.pack(guildId)) };
+    },
+    async vmChoices(guildId, targetUserId) {
+      const links = repo.listInfraLinks(guildId);
+      const linked = new Map(links.map((link) => [link.infraId, link]));
+      const vms = await infra.listVms();
+      return vms.filter((vm) => {
+        const owner = linked.get(vm.id);
+        return !owner || owner.userId === targetUserId;
+      }).map((vm) => ({ ...vm, own: linked.get(vm.id)?.userId === targetUserId }));
+    },
+    async vmPicker(guildId, actor, draftId, page = 0) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const draft = requireDraft(guildId, actor.id, draftId);
+      if (!draft) return notice("O rascunho expirou. Comece de novo.", config.panelColor);
+      let vms = [];
+      let note = "";
+      try {
+        if (!infra.listVms) note = "A Azure não está configurada. Informe o Resource ID no próximo passo, se quiser.";
+        else {
+          vms = await this.vmChoices(guildId, draft.payload.targetUserId);
+          if (!infra.configured) note = "A Azure não está configurada. Informe o Resource ID no próximo passo, se quiser.";
+          else if (!vms.length) note = "Nenhuma VM livre apareceu nesta assinatura.";
+        }
+      } catch (error) {
+        logInteractionError(error);
+        note = "Não foi possível listar as VMs na Azure. O Resource ID manual continua disponível no próximo passo.";
+      }
+      const chosen = draft.payload.infraId
+        ? `VM escolhida: ${draft.payload.vmName || "resource ID preenchido"}. Ele entra no próximo campo e ainda pode ser editado.`
+        : "";
+      return renderVmPicker({ accent: config.panelColor, draftId, vms, page, notice: note, chosen });
+    },
+    async pickVm(guildId, actor, draftId, token) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const draft = requireDraft(guildId, actor.id, draftId);
+      if (!draft) return notice("O rascunho expirou. Comece de novo.", config.panelColor);
+      if (token === "none") {
+        draft.payload.infraId = "";
+        draft.payload.vmName = "";
+        storeDraft(draft);
+        return this.vmPicker(guildId, actor, draftId, 0);
+      }
+      let vms = [];
+      try {
+        vms = await infra.listVms();
+      } catch (error) {
+        logInteractionError(error);
+        return notice("Não foi possível confirmar a VM na Azure. Nada foi preenchido.", config.panelColor);
+      }
+      const vm = vms.find((item) => vmOptionValue(item.id) === token);
+      if (!vm) return notice("Essa VM não está mais na lista. Abra a lista de novo.", config.panelColor);
+      const other = repo.findByInfra(guildId, vm.id);
+      if (other && other.userId !== draft.payload.targetUserId) return notice("Essa VM já está vinculada a outro cliente.", config.panelColor);
+      draft.payload.infraId = vm.id;
+      draft.payload.vmName = vm.name;
+      storeDraft(draft);
+      return this.vmPicker(guildId, actor, draftId, 0);
+    },
+    async listAzureVms(guildId, actor, page = 0) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const size = 8;
+      if (!infra.configured) return notice("A Azure não está configurada. Nada foi listado.", config.panelColor);
+      try {
+        const vms = infra.listVms ? await infra.listVms() : [];
+        const links = new Map(repo.listInfraLinks(guildId).map((link) => [link.infraId, link.clientName]));
+        const rows = vms.map((vm) => ({ ...vm, clientName: links.get(vm.id) || "" }));
+        const pages = Math.max(1, Math.ceil(rows.length / size));
+        const safePage = Math.min(Math.max(0, page), pages - 1);
+        return renderAzureVmList({ accent: config.panelColor, rows: rows.slice(safePage * size, safePage * size + size), page: safePage, pages });
+      } catch (error) {
+        logInteractionError(error);
+        return notice("Não foi possível listar as VMs na Azure.", config.panelColor);
+      }
     },
     applyStep3({ guildId, actor, draftId, fields }) {
       const blocked = gate(actor);

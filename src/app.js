@@ -9,6 +9,6 @@ export function createApp({ config, repo, infra, now = () => Date.now(), deliver
   const audit = createAudit({ repo, config, now, deliverLog });
   const emojis = createEmojiBook(config, repo);
   const clients = createClients({ config, repo, infra, audit, sealer, emojis, now });
-  const admin = createAdmin({ config, repo, audit, sealer, emojis, now });
+  const admin = createAdmin({ config, repo, audit, sealer, emojis, now, infra });
   return { config, repo, infra, emojis, clients, admin, sealer };
 }

@@ -66,12 +66,13 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/remover-cliente` | pede confirmação e apaga o cadastro, não a VM |
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
+| `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
 | `/configurar logs` | grava o canal de log |
 | `/configurar emoji` | substitui um emoji deste servidor |
 
-O cadastro pede nome do cliente, nome da máquina, GPU, vCPUs, RAM, IP, usuário RDP, senha RDP, PIN, plano, início, vencimento e o resource ID da VM. **Salvar** é o único passo que grava.
+O cadastro pede nome do cliente, nome da máquina, GPU, vCPUs, RAM, IP, usuário RDP, senha RDP, PIN e plano. Depois disso, um seletor lista as VMs da assinatura: o nome é o rótulo e a descrição traz grupo, tamanho e região. A escolha grava o Resource ID. **Nenhuma VM agora** deixa o campo vazio. VMs já de outro cliente não entram nessa lista. O passo seguinte ainda tem o Resource ID manual, opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.
 
 GPU disponível: Tesla T4, RTX 2050, RTX 3060, RTX 3090, RTX 4070 e RTX 4090.
 

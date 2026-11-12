@@ -107,6 +107,7 @@ export function openDatabase(dataDir) {
     byOwner: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND user_id = ?"),
     byId: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND id = ?"),
     byInfra: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND infra_id = ? AND infra_id IS NOT NULL"),
+    infraLinks: db.prepare("SELECT user_id, client_name, infra_id FROM clients WHERE guild_id = ? AND infra_id IS NOT NULL AND infra_id != ''"),
     insert: db.prepare(`INSERT INTO clients (
       id, guild_id, user_id, client_name, machine_name, gpu, vcpus, ram, public_ip, rdp_user,
       rdp_password_cipher, pin_cipher, plan_type, started_at, expires_at, infra_id, power_status,
@@ -162,6 +163,13 @@ export function openDatabase(dataDir) {
     findByInfra(guildId, infraId) {
       if (!infraId) return null;
       return mapClient(statements.byInfra.get(guildId, infraId));
+    },
+    listInfraLinks(guildId) {
+      return statements.infraLinks.all(guildId).map((row) => ({
+        userId: row.user_id,
+        clientName: row.client_name,
+        infraId: row.infra_id,
+      }));
     },
     insertClient(row) {
       statements.insert.run(

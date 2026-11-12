@@ -11,6 +11,7 @@ export function adminCommands() {
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("buscar-cliente").setDescription("Busca clientes por nome, máquina ou IP.").addStringOption((option) => option.setName("termo").setDescription("Nome, máquina ou IP").setRequired(true).setMaxLength(40))),
     guild(new SlashCommandBuilder().setName("listar-clientes").setDescription("Lista os clientes deste servidor.")),
+    guild(new SlashCommandBuilder().setName("listar-vms").setDescription("Lista as VMs da assinatura Azure.")),
     guild(new SlashCommandBuilder()
       .setName("renovar-plano")
       .setDescription("Renova o plano de um cliente.")

@@ -15,7 +15,7 @@ import { createEmojiBook, DEFAULTS, UNICODE } from "../src/services/emojis.js";
 import { isAdmin } from "../src/services/admin.js";
 import { expiryFrom, formatDate, parseDate, planStatus, remainingLabel } from "../src/services/plans.js";
 import { validateSchedule } from "../src/services/fields.js";
-import { createInfrastructure } from "../src/services/provider.js";
+import { createInfrastructure, vmOptionValue } from "../src/services/provider.js";
 
 const GUILD = "100000000000000001";
 const OWNER = "100000000000000009";
@@ -69,6 +69,9 @@ function harness({ azure = false, snapshot = false, compute = null, clock = Date
       async format() {
         calls.push("format");
         return { mode: azure ? "azure" : "manual", status: azure ? "desligada" : null, reason: azure ? undefined : "unconfigured" };
+      },
+      async listVms() {
+        return [];
       },
     };
   const app = createApp({
@@ -200,6 +203,117 @@ test("o erro genérico registra o erro cru do Discord", async () => {
   assert.match(log, /DiscordAPIError\[50035\] \[50035\]/);
   assert.match(log, /Invalid Form Body/);
   assert.match(log, /"code":50035/);
+  env.close();
+});
+
+function azureVm(name, group = "rg") {
+  return {
+    id: `/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/${group}/providers/Microsoft.Compute/virtualMachines/${name}`,
+    name,
+    location: "brazilsouth",
+    hardwareProfile: { vmSize: "Standard_NC4as_T4_v3" },
+  };
+}
+
+test("a assinatura lista VMs, guarda cache e segue sem o estado lento", async () => {
+  let calls = 0;
+  let clock = 1_000;
+  const compute = {
+    virtualMachines: {
+      listAll(options = {}) {
+        calls += 1;
+        if (options.statusOnly) {
+          return (async function* fail() {
+            throw Object.assign(new Error("estado lento"), { code: "timeout", rawError: { message: "estado lento" } });
+          })();
+        }
+        return (async function* list() {
+          yield azureVm("vm-b");
+          yield azureVm("vm-a");
+        })();
+      },
+    },
+  };
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => lines.push(args.map((item) => String(item)).join(" "));
+  const infra = createInfrastructure(readConfig({
+    AZURE_TENANT_ID: "tenant",
+    AZURE_CLIENT_ID: "client",
+    AZURE_CLIENT_SECRET: "secret",
+    AZURE_SUBSCRIPTION_ID: "sub",
+  }), { compute, now: () => clock, statusTimeoutMs: 50, readTimeoutMs: 1_000 });
+  try {
+    assert.deepEqual(await createInfrastructure(readConfig({}), {}).listVms(), []);
+    const listed = await infra.listVms();
+    assert.deepEqual(listed.map((vm) => vm.name), ["vm-a", "vm-b"]);
+    assert.equal(listed[0].resourceGroup, "rg");
+    assert.equal(listed[0].size, "Standard_NC4as_T4_v3");
+    assert.equal(listed[0].power, null);
+    await infra.listVms();
+    assert.equal(calls, 2);
+    clock += 61_000;
+    await infra.listVms();
+    assert.equal(calls, 4);
+    assert.match(lines.join("\n"), /estado lento/);
+  } finally {
+    console.error = original;
+  }
+});
+
+test("o seletor preenche o resource ID e esconde VM de outro cliente", async () => {
+  const env = harness({ azure: true });
+  const linked = azureVm("ocupada").id;
+  const free = azureVm("livre", "rg-livre").id;
+  env.repo.insertClient({
+    id: "cccccccc-cccc-cccc-cccc-cccccccccccc", guildId: GUILD, userId: OTHER, clientName: "Outro", machineName: "Ocupada",
+    gpu: "Tesla T4", vcpus: 4, ram: "28 GB", publicIp: null, rdpUser: null, rdpPasswordCipher: null, pinCipher: null,
+    planType: "mensal", startedAt: 1, expiresAt: 2, infraId: linked, powerStatus: "desligada", now: 1,
+  });
+  const many = [azureVm("livre", "rg-livre"), ...Array.from({ length: 30 }, (_, index) => azureVm(`vm-${String(index).padStart(2, "0")}`))];
+  env.app.infra.listVms = async () => [{ id: linked, name: "ocupada", resourceGroup: "rg", location: "brazilsouth", size: "Standard_B2s", power: "desligada" }].concat(many.map((vm) => ({
+    id: vm.id, name: vm.name, resourceGroup: vm.id.split("/")[4], location: vm.location, size: vm.hardwareProfile.vmSize, power: "ligada",
+  })));
+  const step1 = env.app.admin.applyStep1({
+    guildId: GUILD, actor: adminActor(), kind: "add", targetUserId: CLIENT,
+    fields: { clientName: "Ana", machineName: "Mesa 01", gpu: "Tesla T4", vcpus: "4", ram: "28 GB" },
+  });
+  const draft = draftFrom(step1.payload, 2);
+  env.app.admin.applyStep2({
+    guildId: GUILD, actor: adminActor(), draftId: draft,
+    fields: { publicIp: "", rdpUser: "", password: "", pin: "", plan: "mensal" },
+  });
+  const page = await env.app.admin.vmPicker(GUILD, adminActor(), draft, 0);
+  const json = textOf(page);
+  assert.match(json, /livre/);
+  assert.doesNotMatch(json, /ocupada/);
+  assert.match(json, /Nenhuma VM agora/);
+  assert.match(json, /Próxima/);
+  const body = page.components[0].toJSON();
+  const select = body.components.find((item) => item.components?.[0]?.type === 3).components[0];
+  assert.ok(select.custom_id.length <= 100);
+  assert.ok(select.options.length <= 25);
+  assert.ok(select.options.every((option) => option.value.length <= 100 && (!option.description || option.description.length <= 100)));
+  await env.app.admin.pickVm(GUILD, adminActor(), draft, vmOptionValue(free));
+  assert.equal(env.repo.getDraft(draft).payload.infraId, free);
+  await env.app.admin.pickVm(GUILD, adminActor(), draft, "none");
+  assert.equal(env.repo.getDraft(draft).payload.infraId, "");
+  const catalog = await env.app.admin.listAzureVms(GUILD, adminActor(), 0);
+  assert.match(textOf(catalog), /livre/);
+  assert.match(textOf(catalog), /Outro/);
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => lines.push(args.map((item) => String(item)).join(" "));
+  env.app.infra.listVms = async () => {
+    throw Object.assign(new Error("negado"), { code: 403, rawError: { message: "negado" } });
+  };
+  try {
+    const failed = await env.app.admin.vmPicker(GUILD, adminActor(), draft, 0);
+    assert.match(textOf(failed), /Não foi possível listar as VMs na Azure/);
+    assert.match(lines.join("\n"), /negado/);
+  } finally {
+    console.error = original;
+  }
   env.close();
 });
 

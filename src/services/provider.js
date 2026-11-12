@@ -1,3 +1,9 @@
+import { createHash } from "node:crypto";
+
+export function vmOptionValue(resourceId) {
+  return createHash("sha256").update(String(resourceId)).digest("hex").slice(0, 32);
+}
+
 export function parseVmResourceId(value) {
   const match = /^\/subscriptions\/([^/]+)\/resourceGroups\/([^/]+)\/providers\/Microsoft\.Compute\/virtualMachines\/([^/]+)$/i.exec(String(value ?? "").trim());
   if (!match) return null;
@@ -34,15 +40,46 @@ function powerFromView(view) {
   return "desconhecida";
 }
 
+async function collectVms(source) {
+  const rows = [];
+  for await (const item of source) rows.push(item);
+  return rows;
+}
+
+function summarizeVm(vm, power) {
+  const parsed = parseVmResourceId(vm.id);
+  if (!vm?.id || !vm?.name || !parsed) return null;
+  return {
+    name: vm.name,
+    resourceGroup: parsed.resourceGroup,
+    location: vm.location ?? "",
+    size: vm.hardwareProfile?.vmSize ?? "",
+    id: vm.id,
+    power: power ?? null,
+  };
+}
+
 function diskName(vmName) {
   const base = String(vmName).replace(/[^A-Za-z0-9]/g, "").slice(0, 40) || "vm";
   return `os${base}${Date.now()}`.slice(0, 80);
 }
 
+function logAzure(prefix, error) {
+  const name = error?.name ?? "Error";
+  const message = error instanceof Error ? error.message : String(error ?? "erro");
+  const code = error?.code;
+  console.error(`${prefix}: ${name}${code === undefined ? "" : ` [${code}]`}: ${message}`);
+  if (error?.rawError) console.error(JSON.stringify(error.rawError));
+}
+
 export function createInfrastructure(config, deps = {}) {
   const readMs = deps.readTimeoutMs ?? 20_000;
   const writeMs = deps.writeTimeoutMs ?? 90_000;
+  const cacheMs = deps.vmCacheMs ?? 60_000;
+  const statusMs = deps.statusTimeoutMs ?? 8_000;
+  const clock = deps.now ?? (() => Date.now());
   let computeClient;
+  let vmCache = null;
 
   async function compute() {
     if (deps.compute) return deps.compute;
@@ -73,6 +110,29 @@ export function createInfrastructure(config, deps = {}) {
 
   return {
     configured: Boolean(config.azure.configured),
+    async listVms() {
+      if (!config.azure.configured) return [];
+      if (vmCache && clock() - vmCache.at < cacheMs) return vmCache.vms;
+      try {
+        const client = await compute();
+        const listed = await withTimeout(() => collectVms(client.virtualMachines.listAll()), readMs);
+        const powerById = new Map();
+        try {
+          const states = await withTimeout(() => collectVms(client.virtualMachines.listAll({ statusOnly: "true" })), statusMs);
+          for (const vm of states) {
+            if (vm?.id) powerById.set(vm.id, powerFromView(vm.instanceView));
+          }
+        } catch (error) {
+          logAzure("Estado das VMs não consultado", error);
+        }
+        const vms = listed.map((vm) => summarizeVm(vm, powerById.get(vm.id))).filter(Boolean);
+        vms.sort((left, right) => left.name.localeCompare(right.name, "pt-BR"));
+        vmCache = { at: clock(), vms };
+        return vms;
+      } catch (error) {
+        throw Object.assign(error instanceof Error ? error : new Error("azure"), { code: failureCode(error) });
+      }
+    },
     async readPower(infraId) {
       const result = await azureCall(infraId, readMs, async (client, target) => {
         const view = await client.virtualMachines.instanceView(target.resourceGroup, target.name);
