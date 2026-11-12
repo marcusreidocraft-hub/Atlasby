@@ -1,168 +1,121 @@
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  Client,
-  Events,
-  GatewayIntentBits,
-  MessageFlags,
-  REST,
-  Routes,
-} from "discord.js";
-import { createDiscordAdapter } from "./adapter.js";
-import { commands } from "./commands.js";
-import { isGuildAuthorized } from "./config.js";
-import { describeResult } from "./messages.js";
-import { createService } from "./service.js";
+import { Client, Events, GatewayIntentBits } from "discord.js";
+import { createApp } from "./app.js";
+import { fail, logInteractionError } from "./components/reply.js";
+import { routeClient } from "./components/client/router.js";
+import { registerCommands, routeAdminComponent, routeCommand } from "./commands/admin/router.js";
+import { createInfrastructure } from "./services/provider.js";
+import { routeStoreComponent, editStorePanel } from "./loja/router.js";
+import { renderOrder } from "./loja/panel.js";
+import { createStoreHttp } from "./loja/http.js";
+import { V2 } from "./panels/ui.js";
+import { attendanceOf } from "./loja/attendance.js";
 
-export function confirmationRow(id) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId(`atlasby:confirm:${id}`)
-      .setLabel("Confirmar")
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId(`atlasby:cancel:${id}`)
-      .setLabel("Cancelar")
-      .setStyle(ButtonStyle.Secondary),
-  );
+async function deliver(client, channelId, payload) {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel?.isTextBased?.() || channel.isDMBased?.()) return false;
+  await channel.send(payload);
+  return true;
 }
 
-function ephemeral(content, extra = {}) {
-  return { content, flags: MessageFlags.Ephemeral, ...extra };
-}
-
-async function safeReply(interaction, payload) {
-  if (interaction.deferred || interaction.replied) {
-    await interaction.followUp(payload);
+export async function routeInteraction(interaction, app) {
+  if (!interaction.guildId || !app.config.allowedGuildIds.includes(interaction.guildId)) {
+    const { notice, V2_EPHEMERAL } = await import("./panels/ui.js");
+    const payload = notice("Este servidor não está autorizado.", app.config.panelColor);
+    if (!interaction.deferred && !interaction.replied) {
+      await interaction.reply({ components: payload.components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
+    }
     return;
   }
-  await interaction.reply(payload);
-}
-
-export async function handleInteraction(interaction, { config, service }) {
   try {
-    if (!interaction.inGuild?.()) {
-      await safeReply(interaction, ephemeral(describeResult({ code: "guild_only" })));
-      return;
-    }
-    if (!isGuildAuthorized(config, interaction.guildId)) {
-      await safeReply(interaction, ephemeral(describeResult({ code: "guild_unauthorized" })));
-      return;
-    }
-    if (interaction.isButton?.()) {
-      await handleButton(interaction, service);
-      return;
-    }
     if (interaction.isChatInputCommand?.()) {
-      await handleCommand(interaction, service);
+      await routeCommand(interaction, app);
+      return;
     }
-  } catch {
-    const payload = ephemeral(describeResult({ code: "internal", punishmentApplied: false }));
-    try {
-      await safeReply(interaction, payload);
-    } catch {
-      // A interação já não pode ser respondida. O processo continua sem declarar punição.
-    }
+    if (await routeClient(interaction, app)) return;
+    if (await routeStoreComponent(interaction, app)) return;
+    if (await routeAdminComponent(interaction, app)) return;
+  } catch (error) {
+    logInteractionError(error);
+    await fail(interaction, app.config.panelColor, error, app);
   }
 }
 
-async function handleCommand(interaction, service) {
-  const actorId = interaction.user.id;
-  const guildId = interaction.guildId;
-  const name = interaction.commandName;
-
-  if (name === "canal-logs") {
-    const channel = interaction.options.getChannel("canal");
-    const result = await service.setLogChannel({
-      guildId,
-      actorId,
-      channelId: channel?.id ?? null,
-    });
-    await interaction.reply(ephemeral(describeResult(result)));
-    return;
+async function fulfill(client, app, orderId) {
+  const before = app.store.order(orderId);
+  if (!before) return;
+  const product = app.repo.storeProduct(before.guildId, before.sku);
+  if (before.status === "pago") {
+    client.users.fetch(before.userId).then((user) => user.send(app.store.paidText(before, product))).catch(() => {});
   }
-
-  const user = interaction.options.getUser("usuario");
-  if (!user) {
-    await interaction.reply(ephemeral(describeResult({ code: "target_required" })));
-    return;
+  const result = await app.store.provision(orderId);
+  const order = app.store.order(orderId);
+  if (order?.channelId && order?.messageId) {
+    client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.messageId)).then((message) => message.edit({
+      components: renderOrder(order, product).components,
+      flags: V2,
+      allowedMentions: { parse: [] },
+    })).catch(() => {});
   }
-  const reason = interaction.options.getString("motivo");
-  const input = { guildId, actorId, targetId: user.id, reason };
-
-  let result;
-  if (name === "aviso") result = await service.warn(input);
-  else if (name === "expulsar") result = await service.requestKick(input);
-  else if (name === "banir") result = await service.requestBan(input);
-  else if (name === "silenciar") {
-    const subcommand = interaction.options.getSubcommand();
-    if (subcommand === "remover") result = await service.removeTimeout(input);
-    else {
-      result = await service.timeout({
-        ...input,
-        duration: interaction.options.getString("duracao"),
-      });
+  if (result.delivered?.ok) {
+    client.users.fetch(order.userId).then((user) => user.send(app.store.readyText(product, order.plan, result.state.publicIp))).catch(() => {});
+    if (result.delivered.roleId) {
+      client.guilds.fetch(order.guildId).then((guild) => guild.members.fetch(order.userId)).then((member) => member.roles.add(result.delivered.roleId)).catch(() => {});
     }
-  } else return;
-
-  const extra = result.code === "confirmation_required" ? { components: [confirmationRow(result.confirmationId)] } : {};
-  await interaction.reply(ephemeral(describeResult(result), extra));
-}
-
-async function handleButton(interaction, service) {
-  const match = /^atlasby:(confirm|cancel):([0-9a-f-]{36})$/.exec(interaction.customId ?? "");
-  if (!match) return;
-  await interaction.deferUpdate();
-  const result = await service.confirm({
-    confirmationId: match[2],
-    guildId: interaction.guildId,
-    moderatorId: interaction.user.id,
-    decision: match[1] === "confirm" ? "confirm" : "cancel",
-  });
-  await interaction.editReply({
-    content: describeResult(result),
-    components: [],
-  });
-}
-
-export async function registerGuildCommands(config) {
-  const rest = new REST({ version: "10" }).setToken(config.token);
-  const body = commands.map((command) => command.toJSON());
-  for (const guildId of config.allowedGuildIds) {
-    try {
-      await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body });
-      console.log(`Comandos registrados no servidor ${guildId}.`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "erro";
-      console.error(`Falha ao registrar comandos no servidor ${guildId}: ${message}`);
-    }
+  } else if (!result.ok) {
+    const logChannelId = attendanceOf(app.repo, app.config, order.guildId).logChannelId;
+    if (!logChannelId) return;
+    deliver(client, logChannelId, {
+      components: renderOrder(order, product).components,
+      flags: V2,
+      allowedMentions: { parse: [] },
+    }).catch(() => {});
   }
 }
 
-export async function startBot({ config, store }) {
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-  const service = createService({
-    store,
-    discord: createDiscordAdapter(client),
-    ttlMs: config.confirmationTtlMs,
-  });
-
+export async function startBot({ config, repo, client = new Client({ intents: [GatewayIntentBits.Guilds] }) }) {
+  const infra = createInfrastructure(config);
+  const bridge = { send: async () => false };
+  const app = createApp({ config, repo, infra, deliverLog: (channelId, payload) => bridge.send(channelId, payload) });
+  bridge.send = (channelId, payload) => deliver(client, channelId, payload);
   client.on(Events.InteractionCreate, (interaction) => {
-    handleInteraction(interaction, { config, service }).catch((error) => {
-      const message = error instanceof Error ? error.message : "erro";
-      console.error(`Falha ao processar interação: ${message}`);
+    routeInteraction(interaction, app).catch((error) => {
+      logInteractionError(error);
     });
   });
-
-  client.once(Events.ClientReady, (readyClient) => {
-    console.log(`Conectado como ${readyClient.user.tag}.`);
-    registerGuildCommands(config).catch((error) => {
-      const message = error instanceof Error ? error.message : "erro";
-      console.error(`Falha ao registrar comandos: ${message}`);
-    });
+  client.once(Events.ClientReady, async (ready) => {
+    console.log(`Atlas Cloud PC conectado como ${ready.user.tag}.`);
+    await registerCommands(config);
+    await app.emojis.refresh(ready);
   });
-
   await client.login(config.token);
+  if (config.serverPort) {
+    const server = createStoreHttp(async (raw, headers) => {
+      const result = await app.store.handleWebhook(raw, headers);
+      if (result.orderId) setImmediate(() => fulfill(client, app, result.orderId));
+      return result.status;
+    });
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(config.serverPort, "0.0.0.0", () => {
+        server.off("error", reject);
+        resolve();
+      });
+    });
+    client.storeServer = server;
+    console.log(`Webhook da loja escutando na porta ${config.serverPort}.`);
+  }
+  app.store.expireReservations();
+  const expired = await app.store.expireClients();
+  for (const row of expired) {
+    client.users.fetch(row.userId).then((user) => user.send(`Seu plano da Atlas Cloud PC em ${row.machine} venceu. A máquina foi desligada e não foi apagada.`)).catch(() => {});
+  }
+  for (const order of app.repo.resumeOrders()) fulfill(client, app, order.id);
+  let phase = 0;
+  const pulse = setInterval(() => {
+    phase += 1;
+    editStorePanel(client, app, phase).catch(() => {});
+  }, 45_000);
+  pulse.unref?.();
+  client.storePulse = pulse;
   return client;
 }

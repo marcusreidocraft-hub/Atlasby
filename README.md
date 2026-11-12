@@ -1,79 +1,173 @@
-# Atlasby
+# Atlas Cloud PC
 
-Bot de moderação do Discord, com comandos de barra em português do Brasil. O processo usa a API oficial por meio do discord.js 14 e grava avisos e auditoria num SQLite local, fora do Git.
+Painel de clientes da Atlas Cloud PC no Discord. O membro consulta o próprio plano e controla a própria máquina. A equipe cadastra os clientes por comandos separados. A interface usa Discord Components V2.
 
-O código deste repositório pode ser executado e testado. Ele ainda não foi implantado no Bot-Hosting.net, não recebe token e não liga auto-pull nem sincronização.
+O entry point é `index.js`. O host em Node 24 faz pull ao reiniciar. Este repositório não reinicia a hospedagem.
 
-## Comandos
+## Instalação
 
-| Comando | Quem pode usar | Efeito |
-| --- | --- | --- |
-| `/aviso` | Moderate Members | Grava um aviso permanente. O motivo é obrigatório. |
-| `/silenciar aplicar` | Moderate Members | Timeout com duração explícita: `30s`, `10m`, `2h` ou `3d`. Mínimo 5 segundos, máximo 28 dias. |
-| `/silenciar remover` | Moderate Members | Remove o timeout atual. Se o membro não estiver silenciado, nada é chamado na API. |
-| `/expulsar` | Kick Members | Pede confirmação e só então expulsa. |
-| `/banir` | Ban Members | Pede confirmação e só então bane, sem apagar mensagens. |
-| `/canal-logs` | Manage Guild | Define o canal de texto da auditoria. |
-
-Expulsão e banimento só acontecem se o mesmo moderador confirmar, no mesmo servidor e para o mesmo alvo, antes do prazo. O padrão é 60 segundos. Outro usuário, outro servidor, prazo vencido ou segundo clique não aplicam a punição.
-
-O bot recusa como alvo o dono do servidor, o próprio autor, o próprio bot e quem tem Administrador. O cargo de quem pune e o cargo do bot precisam estar acima do alvo. O dono do servidor pode punir sem o bit daquela permissão e acima da própria posição de cargo; a hierarquia e a permissão do bot continuam obrigatórias, assim como as proteções de alvo. Nos demais casos, moderador e bot precisam da permissão da ação.
-
-Sem canal de logs utilizável, nenhuma punição é enviada ao Discord. Se o Discord recusar, a resposta diz que a punição não foi aplicada e a auditoria não fica como sucesso. Se o Discord aplicar e o canal de logs falhar, a resposta diz que a punição ocorreu e que o log não foi entregue.
-
-Os comandos são só de servidor (`GuildInstall`, contexto Guild, sem DM) e só respondem nos IDs de `ALLOWED_GUILD_IDS`. A visibilidade padrão do Discord não substitui essas checagens.
-
-## Permissões do bot
-
-O convite não pede Administrador. Bits: Kick Members, Ban Members, Moderate Members, View Channel, Send Messages e Embed Links. O valor é `1099511647238`.
-
-```text
-https://discord.com/oauth2/authorize?client_id=SEU_CLIENT_ID&scope=bot%20applications.commands&permissions=1099511647238
-```
-
-Intents privilegiadas não são necessárias. O processo usa a intent Guilds e consulta membro e canal pela API.
-
-Coloque o cargo do bot acima dos membros que ele pode punir e abaixo dos cargos que devem permanecer protegidos.
-
-## Stack
-
-Node.js 22.13 ou mais novo e discord.js 14.28.1. O banco usa `node:sqlite`, sem módulo nativo. No host, use Node.js 24: na documentação do Node 24.15 o `node:sqlite` está como release candidate. No Node 22 ele funciona sem a flag experimental, mas ainda é marcado como experimental.
-
-## Instalação, migração, execução e testes
-
-```sh
+```bash
 npm ci
 npm test
-npm run setup
 npm start
 ```
 
-- `npm ci` instala as versões travadas em `package-lock.json`.
-- `npm test` cobre hierarquia, prazo e moderador errado da confirmação, persistência, migração e falha da API. Não usa token nem Discord real.
-- `npm run setup` cria `data/` e aplica a migração sem token.
-- `npm start` aplica migrações pendentes e conecta o bot. Sem `DISCORD_TOKEN`, o processo termina com erro e não declara sucesso.
+`npm run setup` só cria o banco em `DATA_DIR`, sem token e sem conectar ao Discord.
 
-Copie `.env.example` só no ambiente de execução. Os valores versionados ficam em branco.
+Preencha o ambiente no host, nunca no Git. O arquivo [`.env.example`](.env.example) lista todas as variáveis. Segredos ficam vazios.
 
-| Variável | Obrigatória |
+## Variáveis
+
+Obrigatórias para o processo conectar:
+
+| Variável | Uso |
 | --- | --- |
-| `DISCORD_TOKEN` | sim |
-| `DISCORD_CLIENT_ID` | sim |
-| `ALLOWED_GUILD_IDS` | sim, IDs separados por vírgula |
-| `DATA_DIR` | não; padrão `data` |
-| `CONFIRMATION_TTL_SECONDS` | não; padrão `60`, limites 15 e 300 |
+| `DISCORD_TOKEN` | token do bot |
+| `DISCORD_CLIENT_ID` | ID da aplicação |
+| `ALLOWED_GUILD_IDS` | servidores autorizados, separados por vírgula |
 
-O banco é `data/moderation.sqlite`. A primeira migração cria avisos, auditoria, confirmações e configuração do canal. Subir o processo de novo não reaplica a versão já gravada. `data/`, `node_modules/`, `.env` e logs ficam fora do Git.
+Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 
-## Host
+| Variável | Padrão | Uso |
+| --- | --- | --- |
+| `DATA_DIR` | `data` | pasta do `atlas.sqlite` |
+| `AGENT_SECRET` | vazio | segredo igual em todas as VMs. Vazio desliga o PIN |
+| `AGENT_PORT` | `7474` | porta do agente dentro da VM |
+| `CONFIRMATION_TTL_SECONDS` | `60` | prazo da formatação, de 15 a 300 |
+| `ENABLE_MESSAGE_CONTENT_INTENT` | falso | lida e não usada |
+| `PANEL_COLOR` | `5865F2` | cor dos containers, com ou sem `#` |
+| `PANEL_BANNER_URL` | vazio | imagem https da galeria e da miniatura |
+| `SUPPORT_CHANNEL_URL` | vazio | botão Suporte / Tickets |
+| `ADMIN_ROLE_IDS` | vazio | cargos que administram, além de quem tem Administrador |
+| `ADMIN_LOG_CHANNEL_ID` | vazio | canal dos logs |
+| `CREDENTIALS_KEY` | vazio | cifra senha RDP e PIN |
+| `AZURE_CREDENTIALS_KEY` | vazio | usada se `CREDENTIALS_KEY` estiver vazia |
+| `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID` | vazios | ligam o provedor Azure |
+| `AZURE_IMAGE_ID` | a versão Atlas2.0 1.0.0 | imagem da galeria usada para criar e formatar |
+| `AZURE_SNAPSHOT_ID` | vazio | legado; só vale se a imagem configurada for um snapshot |
+| `AZURE_LOCATION`, `AZURE_DEFAULT_VM_SIZE`, `AZURE_OS_TYPE`, `AZURE_VIRTUAL_NETWORK`, `AZURE_SUBNET`, `AZURE_MAX_OS_DISK_GB` | os do exemplo | lidas para o host; o painel não cria VM |
+| `EMOJI_CONTROLE`, `EMOJI_CALENDARIO`, `EMOJI_TICKET`, `EMOJI_MOONLIGHT`, `EMOJI_RDP`, `EMOJI_ALERTA`, `EMOJI_ENGRENAGEM`, `EMOJI_POWER` | vazios | opcionais; só preencha para trocar o emoji padrão |
+| `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY`, `AI_ASSISTANT_ENABLED` | o exemplo, `false` | reservadas; o bot não chama o Ollama |
 
-O passo a passo verificado do Bot-Hosting.net, o backup por SFTP e o script manual inativo estão em [docs/bot-hosting.md](docs/bot-hosting.md). Entry file: `index.js`. Não use Replace all nem troca de tipo de runtime num servidor que já tem dados. Push para o GitHub não publica no host: não há webhook de push documentado na API verificada.
+Trocar a chave de criptografia torna senha e PIN antigos ilegíveis.
 
-## O que falta para ficar no ar
+## Publicar o painel
 
-1. Criar a aplicação no portal do Discord e guardar token e client ID só no host.
-2. Convidar o bot com o link acima e posicionar o cargo.
-3. Fazer o backup SFTP do servidor atual.
-4. Ligar este repositório privado pelo painel, com Merge, Node.js 24 e entry `index.js`.
-5. Preencher as variáveis secretas e definir `/canal-logs` dentro do servidor autorizado.
-6. Só então, se quiser que um restart puxe o Git, ligar o auto-pull no painel ou usar o sync manual descrito na documentação de hospedagem.
+No canal desejado, um administrador usa `/painel-publicar`. A mensagem fica no canal, com os botões estáveis `atlas:panel:control` e `atlas:panel:plan`. Eles continuam válidos depois de reiniciar.
+
+O botão **Suporte / Tickets** só aparece com `SUPPORT_CHANNEL_URL` ou depois de `/configurar suporte`. Se o link ou os emojis mudarem, publique de novo: a mensagem já enviada guarda o que tinha na hora.
+
+## Comandos
+
+Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A resposta é privada.
+
+| Comando | O que faz |
+| --- | --- |
+| `/painel-publicar` | publica o painel neste canal |
+| `/adicionar-cliente` | escolhe o membro e abre três modais, com no máximo cinco campos cada |
+| `/editar-cliente` | o mesmo fluxo, com os dados atuais; senha e PIN em branco mantêm os gravados |
+| `/remover-cliente` | pede confirmação e apaga o cadastro, não a VM |
+| `/buscar-cliente` | busca por nome, máquina, ID ou IP |
+| `/listar-clientes` | lista paginada |
+| `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
+| `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
+| `/configurar suporte` | grava a URL do botão de suporte |
+| `/configurar logs` | grava o canal de log. O mesmo campo do `/configurar-atendimento` |
+| `/configurar-atendimento` | cargo de suporte, categoria dos tickets e canal de logs |
+| `/configurar emoji` | substitui um emoji deste servidor |
+
+O cadastro pede nome do cliente, nome da máquina, IP de reserva, usuário RDP, senha RDP e plano. Depois, um seletor lista as VMs da assinatura. A escolha preenche o Resource ID e lê GPU, vCPU e RAM do tamanho da VM. **Nenhuma VM agora** deixa o hardware para o administrador informar, inclusive NVIDIA A10, e o Resource ID manual continua opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.
+
+O IP público da VM, quando ela tem Resource ID, vem da interface de rede na Azure e substitui o IP digitado. Se a nuvem não tiver IP, fica o valor manual.
+
+Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paulo`. A data de vencimento pode ser editada.
+
+## O que o cliente vê
+
+**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
+
+**Consultar plano** mostra plano, início, vencimento, tempo restante e status.
+
+PIN, usuário, senha e IP do RDP saem só na resposta privada de quem é o dono do registro. Cada botão confere o `userId`. Um membro não abre a máquina de outro.
+
+Formatar pede um botão vermelho e, em seguida, um modal com o nome da máquina ou `CONFIRMAR`. A confirmação expira. Na Azure, a VM é desligada e o disco do sistema é recriado pela imagem da galeria. O IP e o vínculo do cliente permanecem. Sem Azure ou sem resource ID, nada é alterado na nuvem: o pedido fica no log e a equipe é avisada.
+
+Ligar e desligar usam o resource ID. Sem Azure, o status local não muda e a equipe é avisada. A linha de instância Spot lembra de ligar de novo se a máquina cair.
+
+## Emojis
+
+Não é preciso preencher `EMOJI_*`. O código já traz os emojis do servidor como padrão. A ordem é: `/configurar emoji` neste servidor, depois a variável de ambiente se estiver preenchida, depois esse padrão, depois o Unicode.
+
+O padrão só entra no botão se o bot enxergar o emoji no cache (`guild.emojis.fetch` ou o cache do client). Sem esse acesso, o botão usa o Unicode, porque um emoji inválido impede a mensagem.
+
+| Chave | Padrão | Uso | Unicode |
+| --- | --- | --- | --- |
+| `controle` | `<:8688gaming:1568512664705961985>` | título e Controlar VM | 🎮 |
+| `calendario` | `<:timer:1568512986484711425>` | Consultar plano e tempo | 🗓️ |
+| `ticket` | `<:49457ticket:1568512619722309644>` | Suporte / Tickets | 🎟️ |
+| `moonlight` | `<:moonzinho:1568512334245138452>` | PIN Moonlight | 🌙 |
+| `rdp` | `<:rdp:1568512345825878049>` | Acesso RDP | 🖥️ |
+| `alerta` | `<:5577warning:1568512629847101531>` | Formatar VM | ⚠️ |
+| `engrenagem` | `<:dgear:1568512697002098728>` | Atualizar | ⚙️ |
+| `power` | `<:disactiv:1568512700739362897>` | Ligar e Desligar | ⏻ |
+| `ligada` | `<:reduto_on:1570365824810877048>` | status Ligada | 🟢 |
+| `desligar` | `<:desligar:1570370496673873952>` | botão Desligar VM | ⏹️ |
+
+Quando um título, status ou campo combina com outro emoji do mesmo servidor, ele também entra, se o bot o enxergar: monitor, windows, world, externallink, mail, pencil, tools, star, cash, bell, megaphone, 8011admin, 47106member, 1906add, 53136verified, 12560blackarrow, 7957link, 44216vip e gavel. Fora do cache, esse detalhe fica sem emoji. Publique o painel de novo se trocar um emoji da mensagem do canal.
+
+## Provedor
+
+Com as quatro variáveis Azure, o bot usa `@azure/identity` e `@azure/arm-compute`. O ID da máquina é o resource ID completo da VM. Formatar recria o disco do sistema pela imagem especializada da galeria, sem perfil de sistema, e deixa a VM desligada. Consulta de estado espera 20 segundos; ligar, desligar e formatar esperam até 90 segundos por etapa. A interação é adiada antes dessas chamadas.
+
+Sem as quatro variáveis, o provedor manual só registra e avisa a equipe.
+
+O log vai para `ADMIN_LOG_CHANNEL_ID` ou para o canal de `/configurar logs`, e também para a tabela `action_logs`. Senha e PIN não entram nesse texto.
+
+## Agente na VM
+
+Todas as máquinas usam o mesmo `AGENT_SECRET`. Ele entra no bot e no `agent.config.json` da imagem base. Uma VM criada dessa imagem já fala com o bot, sem token por cliente.
+
+1. Na VM base, instale o Sunshine e defina o usuário e a senha do painel web.
+2. Copie a pasta `agent` para a VM.
+3. Preencha `agent/agent.config.json`: `AgentSecret` com o mesmo valor de `AGENT_SECRET`, `SunshineUser` e `SunshinePassword` com o painel do Sunshine. `AgentPort` fica `7474` se você não mudar `AGENT_PORT`.
+4. Abra o PowerShell como Administrador nessa pasta e execute `.\install.ps1`.
+5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\`, libera a porta TCP no firewall do Windows e registra a tarefa **Atlas Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, reinicia após falha e não tem limite de tempo.
+6. No grupo de segurança da Azure, libere entrada TCP `7474` para o endereço de saída do bot. O bot chama `http://<IP público da VM>:7474`.
+7. Confira o agente e capture a imagem. As próximas VMs saem com o agente e o mesmo segredo.
+
+O agente escuta `http://+:7474/` e só aceita `Authorization: Bearer` com comparação em tempo constante. Falhas de início, do listener e do Sunshine ficam em `C:\ProgramData\AtlasCloudPC\agent.log`, sem PIN e sem segredo. Se `agent.config.json` não estiver ao lado do instalador, a instalação para e avisa. `POST /pin` manda `{pin, name:"Cliente"}` ao Sunshine em `https://127.0.0.1:47990/api/pin`. O certificado autoassinado só é aceito nesse endereço. `POST /unpair-all` chama `/api/clients/unpair-all`. `GET /health` diz se o agente está online. O PIN não é gravado em log.
+
+Sem `AGENT_SECRET`, o bot avisa o administrador e não chama a VM. Se a VM estiver desligada, a resposta pede para ligá-la. Se o agente não responder em 12 segundos, a mensagem é: "Agente da VM não respondeu, tente de novo em instantes".
+
+## Como testar
+
+```bash
+npm test
+```
+
+Os testes não usam Discord, Azure nem segredo real.
+
+| Função | O que o teste confere |
+| --- | --- |
+| Permissão | Administrador, dono e cargo entram; o resto não grava |
+| Isolamento | outro membro não vê IP, senha nem dispara a energia |
+| Criptografia | a senha cifrada abre com a chave e não aparece no banco nem no log |
+| Vencimento | 7, 15 e 30 dias, status vencido e data editada |
+| Formatação | frase errada, outro usuário, prazo e `CONFIRMAR`; a VM é atualizada pela imagem, sem `osProfile` |
+| Painéis | Components V2, textos, botões e galeria |
+| Adiamento | o defer acontece antes da leitura na Azure |
+| Ambiente | o exemplo contém as variáveis e os segredos ficam vazios |
+
+No Discord, depois que o host reiniciar o processo: publique o painel, cadastre um cliente de teste, clique em Controlar VM com a conta do cliente e com outra conta, consulte o plano, mostre PIN e RDP, atualize, ligue e desligue, e só então teste a formatação com o nome da máquina.
+
+## Loja
+
+O painel comercial fica no canal escolhido em `/configurar-loja`. Ele é editado no lugar. Os planos de 3h e 6h somem por completo quando `/configurar-horas` os desliga. Sem estoque, o produto mostra "Sem estoque no momento" e não entra na compra.
+
+O webhook Pix é `http://<endereço público>:<SERVER_PORT>/wyvi/webhook`. No painel da Wyvi, cadastre essa URL em HTTPS se o host termina TLS, com os eventos `cobranca.paga`, `cobranca.expirada` e `cobranca.estornada`. O segredo que a Wyvi mostra uma vez vai em `WYVI_WEBHOOK_SECRET`. A chave com `cobranca:criar` e `cobranca:ler` vai em `WYVI_API_KEY`.
+
+Antes da primeira venda, publique a loja, defina estoque, cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão é a versão 1.0.0 de Atlas2.0 na galeria, specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
+
+## Limitações
+
+Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. O cartão usa `@resvg/resvg-wasm` e a fonte Inter. O IP público usa `@azure/arm-network`. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado.
