@@ -55,7 +55,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
     plan(guildId, userId) {
       const client = repo.getByOwner(guildId, userId);
       if (!client) return renderMissing(config.panelColor);
-      return renderPlan(client, { accent: config.panelColor, now: now() });
+      return renderPlan(client, { accent: config.panelColor, now: now(), emojis: emojis.pack(guildId) });
     },
     async refresh(guildId, userId) {
       return this.open(guildId, userId);
@@ -78,8 +78,10 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
       const client = repo.getByOwner(guildId, userId);
       if (!client) return renderMissing(config.panelColor);
       const cipher = kind === "pin" ? client.pinCipher : client.rdpPasswordCipher;
+      const themeNow = theme(guildId);
+      const badge = kind === "pin" ? themeNow.emojis.moonlight : themeNow.emojis.rdp;
       if (!cipher) {
-        return renderSecret(kind === "pin" ? "PIN Moonlight" : "Acesso RDP", ["Nada foi gravado para esta máquina."], config.panelColor);
+        return renderSecret(kind === "pin" ? "PIN Moonlight" : "Acesso RDP", ["Nada foi gravado para esta máquina."], config.panelColor, badge);
       }
       if (!sealer) return notice("A chave de criptografia não está disponível. Nada foi exibido.", config.panelColor);
       let secret = "";
@@ -89,12 +91,12 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
         return notice("Não foi possível ler a credencial. Confira a chave de criptografia.", config.panelColor);
       }
       await tracked(client, userId, "credencial_exibida", kind === "pin" ? "PIN exibido ao dono." : "Acesso RDP exibido ao dono.", [secret]);
-      if (kind === "pin") return renderSecret("PIN Moonlight", [`PIN: ${secret}`], config.panelColor);
+      if (kind === "pin") return renderSecret("PIN Moonlight", [`PIN: ${secret}`], config.panelColor, badge);
       return renderSecret("Acesso RDP", [
         `IP: ${client.publicIp || "não informado"}`,
         `Usuário: ${client.rdpUser || "não informado"}`,
         `Senha: ${secret}`,
-      ], config.panelColor);
+      ], config.panelColor, badge);
     },
     async askFormat(guildId, userId) {
       const client = repo.getByOwner(guildId, userId);

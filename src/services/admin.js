@@ -46,8 +46,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
 
   return {
     isAdmin: (actor) => isAdmin(actor, config),
-    addPicker() {
-      return renderAddPicker(config.panelColor);
+    addPicker(guildId) {
+      return renderAddPicker(config.panelColor, emojis.pack(guildId));
     },
     beginModal(kind, guildId, userId) {
       const current = kind === "edit" ? repo.getByOwner(guildId, userId) : null;
@@ -88,7 +88,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
           expiryText: existing ? formatDate(existing.expiresAt) : formatDate(expiryFrom(startOfToday(now()), "mensal")),
         },
       });
-      return { payload: renderContinue(config.panelColor, draft.id, 2, "Dados da máquina anotados. Continue para o acesso.") };
+      return { payload: renderContinue(config.panelColor, draft.id, 2, "Dados da máquina anotados. Continue para o acesso.", emojis.pack(guildId)) };
     },
     continueModal(guildId, actor, draftId, step) {
       const blocked = gate(actor);
@@ -123,7 +123,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
         expiryText: formatDate(expiryFrom(start, access.value.plan)),
       };
       storeDraft(draft);
-      return { payload: renderContinue(config.panelColor, draft.id, 3, "Acesso anotado. Ajuste as datas se precisar. A senha e o PIN não aparecem nesta tela.") };
+      return { payload: renderContinue(config.panelColor, draft.id, 3, "Acesso anotado. Ajuste as datas se precisar. A senha e o PIN não aparecem nesta tela.", emojis.pack(guildId)) };
     },
     applyStep3({ guildId, actor, draftId, fields }) {
       const blocked = gate(actor);
@@ -141,7 +141,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
         expiryText: formatDate(schedule.value.expiresAt),
       };
       storeDraft(draft);
-      return { payload: renderReview(repo.getDraft(draft.id), config.panelColor) };
+      return { payload: renderReview(repo.getDraft(draft.id), config.panelColor, emojis.pack(guildId)) };
     },
     async save(guildId, actor, draftId) {
       const blocked = gate(actor);
@@ -187,7 +187,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
       if (blocked) return blocked;
       const client = repo.getByOwner(guildId, userId);
       if (!client) return notice("Este membro não tem máquina cadastrada.", config.panelColor);
-      return renderRemoveConfirm(client, config.panelColor);
+      return renderRemoveConfirm(client, config.panelColor, emojis.pack(guildId));
     },
     async remove(guildId, actor, userId) {
       const blocked = gate(actor);
@@ -203,7 +203,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
       if (blocked) return blocked;
       const clean = String(term ?? "").trim().slice(0, 40);
       if (clean.length < 2) return notice("Informe pelo menos 2 caracteres.", config.panelColor);
-      return renderClientList(repo.searchClients(guildId, clean), { accent: config.panelColor, page: 0, pages: 1, title: "Busca" });
+      return renderClientList(repo.searchClients(guildId, clean), { accent: config.panelColor, page: 0, pages: 1, title: "Busca", emojis: emojis.pack(guildId) });
     },
     list(guildId, actor, page) {
       const blocked = gate(actor);
@@ -211,7 +211,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
       const total = repo.countClients(guildId);
       const pages = Math.max(1, Math.ceil(total / PAGE));
       const safePage = Math.min(Math.max(0, page), pages - 1);
-      return renderClientList(repo.pageClients(guildId, PAGE, safePage * PAGE), { accent: config.panelColor, page: safePage, pages, title: `Clientes · página ${safePage + 1} de ${pages}` });
+      return renderClientList(repo.pageClients(guildId, PAGE, safePage * PAGE), { accent: config.panelColor, page: safePage, pages, title: `Clientes · página ${safePage + 1} de ${pages}`, emojis: emojis.pack(guildId) });
     },
     renewPreview(guildId, actor, input) {
       const blocked = gate(actor);
@@ -241,7 +241,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now }) {
           expiryText: formatDate(input.expiry ? schedule.value.expiresAt : expiryFrom(schedule.value.startedAt, input.plan)),
         },
       });
-      return renderRenewReview(draft, config.panelColor);
+      return renderRenewReview(draft, config.panelColor, emojis.pack(guildId));
     },
     async renewSave(guildId, actor, draftId) {
       const blocked = gate(actor);

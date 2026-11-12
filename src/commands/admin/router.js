@@ -64,7 +64,7 @@ export async function routeCommand(interaction, app) {
     return;
   }
   if (name === "adicionar-cliente") {
-    await present(interaction, app.admin.addPicker());
+    await present(interaction, app.admin.addPicker(interaction.guildId));
     return;
   }
   if (name === "remover-cliente") {

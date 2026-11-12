@@ -43,7 +43,7 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID` | vazios | ligam o provedor Azure |
 | `AZURE_SNAPSHOT_ID` | vazio | snapshot usado ao formatar |
 | `AZURE_LOCATION`, `AZURE_DEFAULT_VM_SIZE`, `AZURE_OS_TYPE`, `AZURE_VIRTUAL_NETWORK`, `AZURE_SUBNET`, `AZURE_MAX_OS_DISK_GB` | os do exemplo | lidas para o host; o painel não cria VM |
-| `EMOJI_CONTROLE`, `EMOJI_CALENDARIO`, `EMOJI_TICKET`, `EMOJI_MOONLIGHT`, `EMOJI_RDP`, `EMOJI_ALERTA`, `EMOJI_ENGRENAGEM`, `EMOJI_POWER` | vazios | substituem o emoji daquele nome |
+| `EMOJI_CONTROLE`, `EMOJI_CALENDARIO`, `EMOJI_TICKET`, `EMOJI_MOONLIGHT`, `EMOJI_RDP`, `EMOJI_ALERTA`, `EMOJI_ENGRENAGEM`, `EMOJI_POWER` | vazios | opcionais; só preencha para trocar o emoji padrão |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY`, `AI_ASSISTANT_ENABLED` | o exemplo, `false` | reservadas; o bot não chama o Ollama |
 
 Trocar a chave de criptografia torna senha e PIN antigos ilegíveis.
@@ -91,20 +91,22 @@ Ligar e desligar usam o resource ID. Sem Azure, o status local não muda e a equ
 
 ## Emojis
 
-Ao iniciar, o bot lê `guild.emojis.fetch` nos servidores autorizados e procura estes nomes:
+Não é preciso preencher `EMOJI_*`. O código já traz os emojis do servidor como padrão. A ordem é: `/configurar emoji` neste servidor, depois a variável de ambiente se estiver preenchida, depois esse padrão, depois o Unicode.
 
-| Nome | Uso | Se não existir |
-| --- | --- | --- |
-| `controle` | título e Controlar VM | 🎮 |
-| `calendario` | Consultar plano | 🗓️ |
-| `ticket` | Suporte / Tickets | 🎟️ |
-| `power` | Ligar e Desligar | ⏻ |
-| `moonlight` | PIN Moonlight | 🌙 |
-| `rdp` | Acesso RDP | 🖥️ |
-| `alerta` | Formatar VM | ⚠️ |
-| `engrenagem` | Atualizar | ⚙️ |
+O padrão só entra no botão se o bot enxergar o emoji no cache (`guild.emojis.fetch` ou o cache do client). Sem esse acesso, o botão usa o Unicode, porque um emoji inválido impede a mensagem.
 
-Suba cada emoji no servidor com exatamente esse nome. Animado também vale. `/configurar emoji` e as variáveis `EMOJI_*` ficam na frente do emoji do servidor. Publique o painel de novo para a mensagem do canal usar a versão nova. O cartão privado já usa a versão nova no próximo clique.
+| Chave | Padrão | Uso | Unicode |
+| --- | --- | --- | --- |
+| `controle` | `<:8688gaming:1568512664705961985>` | título e Controlar VM | 🎮 |
+| `calendario` | `<:timer:1568512986484711425>` | Consultar plano e tempo | 🗓️ |
+| `ticket` | `<:49457ticket:1568512619722309644>` | Suporte / Tickets | 🎟️ |
+| `moonlight` | `<:moonzinho:1568512334245138452>` | PIN Moonlight | 🌙 |
+| `rdp` | `<:rdp:1568512345825878049>` | Acesso RDP | 🖥️ |
+| `alerta` | `<:5577warning:1568512629847101531>` | Formatar VM | ⚠️ |
+| `engrenagem` | `<:dgear:1568512697002098728>` | Atualizar | ⚙️ |
+| `power` | `<:disactiv:1568512700739362897>` | Ligar e Desligar | ⏻ |
+
+Quando um título, status ou campo combina com outro emoji do mesmo servidor, ele também entra, se o bot o enxergar: monitor, windows, world, externallink, mail, pencil, tools, star, cash, bell, megaphone, 8011admin, 47106member, 1906add, 53136verified, 12560blackarrow, 7957link, 44216vip e gavel. Fora do cache, esse detalhe fica sem emoji. Publique o painel de novo se trocar um emoji da mensagem do canal.
 
 ## Provedor
 

@@ -9,7 +9,7 @@ import {
   UserSelectMenuBuilder,
 } from "discord.js";
 import { GPUS, PLAN_LABEL, formatDate } from "../services/plans.js";
-import { container, press, text } from "./ui.js";
+import { container, heading, mark, press, text } from "./ui.js";
 
 function input(id, label, description, style = TextInputStyle.Short, extra = {}) {
   const field = new TextInputBuilder().setCustomId(id).setStyle(style).setRequired(extra.required !== false).setMaxLength(extra.max ?? 80);
@@ -37,9 +37,9 @@ function modal(customId, title, labels) {
   return new ModalBuilder().setCustomId(customId).setTitle(title).addLabelComponents(...labels);
 }
 
-export function renderAddPicker(accent) {
+export function renderAddPicker(accent, emojis = {}) {
   return container(accent, (root) => {
-    root.addTextDisplayComponents(text("## Adicionar cliente\nEscolha o membro. Os dados seguem em etapas e só são gravados depois da revisão."));
+    root.addTextDisplayComponents(text(`${heading(emojis, "add", "Adicionar cliente")}\nEscolha o membro. Os dados seguem em etapas e só são gravados depois da revisão.`));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
       new UserSelectMenuBuilder().setCustomId("atlas:admin:add:user").setPlaceholder("Escolha o membro").setMinValues(1).setMaxValues(1),
     ));
@@ -80,39 +80,39 @@ export function step3Modal(draft) {
   ]);
 }
 
-export function renderContinue(accent, draftId, step, summary) {
+export function renderContinue(accent, draftId, step, summary, emojis = {}) {
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(summary));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press(`atlas:admin:draft:${step}:${draftId}`, "Continuar", ButtonStyle.Primary),
+      press(`atlas:admin:draft:${step}:${draftId}`, "Continuar", ButtonStyle.Primary, emojis.arrow),
       press(`atlas:admin:cancel:${draftId}`, "Cancelar", ButtonStyle.Secondary),
     ));
   });
 }
 
-export function renderReview(draft, accent) {
+export function renderReview(draft, accent, emojis = {}) {
   const data = draft.payload;
   const lines = [
-    "## Revise antes de salvar",
-    `Membro: <@${data.targetUserId}>`,
+    heading(emojis, "pencil", "Revise antes de salvar"),
+    mark(emojis, "member", `Membro: <@${data.targetUserId}>`),
     `Cliente: ${data.clientName}`,
-    `Máquina: ${data.machineName}`,
-    `GPU: ${data.gpu}`,
+    mark(emojis, "monitor", `Máquina: ${data.machineName}`),
+    mark(emojis, "windows", `GPU: ${data.gpu}`),
     `vCPUs: ${data.vcpus}`,
     `RAM: ${data.ram}`,
-    `IP: ${data.publicIp || "não informado"}`,
-    `Usuário RDP: ${data.rdpUser || "não informado"}`,
+    mark(emojis, "world", `IP: ${data.publicIp || "não informado"}`),
+    mark(emojis, "rdp", `Usuário RDP: ${data.rdpUser || "não informado"}`),
     `Senha RDP: ${data.rdpPasswordCipher || data.keepPassword ? "definida" : "não definida"}`,
-    `PIN Moonlight: ${data.pinCipher || data.keepPin ? "definido" : "não definido"}`,
-    `Plano: ${PLAN_LABEL[data.plan] || data.plan}`,
+    mark(emojis, "moonlight", `PIN Moonlight: ${data.pinCipher || data.keepPin ? "definido" : "não definido"}`),
+    mark(emojis, "vip", `Plano: ${PLAN_LABEL[data.plan] || data.plan}`),
     `Início: ${data.startText || formatDate(data.startedAt)}`,
-    `Vencimento: ${data.expiryText || formatDate(data.expiresAt)}`,
-    `ID na infra: ${data.infraId || "não informado"}`,
+    mark(emojis, "cash", `Vencimento: ${data.expiryText || formatDate(data.expiresAt)}`),
+    mark(emojis, "link", `ID na infra: ${data.infraId || "não informado"}`),
   ];
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(lines.join("\n")));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press(`atlas:admin:save:${draft.id}`, "Salvar", ButtonStyle.Success),
+      press(`atlas:admin:save:${draft.id}`, "Salvar", ButtonStyle.Success, emojis.verified),
       press(`atlas:admin:cancel:${draft.id}`, "Cancelar", ButtonStyle.Secondary),
     ));
   });
@@ -121,9 +121,9 @@ export function renderReview(draft, accent) {
 export function renderFormatConfirm(client, confirmation, accent, emojis) {
   return container(0xed4245, (root) => {
     root.addTextDisplayComponents(text([
-      "## Formatar VM",
+      heading(emojis, "alerta", "Formatar VM"),
       `Isso pede a recriação do disco do sistema de **${client.machineName}**.`,
-      "Na Azure, a VM é desligada e o disco do sistema é trocado pelo snapshot configurado.",
+      mark(emojis, "tools", "Na Azure, a VM é desligada e o disco do sistema é trocado pelo snapshot configurado."),
       `A confirmação expira <t:${Math.floor(confirmation.expiresAt / 1000)}:R>.`,
       "No próximo passo, digite o nome da máquina ou CONFIRMAR.",
     ].join("\n")));
@@ -140,42 +140,42 @@ export function formatModal(confirmationId) {
   ]);
 }
 
-export function renderRemoveConfirm(client, accent) {
+export function renderRemoveConfirm(client, accent, emojis = {}) {
   return container(0xed4245, (root) => {
-    root.addTextDisplayComponents(text(`## Remover cliente\n${client.clientName} · ${client.machineName}\nO registro e as credenciais cifradas saem do banco. A VM na Azure não é apagada.`));
+    root.addTextDisplayComponents(text(`${heading(emojis, "gavel", "Remover cliente")}\n${client.clientName} · ${client.machineName}\nO registro e as credenciais cifradas saem do banco. A VM na Azure não é apagada.`));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press(`atlas:admin:remove:yes:${client.userId}`, "Remover", ButtonStyle.Danger),
+      press(`atlas:admin:remove:yes:${client.userId}`, "Remover", ButtonStyle.Danger, emojis.alerta),
       press("atlas:admin:remove:no", "Cancelar", ButtonStyle.Secondary),
     ));
   });
 }
 
-export function renderClientList(rows, { accent, page, pages, title }) {
-  const lines = [`## ${title}`, rows.length ? rows.map((row) => `**${row.clientName}** · ${row.machineName} · <@${row.userId}> · ${PLAN_LABEL[row.planType] || row.planType}`).join("\n") : "Nenhum cliente encontrado."];
+export function renderClientList(rows, { accent, page, pages, title, emojis = {} }) {
+  const lines = [heading(emojis, "member", title), rows.length ? rows.map((row) => `**${row.clientName}** · ${row.machineName} · <@${row.userId}> · ${PLAN_LABEL[row.planType] || row.planType}`).join("\n") : "Nenhum cliente encontrado."];
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(lines.join("\n")));
     if (pages > 1) {
       root.addActionRowComponents(new ActionRowBuilder().addComponents(
-        press(`atlas:admin:list:prev:${page}`, "Anterior", ButtonStyle.Secondary).setDisabled(page <= 0),
-        press(`atlas:admin:list:next:${page}`, "Próxima", ButtonStyle.Secondary).setDisabled(page + 1 >= pages),
+        press(`atlas:admin:list:prev:${page}`, "Anterior", ButtonStyle.Secondary, emojis.arrow).setDisabled(page <= 0),
+        press(`atlas:admin:list:next:${page}`, "Próxima", ButtonStyle.Secondary, emojis.arrow).setDisabled(page + 1 >= pages),
       ));
     }
   });
 }
 
-export function renderRenewReview(draft, accent) {
+export function renderRenewReview(draft, accent, emojis = {}) {
   const data = draft.payload;
   return container(accent, (root) => {
     root.addTextDisplayComponents(text([
-      "## Renovar plano",
-      `Cliente: ${data.clientName}`,
-      `Máquina: ${data.machineName}`,
-      `Plano: ${PLAN_LABEL[data.plan]}`,
+      heading(emojis, "cash", "Renovar plano"),
+      mark(emojis, "member", `Cliente: ${data.clientName}`),
+      mark(emojis, "monitor", `Máquina: ${data.machineName}`),
+      mark(emojis, "vip", `Plano: ${PLAN_LABEL[data.plan]}`),
       `Início: ${data.startText}`,
       `Vencimento: ${data.expiryText}`,
     ].join("\n")));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press(`atlas:admin:renew:save:${draft.id}`, "Salvar", ButtonStyle.Success),
+      press(`atlas:admin:renew:save:${draft.id}`, "Salvar", ButtonStyle.Success, emojis.verified),
       press(`atlas:admin:cancel:${draft.id}`, "Cancelar", ButtonStyle.Secondary),
     ));
   });

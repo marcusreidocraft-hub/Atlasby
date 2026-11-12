@@ -1,6 +1,6 @@
 import { ActionRowBuilder, ButtonStyle } from "discord.js";
 import { PLAN_LABEL, formatStamp, planStatus, powerLabel, remainingLabel } from "../services/plans.js";
-import { container, press, section, separator, text } from "./ui.js";
+import { container, heading, mark, press, section, separator, text } from "./ui.js";
 
 export function renderMissing(accent) {
   return container(accent, (root) => {
@@ -11,16 +11,23 @@ export function renderMissing(accent) {
 export function renderControl(client, { accent, emojis, bannerUrl, now, notice }) {
   const status = powerLabel(client.powerStatus);
   const on = client.powerStatus === "ligada";
-  const header = `**${client.machineName}**\nSua Máquina\n\n**${client.gpu} · ${client.vcpus} vCPU · ${client.ram}**\nStatus: **${status}**`;
+  const state = planStatus(now, client.expiresAt);
+  const header = [
+    mark(emojis, "monitor", `**${client.machineName}**`),
+    "Sua Máquina",
+    "",
+    mark(emojis, "windows", `**${client.gpu} · ${client.vcpus} vCPU · ${client.ram}**`),
+    `Status: **${status}**`,
+  ].join("\n");
   const facts = [
-    `**IP público** · ${client.publicIp || "não informado"}`,
-    `**Tempo do plano** · ${remainingLabel(now, client.expiresAt)}`,
-    `**Plano** · ${PLAN_LABEL[client.planType] || client.planType} · ${planStatus(now, client.expiresAt)}`,
-    `**Última consulta da VM** · ${formatStamp(client.lastQueryAt)}`,
+    mark(emojis, "world", `**IP público** · ${client.publicIp || "não informado"}`),
+    mark(emojis, "calendario", `**Tempo do plano** · ${remainingLabel(now, client.expiresAt)}`),
+    mark(emojis, "vip", `**Plano** · ${PLAN_LABEL[client.planType] || client.planType} · ${state}`),
+    mark(emojis, "bell", `**Última consulta da VM** · ${formatStamp(client.lastQueryAt)}`),
   ].join("\n");
   return container(accent, (root) => {
     if (notice) root.addTextDisplayComponents(text(notice));
-    root.addTextDisplayComponents(text(`${client.clientName} autorizado com acesso completo.`));
+    root.addTextDisplayComponents(text(mark(emojis, "verified", `${client.clientName} autorizado com acesso completo.`)));
     root.addSeparatorComponents(separator());
     root.addSectionComponents(section(header, {
       bannerUrl,
@@ -28,7 +35,7 @@ export function renderControl(client, { accent, emojis, bannerUrl, now, notice }
     }));
     root.addTextDisplayComponents(text(facts));
     root.addSeparatorComponents(separator());
-    root.addTextDisplayComponents(text("Use os botões abaixo para controlar sua máquina.\nInstância Spot: se desligar inesperadamente, tente ligá-la novamente."));
+    root.addTextDisplayComponents(text(mark(emojis, "megaphone", "Use os botões abaixo para controlar sua máquina.\nInstância Spot: se desligar inesperadamente, tente ligá-la novamente.")));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
       press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, emojis.power),
       press("atlas:vm:pin", "PIN Moonlight", ButtonStyle.Secondary, emojis.moonlight),
@@ -41,23 +48,25 @@ export function renderControl(client, { accent, emojis, bannerUrl, now, notice }
   });
 }
 
-export function renderPlan(client, { accent, now }) {
+export function renderPlan(client, { accent, now, emojis = {} }) {
+  const state = planStatus(now, client.expiresAt);
   return container(accent, (root) => {
     root.addTextDisplayComponents(text([
-      "## Seu plano",
-      `Cliente: ${client.clientName}`,
-      `Máquina: ${client.machineName}`,
-      `Plano: ${PLAN_LABEL[client.planType] || client.planType}`,
+      heading(emojis, "star", "Seu plano"),
+      mark(emojis, "member", `Cliente: ${client.clientName}`),
+      mark(emojis, "monitor", `Máquina: ${client.machineName}`),
+      mark(emojis, "vip", `Plano: ${PLAN_LABEL[client.planType] || client.planType}`),
       `Início: ${formatStamp(client.startedAt)}`,
-      `Vencimento: ${formatStamp(client.expiresAt)}`,
-      `Tempo restante: ${remainingLabel(now, client.expiresAt)}`,
-      `Status: ${planStatus(now, client.expiresAt)}`,
+      mark(emojis, "cash", `Vencimento: ${formatStamp(client.expiresAt)}`),
+      mark(emojis, "calendario", `Tempo restante: ${remainingLabel(now, client.expiresAt)}`),
+      mark(emojis, state === "Ativo" ? "verified" : "alerta", `Status: ${state}`),
     ].join("\n")));
   });
 }
 
-export function renderSecret(title, lines, accent) {
+export function renderSecret(title, lines, accent, emoji) {
+  const heading = emoji ? `${emoji} ${title}` : title;
   return container(accent, (root) => {
-    root.addTextDisplayComponents(text(`## ${title}\n${lines.join("\n")}\n\n-# Esta resposta é só sua e não fica no canal.`));
+    root.addTextDisplayComponents(text(`## ${heading}\n${lines.join("\n")}\n\n-# Esta resposta é só sua e não fica no canal.`));
   });
 }

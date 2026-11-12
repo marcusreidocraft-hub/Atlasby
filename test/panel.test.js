@@ -11,7 +11,7 @@ import { step1Modal, step2Modal, step3Modal } from "../src/panels/admin.js";
 import { renderControl } from "../src/panels/control.js";
 import { renderPublicPanel } from "../src/panels/public.js";
 import { createSealer } from "../src/services/crypto.js";
-import { UNICODE } from "../src/services/emojis.js";
+import { createEmojiBook, DEFAULTS, UNICODE } from "../src/services/emojis.js";
 import { isAdmin } from "../src/services/admin.js";
 import { expiryFrom, formatDate, parseDate, planStatus, remainingLabel } from "../src/services/plans.js";
 import { validateSchedule } from "../src/services/fields.js";
@@ -145,6 +145,23 @@ async function register(env, actor = adminActor()) {
   await env.app.admin.save(GUILD, actor, draft);
   return draft;
 }
+
+test("emoji padrão exige o cache e a variável fica na frente", () => {
+  const repo = { getSettings: () => ({ emoji: {} }) };
+  const book = createEmojiBook({ emoji: {}, allowedGuildIds: [] }, repo);
+  assert.equal(book.pack(GUILD).controle, UNICODE.controle);
+  assert.equal(book.pack(GUILD).controle.includes("1568512664705961985"), false);
+  book.remember(GUILD, [{ id: "1568512664705961985", name: "8688gaming" }, { id: "1568512326804574281", name: "monitor" }]);
+  assert.equal(book.pack(GUILD).controle, DEFAULTS.controle);
+  assert.equal(book.pack(GUILD).monitor, "<:monitor:1568512326804574281>");
+  const replaced = createEmojiBook({ emoji: { controle: "<:outro:999>" }, allowedGuildIds: [] }, repo);
+  replaced.remember(GUILD, [{ id: "1568512664705961985", name: "8688gaming" }]);
+  assert.equal(replaced.pack(GUILD).controle, DEFAULTS.controle);
+  replaced.remember(GUILD, [{ id: "999", name: "outro" }]);
+  assert.equal(replaced.pack(GUILD).controle, "<:outro:999>");
+  const typed = createEmojiBook({ emoji: { controle: "🎮" }, allowedGuildIds: [] }, repo);
+  assert.equal(typed.pack(GUILD).controle, "🎮");
+});
 
 test("permissão de admin usa o bit ou o cargo", () => {
   const config = { adminRoleIds: [ROLE] };
