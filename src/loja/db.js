@@ -30,6 +30,7 @@ const SCHEMA = `
     ram TEXT NOT NULL,
     disk_gb INTEGER NOT NULL,
     stock INTEGER NOT NULL DEFAULT 0,
+    purchases_enabled INTEGER NOT NULL DEFAULT 1,
     visible INTEGER NOT NULL DEFAULT 1,
     role_id TEXT,
     azure_json TEXT,
@@ -101,6 +102,7 @@ function mapProduct(row) {
     ram: row.ram,
     diskGb: row.disk_gb,
     stock: row.stock,
+    purchasesEnabled: row.purchases_enabled !== 0,
     visible: row.visible === 1,
     roleId: row.role_id || "",
     azure: row.azure_json ? JSON.parse(row.azure_json) : {},
@@ -172,6 +174,10 @@ function mapSettings(row) {
 
 export function attachStore(db) {
   db.exec(SCHEMA);
+  const productColumns = db.prepare("PRAGMA table_info(store_products)").all();
+  if (!productColumns.some((column) => column.name === "purchases_enabled")) {
+    db.exec("ALTER TABLE store_products ADD COLUMN purchases_enabled INTEGER NOT NULL DEFAULT 1");
+  }
   const columns = db.prepare("PRAGMA table_info(clients)").all();
   if (!columns.some((column) => column.name === "expiry_handled")) {
     db.exec("ALTER TABLE clients ADD COLUMN expiry_handled INTEGER NOT NULL DEFAULT 0");
@@ -189,11 +195,12 @@ export function attachStore(db) {
   const product = db.prepare("SELECT * FROM store_products WHERE guild_id = ? AND sku = ?");
   const products = db.prepare("SELECT * FROM store_products WHERE guild_id = ? ORDER BY vcpus");
   const upsertProduct = db.prepare(`INSERT INTO store_products (
-      guild_id, sku, name, headline, specs, vm_size, gpu, vcpus, ram, disk_gb, stock, visible, role_id, azure_json, prices_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      guild_id, sku, name, headline, specs, vm_size, gpu, vcpus, ram, disk_gb, stock, purchases_enabled, visible, role_id, azure_json, prices_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(guild_id, sku) DO UPDATE SET
       name = excluded.name, headline = excluded.headline, specs = excluded.specs, vm_size = excluded.vm_size,
       gpu = excluded.gpu, vcpus = excluded.vcpus, ram = excluded.ram, disk_gb = excluded.disk_gb,
+      purchases_enabled = excluded.purchases_enabled,
       visible = excluded.visible, role_id = excluded.role_id, azure_json = excluded.azure_json, prices_json = excluded.prices_json`);
   const offers = db.prepare("SELECT * FROM store_offers WHERE guild_id = ? AND active = 1");
   const offerById = db.prepare("SELECT * FROM store_offers WHERE id = ?");
@@ -225,7 +232,7 @@ export function attachStore(db) {
       if (product.get(guildId, item.sku)) continue;
       upsertProduct.run(
         guildId, item.sku, item.name, item.headline, item.specs, item.vmSize, item.gpu, item.vcpus, item.ram, item.diskGb,
-        0, 1, "", JSON.stringify({
+        0, 1, 1, "", JSON.stringify({
           location: defaults.location, group: "Reido7", size: item.vmSize, spot: true, disk: "PremiumV2_LRS",
           vnet: defaults.vnet, subnet: defaults.subnet, nsg: "Atlas-nsg",
         }),
@@ -254,11 +261,17 @@ export function attachStore(db) {
     saveProduct(row) {
       const current = product.get(row.guildId, row.sku);
       const prices = row.prices || (current?.prices_json ? JSON.parse(current.prices_json) : {});
+      const purchases = row.purchasesEnabled === undefined ? current?.purchases_enabled !== 0 : row.purchasesEnabled;
       upsertProduct.run(
         row.guildId, row.sku, row.name, row.headline, row.specs, row.vmSize, row.gpu, row.vcpus, row.ram, row.diskGb,
-        current?.stock ?? row.stock ?? 0, row.visible ? 1 : 0, row.roleId || "", JSON.stringify(row.azure || {}),
+        current?.stock ?? row.stock ?? 0, purchases ? 1 : 0, row.visible ? 1 : 0, row.roleId || "", JSON.stringify(row.azure || {}),
         JSON.stringify(prices),
       );
+    },
+    setPurchases(guildId, sku, enabled) {
+      const flag = enabled ? 1 : 0;
+      if (sku) return db.prepare("UPDATE store_products SET purchases_enabled = ? WHERE guild_id = ? AND sku = ?").run(flag, guildId, sku).changes;
+      return db.prepare("UPDATE store_products SET purchases_enabled = ? WHERE guild_id = ?").run(flag, guildId).changes;
     },
     setStock(guildId, sku, stock) {
       return db.prepare("UPDATE store_products SET stock = ? WHERE guild_id = ? AND sku = ?").run(Math.max(0, stock), guildId, sku).changes === 1;

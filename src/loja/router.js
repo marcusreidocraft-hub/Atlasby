@@ -71,6 +71,18 @@ export async function handleStoreCommand(interaction, app, actor) {
         messageId: current.messageId,
       });
       await app.store.saveSettings(guildId, actor.id, { ...location, ticketCategoryId: category?.id || "" });
+    } else if (sub === "compras") {
+      const result = await app.store.setPurchases(guildId, actor.id, {
+        sku: interaction.options.getString("produto") || "",
+        enabled: interaction.options.getString("acao") === "ativar",
+      });
+      if (!result.ok) {
+        await present(interaction, notice(result.error, app.config.panelColor));
+        return true;
+      }
+      const updated = await refresh(interaction, app).catch(() => false);
+      await present(interaction, notice(updated ? "Compras atualizadas no painel." : "Compras atualizadas. Publique o painel para exibir.", app.config.panelColor));
+      return true;
     } else if (sub === "produto") {
       const prices = Object.fromEntries(interaction.options.getString("precos").split(",").map((part) => part.split("=")).filter((pair) => pair.length === 2).map(([key, value]) => [key.trim(), Number(value)]));
       await app.store.saveProduct(guildId, actor.id, {

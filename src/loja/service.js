@@ -62,6 +62,13 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       if (price6h) patch.price6h = price6h;
       return this.saveSettings(guildId, actorId, patch);
     },
+    async setPurchases(guildId, actorId, { sku = "", enabled }) {
+      ready(guildId);
+      const changed = repo.setPurchases(guildId, sku, enabled);
+      if (sku && changed !== 1) return { ok: false, error: "Produto não encontrado." };
+      await note(guildId, actorId, "compras", `${enabled ? "Compras ativadas" : "Compras desativadas"} ${sku ? `em ${sku}` : "em todos os produtos"}.`);
+      return { ok: true };
+    },
     async setStock(guildId, actorId, sku, stock) {
       ready(guildId);
       if (!repo.storeProduct(guildId, sku)) return { ok: false, error: "Produto não encontrado." };
@@ -132,6 +139,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
         offer: activeOffer(guildId, sku, plan),
       });
       if (!quote) return { ok: false, error: "Esse plano não está disponível." };
+      if (product.purchasesEnabled === false) return { ok: false, error: "Compras desativadas no momento." };
       const reserved = repo.reserveOrder({
         guildId, userId, sku, plan, clientName,
         originalCents: quote.original, discountCents: quote.discount, totalCents: quote.total,

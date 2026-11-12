@@ -83,9 +83,9 @@ function selectsOf(view) {
 
 test("o painel da loja é Components V2 e cada máquina tem o próprio seletor", () => {
   const products = [
-    { sku: "t4-4", visible: true, stock: 2, vcpus: 4, headline: "Tesla T4 • 4 vCPUs", specs: "4 núcleos", prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
-    { sku: "t4-8", visible: true, stock: 0, vcpus: 8, headline: "Tesla T4 • 8 vCPUs", specs: "8 núcleos", prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
-    { sku: "t4-16", visible: true, stock: 1, vcpus: 16, headline: "Tesla T4 • 16 vCPUs", specs: "16 núcleos", prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
+    { sku: "t4-4", visible: true, stock: 0, purchasesEnabled: true, gpu: "Tesla T4", vcpus: 4, ramGib: 28, diskGb: 512, prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
+    { sku: "t4-8", visible: true, stock: 5, purchasesEnabled: false, gpu: "Tesla T4", vcpus: 8, ram: "56 GB", diskGb: 512, prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
+    { sku: "t4-16", visible: true, stock: 1, purchasesEnabled: true, gpu: "Tesla T4", vcpus: 16, ramGib: 110, diskGb: 512, prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
   ];
   const view = renderStorePanel({
     settings: { title: "🎮 Atlas Cloud PC", description: "Tenha seu próprio computador na nuvem.", accent: 0x0a0a0a, hoursEnabled: true },
@@ -93,21 +93,31 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
     offers: [],
     now: 0,
   });
+  const raw = JSON.stringify(view);
   assert.equal(view.flags, MessageFlags.IsComponentsV2);
   assert.equal(view.embeds, undefined);
   assert.equal(view.content, undefined);
+  assert.equal(view.components[0].toJSON().accent_color, undefined);
+  assert.equal((raw.match(/<:8688gaming:1568512664705961985>/g) || []).length, 1);
+  assert.doesNotMatch(raw, /<:timer:|<:cash:|<:windows:|<:tools:|<:carrinho:/);
+  assert.match(raw, /Tesla T4 · 4 vCPU/);
+  assert.match(raw, /-# 28GB RAM \/ 512GB SSD/);
+  assert.match(raw, /3h \*\*R\$ 4,59\*\*/);
+  assert.match(raw, /7d \*\*R\$ 24,90\*\*/);
   const selects = selectsOf(view);
   assert.equal(selects.length, 3);
   const four = selects.find((item) => item.custom_id === "atlas:store:pick:t4-4");
   const eight = selects.find((item) => item.custom_id === "atlas:store:pick:t4-8");
   const sixteen = selects.find((item) => item.custom_id === "atlas:store:pick:t4-16");
   assert.deepEqual(four.options.map((item) => item.value), ["t4-4:3h", "t4-4:6h", "t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+  assert.equal(four.options.every((item) => item.emoji === undefined), true);
   assert.equal(four.disabled, undefined);
+  assert.equal(four.placeholder, "Escolher seu plano");
   assert.equal(eight.disabled, true);
-  assert.equal(eight.placeholder, "Sem estoque no momento");
-  assert.deepEqual(eight.options.map((item) => item.value), ["indisponivel"]);
+  assert.equal(eight.placeholder, "Compras desativadas");
+  assert.match(raw, /Esgotado/);
   assert.deepEqual(sixteen.options.map((item) => item.value), ["t4-16:semanal", "t4-16:quinzenal", "t4-16:mensal"]);
-  assert.doesNotMatch(JSON.stringify(view), /atlas:store:pick"/);
+  assert.doesNotMatch(raw, /atlas:store:pick"/);
   const hourlyOff = renderStorePanel({
     settings: { title: "Atlas Cloud PC", description: "Loja", accent: 0x0a0a0a, hoursEnabled: false },
     products,
@@ -194,10 +204,16 @@ test("estoque não fica negativo e o painel esconde hora desligada", async () =>
     assert.equal(env.repo.storeProduct(GUILD, "t4-4").stock, 0);
     const shown = JSON.stringify(env.store.panel(GUILD));
     assert.match(shown, /Atlas Cloud PC/);
-    assert.match(shown, /Sem estoque no momento/);
+    assert.match(shown, /Escolher seu plano/);
+    assert.doesNotMatch(shown, /Sem estoque no momento/);
     assert.match(shown, /R\$ 49,90/);
+    await env.store.setPurchases(GUILD, "admin", { sku: "t4-4", enabled: false });
+    const blocked = env.store.choose(GUILD, "200000000000000003", "t4-4:mensal", "Caio");
+    assert.equal(blocked.ok, false);
+    assert.equal(blocked.error, "Compras desativadas no momento.");
+    assert.match(JSON.stringify(env.store.panel(GUILD)), /Compras desativadas/);
     await env.store.setHours(GUILD, "admin", { enabled: false });
-    assert.doesNotMatch(JSON.stringify(env.store.panel(GUILD)), /3 horas/);
+    assert.doesNotMatch(JSON.stringify(env.store.panel(GUILD)), /3h \*\*/);
     assert.equal(env.repo.releaseOrder(first.order.id, "cancelado", 1), true);
     assert.equal(env.repo.storeProduct(GUILD, "t4-4").stock, 1);
   } finally {
