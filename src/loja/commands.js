@@ -54,7 +54,7 @@ export function storeCommands() {
       .addStringOption((option) => option.setName("nsg").setDescription("NSG").setRequired(false))
       .addBooleanOption((option) => option.setName("spot").setDescription("Instância Spot").setRequired(false))
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName("configurar-imagem").setDescription("Imagem especializada ou snapshot.")
+    new SlashCommandBuilder().setName("configurar-imagem").setDescription("Imagem da galeria. Sem versão, usa a última.")
       .addStringOption((option) => option.setName("tipo").setDescription("Origem").setRequired(true).addChoices(
         { name: "Imagem gerenciada", value: "managed" },
         { name: "Galeria", value: "gallery" },

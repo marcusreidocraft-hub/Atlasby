@@ -6,6 +6,7 @@ import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { phraseMatches } from "./fields.js";
 import { providerError, providerNotice } from "./provider.js";
+import { resolveGalleryImage } from "../loja/image.js";
 import { renderVmCardPng } from "./vm-card.js";
 
 async function viewOf(client, context, noticeText, agentLabel = "") {
@@ -250,7 +251,13 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
       if (!phraseMatches(phrase, client.machineName)) return notice("A frase não confere com o nome da máquina nem com CONFIRMAR. Nada foi alterado.", config.panelColor);
       if (!repo.consumeConfirmation(confirmationId, now())) return notice("A confirmação expirou ou já foi usada. Nada foi alterado.", config.panelColor);
       try {
-        const result = await infra.format(client.infraId);
+        const stored = repo.storeSettings?.(guildId);
+        const image = resolveGalleryImage({
+          storedId: stored?.imageKind === "snapshot" ? stored.imageId : stored?.imageId,
+          storedKind: stored?.imageKind,
+          envId: config.azure.imageId,
+        });
+        const result = await infra.format(client.infraId, image);
         if (result.mode === "azure") repo.updatePower(client.id, "desligada", now());
         else repo.touchQuery(client.id, now());
         await tracked(client, userId, result.mode === "azure" ? "formatar" : "formatar_manual", providerNotice(result, "format"));

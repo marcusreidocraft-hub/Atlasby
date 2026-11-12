@@ -567,29 +567,36 @@ test("Azure formata pelo snapshot e o modo manual não chama a nuvem", async () 
       async beginDeallocateAndWait() { calls.push("deallocate"); },
       async get() {
         calls.push("get");
-        return { location: "brazilsouth", storageProfile: { osDisk: { managedDisk: { storageAccountType: "Premium_LRS" } } } };
+        return {
+          location: "brazilsouth",
+          hardwareProfile: { vmSize: "Standard_NC4as_T4_v3" },
+          networkProfile: { networkInterfaces: [{ id: "/nic/existente", primary: true }] },
+          storageProfile: { osDisk: { diskSizeGB: 512, managedDisk: { storageAccountType: "Premium_LRS" } } },
+          osProfile: { adminUsername: "nao-enviar", computerName: "nao-enviar" },
+        };
       },
       async beginCreateOrUpdateAndWait(_group, _name, body) {
-        calls.push(["update", body.storageProfile.osDisk.managedDisk.id, body.storageProfile.osDisk.createOption]);
+        calls.push(["update", body]);
       },
       async instanceView() { return { statuses: [{ code: "PowerState/deallocated" }] }; },
     },
-    disks: {
-      async beginCreateOrUpdateAndWait(_group, _name, body) {
-        calls.push(["disk", body.creationData.createOption, body.creationData.sourceResourceId]);
-        return { id: "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Compute/disks/osvm1" };
-      },
-    },
   };
-  const env = harness({ azure: true, snapshot: true, compute });
+  const env = harness({ azure: true, compute });
   await register(env);
   const asked = await env.app.clients.askFormat(GUILD, CLIENT);
   const confirmation = /atlas:vm:format:yes:([0-9a-f-]{36})/.exec(textOf(asked))[1];
   const done = await env.app.clients.confirmFormat(GUILD, CLIENT, confirmation, "Mesa 01");
+  const body = calls[2][1];
   assert.match(textOf(done), /disco do sistema foi recriado/);
-  assert.deepEqual(calls.slice(0, 4).map((call) => Array.isArray(call) ? call[0] : call), ["deallocate", "get", "disk", "update"]);
-  assert.equal(calls[2][1], "Copy");
-  assert.equal(calls[2][2], SNAPSHOT);
+  assert.deepEqual(calls.map((call) => Array.isArray(call) ? call[0] : call), ["deallocate", "get", "update"]);
+  assert.equal(body.osProfile, undefined);
+  assert.equal(body.storageProfile.imageReference.id, env.app.config.azure.imageId);
+  assert.equal(body.storageProfile.osDisk.createOption, "FromImage");
+  assert.equal(body.storageProfile.diskControllerType, "SCSI");
+  assert.equal(body.securityProfile.securityType, "TrustedLaunch");
+  assert.equal(body.securityProfile.uefiSettings.secureBootEnabled, true);
+  assert.equal(body.securityProfile.uefiSettings.vTpmEnabled, true);
+  assert.equal(body.networkProfile.networkInterfaces[0].id, "/nic/existente");
   assert.equal(env.repo.getByOwner(GUILD, CLIENT).powerStatus, "desligada");
   env.close();
 
@@ -629,7 +636,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
   for (const key of [
     "DISCORD_TOKEN", "DISCORD_CLIENT_ID", "ALLOWED_GUILD_IDS", "DATA_DIR", "AGENT_SECRET", "AGENT_PORT", "SERVER_PORT", "WYVI_API_KEY", "WYVI_WEBHOOK_SECRET", "WYVI_API_BASE", "CONFIRMATION_TTL_SECONDS",
     "ENABLE_MESSAGE_CONTENT_INTENT", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET",
-    "AZURE_SUBSCRIPTION_ID", "AZURE_CREDENTIALS_KEY", "AZURE_SNAPSHOT_ID", "AZURE_LOCATION",
+    "AZURE_SUBSCRIPTION_ID", "AZURE_CREDENTIALS_KEY", "AZURE_SNAPSHOT_ID", "AZURE_IMAGE_ID", "AZURE_LOCATION",
     "AZURE_DEFAULT_VM_SIZE", "AZURE_OS_TYPE", "AZURE_VIRTUAL_NETWORK", "AZURE_SUBNET", "AZURE_MAX_OS_DISK_GB",
     "PANEL_COLOR", "OLLAMA_BASE_URL", "OLLAMA_MODEL", "OLLAMA_API_KEY", "AI_ASSISTANT_ENABLED",
     "SUPPORT_CHANNEL_URL", "ADMIN_ROLE_IDS", "ADMIN_LOG_CHANNEL_ID", "CREDENTIALS_KEY", "PANEL_BANNER_URL",

@@ -176,7 +176,7 @@ export function renderFormatConfirm(client, confirmation, accent, emojis) {
     root.addTextDisplayComponents(text([
       heading(emojis, "alerta", "Formatar VM"),
       `Isso pede a recriação do disco do sistema de **${client.machineName}**.`,
-      mark(emojis, "tools", "Na Azure, a VM é desligada e o disco do sistema é trocado pelo snapshot configurado."),
+      mark(emojis, "tools", "Na Azure, a VM é desligada e o disco do sistema é recriado pela imagem da galeria. O IP e o vínculo permanecem."),
       `A confirmação expira <t:${Math.floor(confirmation.expiresAt / 1000)}:R>.`,
       "No próximo passo, digite o nome da máquina ou CONFIRMAR.",
     ].join("\n")));

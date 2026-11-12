@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { catalogBySku, durationMs, formatBrl, parseMoney, PLAN_NAMES } from "./products.js";
 import { priceFromDiscount, quotePrice } from "./promotions.js";
 import { advanceProvision, resourceNames } from "./provision.js";
+import { resolveGalleryImage } from "./image.js";
 import { chargeCents, chargeReference, verifyWyviSignature } from "./payments.js";
 import { renderStorePanel } from "./panel.js";
 
@@ -225,11 +226,12 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       const product = repo.storeProduct(order.guildId, order.sku);
       const settings = repo.storeSettings(order.guildId);
       const azure = product.azure || {};
-      if (!settings.imageId || !azure.vnet || !azure.subnet) {
-        const next = repo.patchOrder(orderId, { status: "acompanhamento", provision: { ...(order.provision || {}), step: "acompanhamento", error: "imagem ou rede" } }, now());
-        await note(order.guildId, "sistema", "provisionamento", `Pedido ${orderId} sem imagem ou rede.`);
-        return { ok: false, error: "Configure a imagem e a rede antes de criar a VM.", order: next };
+      if (!azure.vnet || !azure.subnet) {
+        const next = repo.patchOrder(orderId, { status: "acompanhamento", provision: { ...(order.provision || {}), step: "acompanhamento", error: "rede" } }, now());
+        await note(order.guildId, "sistema", "provisionamento", `Pedido ${orderId} sem rede configurada.`);
+        return { ok: false, error: "Configure a rede antes de criar a VM.", order: next };
       }
+      const image = resolveGalleryImage({ storedId: settings.imageId, storedKind: settings.imageKind, envId: config.azure?.imageId });
       repo.patchOrder(orderId, { status: "provisionando" }, now());
       const state = {
         orderId,
@@ -238,7 +240,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
         names: order.provision?.names || resourceNames(orderId),
         location: azure.location, group: azure.group, size: azure.size, vcpus: product.vcpus,
         spot: azure.spot, disk: azure.disk, diskGb: product.diskGb, vnet: azure.vnet, subnet: azure.subnet,
-        nsg: azure.nsg, imageId: settings.imageId, imageKind: settings.imageKind,
+        nsg: azure.nsg, imageId: image.id, imageKind: image.kind,
       };
       const steps = {
         quota: (current) => provisioner.quota(current),
@@ -246,7 +248,19 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
         nic: (current) => provisioner.nic(current),
         vm: (current) => provisioner.vm(current),
         readIp: (current) => provisioner.readIp(current),
-        health: async (ip) => sunshine?.health(ip) ?? { ok: false },
+        health: async (ip) => {
+          if (!sunshine?.health) return { ok: false };
+          const deadline = Date.now() + (hooks.healthTimeoutMs ?? 120_000);
+          const pause = hooks.healthIntervalMs ?? 5_000;
+          let last = { ok: false };
+          while (Date.now() <= deadline) {
+            last = await sunshine.health(ip);
+            if (last?.ok) return last;
+            if (Date.now() + pause > deadline) break;
+            await new Promise((resolve) => setTimeout(resolve, pause));
+          }
+          return last;
+        },
       };
       try {
         await hooks.onProgress?.("Criando a máquina.");

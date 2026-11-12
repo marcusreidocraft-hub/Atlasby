@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { specsFromSize } from "./vm-size.js";
+import { buildSpecializedVm } from "../loja/image.js";
 
 export function vmOptionValue(resourceId) {
   return createHash("sha256").update(String(resourceId)).digest("hex").slice(0, 32);
@@ -211,29 +212,57 @@ export function createInfrastructure(config, deps = {}) {
         return { mode: "azure", status: desired === "ligada" ? "ligada" : "desligada" };
       });
     },
-    async format(infraId) {
-      if (!config.azure.snapshotId) return manual(config.azure.configured ? "snapshot" : "unconfigured");
+    async format(infraId, image = null) {
+      if (!config.azure.configured) return manual("unconfigured");
+      const chosen = image?.kind === "snapshot" && image.id
+        ? image
+        : { kind: "gallery", id: image?.id || config.azure.imageId };
+      if (chosen.kind === "snapshot") {
+        return azureCall(infraId, writeMs, async (client, target) => {
+          await client.virtualMachines.beginDeallocateAndWait(target.resourceGroup, target.name);
+          const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
+          const name = diskName(target.name);
+          const disk = await client.disks.beginCreateOrUpdateAndWait(target.resourceGroup, name, {
+            location: vm.location,
+            sku: { name: vm.storageProfile?.osDisk?.managedDisk?.storageAccountType || "StandardSSD_LRS" },
+            creationData: { createOption: "Copy", sourceResourceId: chosen.id },
+          });
+          const next = {
+            ...vm,
+            storageProfile: {
+              ...vm.storageProfile,
+              osDisk: {
+                ...vm.storageProfile?.osDisk,
+                name,
+                createOption: "Attach",
+                managedDisk: { id: disk.id, storageAccountType: vm.storageProfile?.osDisk?.managedDisk?.storageAccountType },
+              },
+            },
+          };
+          delete next.osProfile;
+          delete next.provisioningState;
+          await client.virtualMachines.beginCreateOrUpdateAndWait(target.resourceGroup, target.name, next);
+          return { mode: "azure", status: "desligada" };
+        });
+      }
       return azureCall(infraId, writeMs, async (client, target) => {
         await client.virtualMachines.beginDeallocateAndWait(target.resourceGroup, target.name);
         const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
-        const name = diskName(target.name);
-        const disk = await client.disks.beginCreateOrUpdateAndWait(target.resourceGroup, name, {
-          location: vm.location,
-          sku: { name: vm.storageProfile?.osDisk?.managedDisk?.storageAccountType || "StandardSSD_LRS" },
-          creationData: { createOption: "Copy", sourceResourceId: config.azure.snapshotId },
-        });
+        const nicId = vm.networkProfile?.networkInterfaces?.[0]?.id;
         const next = {
           ...vm,
-          storageProfile: {
-            ...vm.storageProfile,
-            osDisk: {
-              ...vm.storageProfile?.osDisk,
-              name,
-              createOption: "Attach",
-              managedDisk: { id: disk.id, storageAccountType: vm.storageProfile?.osDisk?.managedDisk?.storageAccountType },
-            },
-          },
+          ...buildSpecializedVm({
+            location: vm.location,
+            size: vm.hardwareProfile?.vmSize || config.azure.vmSize,
+            nicId,
+            imageId: chosen.id,
+            diskGb: vm.storageProfile?.osDisk?.diskSizeGB || config.azure.maxOsDiskGb,
+            diskType: vm.storageProfile?.osDisk?.managedDisk?.storageAccountType || "Premium_LRS",
+            spot: vm.priority === "Spot",
+            diskName: diskName(target.name),
+          }),
         };
+        delete next.osProfile;
         delete next.provisioningState;
         await client.virtualMachines.beginCreateOrUpdateAndWait(target.resourceGroup, target.name, next);
         return { mode: "azure", status: "desligada" };
@@ -244,7 +273,7 @@ export function createInfrastructure(config, deps = {}) {
 
 export function providerNotice(result, action) {
   if (result.mode === "azure") {
-    if (action === "format") return "O disco do sistema foi recriado a partir do snapshot. A VM ficou desligada.";
+    if (action === "format") return "O disco do sistema foi recriado a partir da imagem. A VM ficou desligada.";
     return result.status === "ligada" ? "A VM está ligada." : "A VM está desligada.";
   }
   if (result.reason === "snapshot") return "O snapshot não está configurado. O disco não foi alterado e a equipe foi avisada.";

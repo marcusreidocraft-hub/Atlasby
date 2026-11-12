@@ -1,3 +1,5 @@
+import { buildSpecializedVm } from "./image.js";
+
 function idOf(subscription, group, provider, ...parts) {
   return `/subscriptions/${subscription}/resourceGroups/${group}/providers/${provider}/${parts.join("/")}`;
 }
@@ -58,24 +60,23 @@ export function createAzureProvisioner(config, deps = {}) {
     },
     async vm(state) {
       const client = await compute();
-      const spot = state.spot !== false;
-      const parameters = {
-        location: state.location,
-        hardwareProfile: { vmSize: state.size },
-        securityProfile: { securityType: "TrustedLaunch", uefiSettings: { secureBootEnabled: true, vTpmEnabled: true } },
-        networkProfile: { networkInterfaces: [{ id: state.nicId, primary: true }] },
-        storageProfile: state.imageKind === "snapshot"
-          ? { osDisk: { osType: "Windows", createOption: "Attach", managedDisk: { id: state.imageId }, diskSizeGB: state.diskGb } }
-          : {
-            imageReference: { id: state.imageId },
-            osDisk: { createOption: "FromImage", diskSizeGB: state.diskGb, managedDisk: { storageAccountType: state.disk || "PremiumV2_LRS" } },
-          },
-      };
-      if (spot) {
-        parameters.priority = "Spot";
-        parameters.evictionPolicy = "Deallocate";
-        parameters.billingProfile = { maxPrice: -1 };
-      }
+      const parameters = state.imageKind === "snapshot"
+        ? {
+          location: state.location,
+          hardwareProfile: { vmSize: state.size },
+          storageProfile: { osDisk: { osType: "Windows", createOption: "Attach", managedDisk: { id: state.imageId }, diskSizeGB: state.diskGb } },
+          networkProfile: { networkInterfaces: [{ id: state.nicId, primary: true }] },
+        }
+        : buildSpecializedVm({
+          location: state.location,
+          size: state.size,
+          nicId: state.nicId,
+          imageId: state.imageId,
+          diskGb: state.diskGb,
+          diskType: state.disk || "PremiumV2_LRS",
+          spot: state.spot !== false,
+          diskName: state.names?.disk,
+        });
       const created = await client.virtualMachines.beginCreateOrUpdateAndWait(state.group, state.names.vm, parameters);
       return created.id;
     },

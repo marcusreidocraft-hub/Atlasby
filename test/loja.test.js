@@ -10,6 +10,8 @@ import { createStore } from "../src/loja/service.js";
 import { advanceProvision } from "../src/loja/provision.js";
 import { quotePrice } from "../src/loja/promotions.js";
 import { catalogBySku, formatBrl } from "../src/loja/products.js";
+import { buildSpecializedVm, DEFAULT_GALLERY_IMAGE, resolveGalleryImage } from "../src/loja/image.js";
+import { createAzureProvisioner } from "../src/loja/azure.js";
 import { attendanceOf, canAttend, ticketOverwrites } from "../src/loja/attendance.js";
 import { createAdmin } from "../src/services/admin.js";
 
@@ -29,6 +31,40 @@ function world() {
   store.settings(GUILD);
   return { repo, store, dir, close() { repo.close(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
+
+test("a VM especializada nasce da imagem da galeria sem perfil de sistema", async () => {
+  const definition = DEFAULT_GALLERY_IMAGE.replace(/\/versions\/1\.0\.0$/, "");
+  assert.equal(resolveGalleryImage({}).id, DEFAULT_GALLERY_IMAGE);
+  assert.equal(resolveGalleryImage({ storedId: definition, storedKind: "gallery" }).id, definition);
+  assert.equal(resolveGalleryImage({ storedKind: "snapshot", storedId: "/subscriptions/x/snapshots/old" }).kind, "snapshot");
+  const body = buildSpecializedVm({
+    location: "brazilsouth",
+    size: "Standard_NC8as_T4_v3",
+    nicId: "/nic/1",
+    imageId: DEFAULT_GALLERY_IMAGE,
+    diskGb: 512,
+    spot: true,
+  });
+  assert.equal(body.osProfile, undefined);
+  assert.equal(body.storageProfile.imageReference.id, DEFAULT_GALLERY_IMAGE);
+  assert.equal(body.storageProfile.osDisk.createOption, "FromImage");
+  assert.equal(body.storageProfile.diskControllerType, "SCSI");
+  assert.equal(body.securityProfile.securityType, "TrustedLaunch");
+  assert.equal(body.securityProfile.uefiSettings.secureBootEnabled, true);
+  assert.equal(body.securityProfile.uefiSettings.vTpmEnabled, true);
+  assert.equal(body.priority, "Spot");
+  const recorded = [];
+  const provisioner = createAzureProvisioner({ azure: { subscriptionId: "sub", tenantId: "t", clientId: "c", clientSecret: "s" } }, {
+    compute: { virtualMachines: { async beginCreateOrUpdateAndWait(_group, _name, parameters) { recorded.push(parameters); return { id: "/vm" }; } } },
+  });
+  await provisioner.vm({
+    group: "REIDO7", names: { vm: "atlas1", disk: "os1" }, location: "brazilsouth", size: "Standard_NC4as_T4_v3",
+    nicId: "/nic/1", imageId: DEFAULT_GALLERY_IMAGE, imageKind: "gallery", diskGb: 512, disk: "PremiumV2_LRS", spot: true,
+  });
+  assert.equal(recorded[0].osProfile, undefined);
+  assert.equal(recorded[0].storageProfile.imageReference.id, DEFAULT_GALLERY_IMAGE);
+  assert.equal(recorded[0].securityProfile.securityType, "TrustedLaunch");
+});
 
 test("preços T4 e desconto saem só do servidor", () => {
   const t4 = catalogBySku("t4-4");

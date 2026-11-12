@@ -1,3 +1,5 @@
+import { DEFAULT_GALLERY_IMAGE, isGalleryImage } from "./loja/image.js";
+
 const DEFAULT_ACCENT = 0x5865f2;
 const DEFAULT_LOCATION = "brazilsouth";
 const DEFAULT_VM_SIZE = "Standard_NC4as_T4_v3";
@@ -122,6 +124,7 @@ export function readConfig(env = {}) {
       clientSecret: text(env.AZURE_CLIENT_SECRET),
       subscriptionId: text(env.AZURE_SUBSCRIPTION_ID),
       snapshotId: parseSnapshot(env.AZURE_SNAPSHOT_ID),
+      imageId: isGalleryImage(env.AZURE_IMAGE_ID) ? text(env.AZURE_IMAGE_ID) : DEFAULT_GALLERY_IMAGE,
       location: LOCATION.test(location) ? location : DEFAULT_LOCATION,
       vmSize: VM_SIZE.test(text(env.AZURE_DEFAULT_VM_SIZE)) ? text(env.AZURE_DEFAULT_VM_SIZE) : DEFAULT_VM_SIZE,
       osType: os === "linux" ? "Linux" : os === "windows" ? "Windows" : DEFAULT_OS,

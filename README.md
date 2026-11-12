@@ -43,7 +43,8 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | `CREDENTIALS_KEY` | vazio | cifra senha RDP e PIN |
 | `AZURE_CREDENTIALS_KEY` | vazio | usada se `CREDENTIALS_KEY` estiver vazia |
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID` | vazios | ligam o provedor Azure |
-| `AZURE_SNAPSHOT_ID` | vazio | snapshot usado ao formatar |
+| `AZURE_IMAGE_ID` | a versão Atlas2.0 1.0.0 | imagem da galeria usada para criar e formatar |
+| `AZURE_SNAPSHOT_ID` | vazio | legado; só vale se a imagem configurada for um snapshot |
 | `AZURE_LOCATION`, `AZURE_DEFAULT_VM_SIZE`, `AZURE_OS_TYPE`, `AZURE_VIRTUAL_NETWORK`, `AZURE_SUBNET`, `AZURE_MAX_OS_DISK_GB` | os do exemplo | lidas para o host; o painel não cria VM |
 | `EMOJI_CONTROLE`, `EMOJI_CALENDARIO`, `EMOJI_TICKET`, `EMOJI_MOONLIGHT`, `EMOJI_RDP`, `EMOJI_ALERTA`, `EMOJI_ENGRENAGEM`, `EMOJI_POWER` | vazios | opcionais; só preencha para trocar o emoji padrão |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY`, `AI_ASSISTANT_ENABLED` | o exemplo, `false` | reservadas; o bot não chama o Ollama |
@@ -89,7 +90,7 @@ Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paul
 
 PIN, usuário, senha e IP do RDP saem só na resposta privada de quem é o dono do registro. Cada botão confere o `userId`. Um membro não abre a máquina de outro.
 
-Formatar pede um botão vermelho e, em seguida, um modal com o nome da máquina ou `CONFIRMAR`. A confirmação expira. Na Azure, a VM é desligada e o disco do sistema é recriado a partir de `AZURE_SNAPSHOT_ID`. Sem Azure, sem resource ID ou sem snapshot, nada é alterado na nuvem: o pedido fica no log e a equipe é avisada.
+Formatar pede um botão vermelho e, em seguida, um modal com o nome da máquina ou `CONFIRMAR`. A confirmação expira. Na Azure, a VM é desligada e o disco do sistema é recriado pela imagem da galeria. O IP e o vínculo do cliente permanecem. Sem Azure ou sem resource ID, nada é alterado na nuvem: o pedido fica no log e a equipe é avisada.
 
 Ligar e desligar usam o resource ID. Sem Azure, o status local não muda e a equipe é avisada. A linha de instância Spot lembra de ligar de novo se a máquina cair.
 
@@ -116,7 +117,7 @@ Quando um título, status ou campo combina com outro emoji do mesmo servidor, el
 
 ## Provedor
 
-Com as quatro variáveis Azure, o bot usa `@azure/identity` e `@azure/arm-compute`. O ID da máquina é o resource ID completo da VM. Formatar copia `AZURE_SNAPSHOT_ID` para um disco novo e troca o disco do sistema. A VM fica desligada. Consulta de estado espera 20 segundos; ligar, desligar e formatar esperam até 90 segundos por etapa. A interação é adiada antes dessas chamadas.
+Com as quatro variáveis Azure, o bot usa `@azure/identity` e `@azure/arm-compute`. O ID da máquina é o resource ID completo da VM. Formatar recria o disco do sistema pela imagem especializada da galeria, sem perfil de sistema, e deixa a VM desligada. Consulta de estado espera 20 segundos; ligar, desligar e formatar esperam até 90 segundos por etapa. A interação é adiada antes dessas chamadas.
 
 Sem as quatro variáveis, o provedor manual só registra e avisa a equipe.
 
@@ -152,7 +153,7 @@ Os testes não usam Discord, Azure nem segredo real.
 | Isolamento | outro membro não vê IP, senha nem dispara a energia |
 | Criptografia | a senha cifrada abre com a chave e não aparece no banco nem no log |
 | Vencimento | 7, 15 e 30 dias, status vencido e data editada |
-| Formatação | frase errada, outro usuário, prazo e `CONFIRMAR`; o snapshot é copiado na ordem certa |
+| Formatação | frase errada, outro usuário, prazo e `CONFIRMAR`; a VM é atualizada pela imagem, sem `osProfile` |
 | Painéis | Components V2, textos, botões e galeria |
 | Adiamento | o defer acontece antes da leitura na Azure |
 | Ambiente | o exemplo contém as variáveis e os segredos ficam vazios |
@@ -165,7 +166,7 @@ O painel comercial fica no canal escolhido em `/configurar-loja`. Ele é editado
 
 O webhook Pix é `http://<endereço público>:<SERVER_PORT>/wyvi/webhook`. No painel da Wyvi, cadastre essa URL em HTTPS se o host termina TLS, com os eventos `cobranca.paga`, `cobranca.expirada` e `cobranca.estornada`. O segredo que a Wyvi mostra uma vez vai em `WYVI_WEBHOOK_SECRET`. A chave com `cobranca:criar` e `cobranca:ler` vai em `WYVI_API_KEY`.
 
-Antes da primeira venda, publique a loja, defina estoque, cargo, rede (`/configurar-azure`, grupo, vnet, subnet e NSG) e a imagem especializada (`/configurar-imagem`). A imagem da VM Atlas é specialized, Trusted Launch, geração 2. O agente já está nela. A máquina só nasce depois do evento `cobranca.paga`.
+Antes da primeira venda, publique a loja, defina estoque, cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão é a versão 1.0.0 de Atlas2.0 na galeria, specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
 
 ## Limitações
 
