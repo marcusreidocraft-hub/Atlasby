@@ -42,7 +42,7 @@ O artigo também diz que o auto-pull atualiza arquivos rastreados e mantém o qu
 1. Baixe os arquivos atuais por SFTP. O guia de SFTP mostra host, porta, usuário e senha na aba SFTP, e a cópia para o seu computador. O guia de setup diz para guardar uma cópia fora do host, porque a exclusão do deployment leva os arquivos junto.
 2. A permissão de deployment chamada Backups existe no guia de acesso. A API documenta `GET /deployments/:id/backups`, `GET /deployments/:id/backups/:backupId` e `POST /deployments/:id/backups/:backupId/restore`. O restore `replace` para o deployment, repõe todos os arquivos e liga de novo se estava em execução. O modo `subfolder` copia para uma pasta `/restored-...` sem parar o processo. O escopo `backups:write` é descrito como "Take, restore, delete", mas a página da API lida em 7 de novembro de 2026 não documenta o corpo de uma chamada para criar backup. Não invente esse POST. A cópia verificada é o download por SFTP.
 3. Não troque o tipo de runtime e não marque a opção que apaga os arquivos.
-4. O banco deste bot fica em `data/moderation.sqlite`, pasta ignorada pelo Git. Mantenha essa pasta no volume `/home/container`. Não copie um banco local por cima do banco que já estiver no servidor.
+4. O banco deste bot fica em `data/atlas.sqlite`, pasta ignorada pelo Git. Mantenha essa pasta no volume `/home/container`. Não copie um banco local por cima do banco que já estiver no servidor. O arquivo antigo `moderation.sqlite`, se ainda existir no volume, não é lido.
 
 ## Runtime
 
@@ -59,8 +59,12 @@ O artigo também diz que o auto-pull atualiza arquivos rastreados e mantém o qu
 | `ALLOWED_GUILD_IDS` | sim | IDs dos servidores autorizados, separados por vírgula |
 | `DATA_DIR` | não | padrão `data` |
 | `CONFIRMATION_TTL_SECONDS` | não | padrão `60`, entre 15 e 300 |
+| `SUPPORT_CHANNEL_URL` | não | link do botão de suporte |
+| `ADMIN_ROLE_IDS` | não | cargos que administram o painel, além de quem tem Administrador |
+| `ADMIN_LOG_CHANNEL_ID` | não | canal de log das ações |
+| `CREDENTIALS_KEY` | não | cifra senha e PIN; se vazio, usa `AZURE_CREDENTIALS_KEY` |
 
-`npm start` também aplica as migrações. `npm run setup` aplica as migrações sem token e sem conectar ao Discord. A migração 3 preserva preços já editados do 4 vCPU e remove o rótulo temporário. A migração 5 só adiciona textos de aparência. Tickets, preços e a coluna numérica antiga permanecem. O número deixa de controlar a abertura. O servidor que já acompanha `cursor/catalogo-components-v2-850e` recebe este código no próximo restart feito por quem opera o host. Este repositório não troca a branch do host, não faz merge e não reinicia nada. Não há cobrança nem provisionamento. Fechar um ticket apaga o canal somente depois da transcrição privada.
+`npm start` abre o banco e conecta ao Discord. `npm run setup` só cria o banco, sem token e sem Discord. O servidor que já acompanha `cursor/catalogo-components-v2-850e` recebe este código no próximo restart feito por quem opera o host. Este repositório não troca a branch do host, não faz merge e não reinicia nada.
 
 ## O que continua desligado
 

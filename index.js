@@ -1,6 +1,6 @@
 import { loadConfig } from "./src/config.js";
+import { openDatabase } from "./src/db/database.js";
 import { startBot } from "./src/bot.js";
-import { openDatabase } from "./src/storage.js";
 
 let config;
 try {
@@ -10,15 +10,15 @@ try {
   process.exit(1);
 }
 
-const store = openDatabase(config.dataDir);
-const client = await startBot({ config, store });
+const repo = openDatabase(config.dataDir);
+const client = await startBot({ config, repo });
 
 let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
   client.destroy();
-  store.close();
+  repo.close();
   process.exit(0);
 }
 
