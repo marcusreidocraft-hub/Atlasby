@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { catalogBySku, durationMs, formatBrl, parseMoney, PLAN_NAMES } from "./products.js";
+import { emojiText } from "./emojis.js";
 import { priceFromDiscount, quotePrice } from "./promotions.js";
 import { advanceProvision, resourceNames } from "./provision.js";
 import { resolveGalleryImage } from "./image.js";
@@ -311,7 +312,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     },
     paidText(order, product) {
       return [
-        "✅ Pagamento confirmado!",
+        `${emojiText("verified")} Pagamento confirmado!`,
         "Estamos preparando sua Cloud PC. Você receberá outra notificação assim que a máquina estiver pronta.",
         `Produto: ${product?.headline || order.sku}`,
         `Plano: ${PLAN_NAMES[order.plan] || order.plan}`,
@@ -320,7 +321,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     },
     readyText(product, plan, ip) {
       return [
-        "🎉 Sua Cloud PC está pronta!",
+        `${emojiText("announcement")} Sua Cloud PC está pronta!`,
         `GPU: ${product.gpu}`,
         `Configuração: ${product.vcpus} vCPUs`,
         `Plano: ${PLAN_NAMES[plan] || plan}`,

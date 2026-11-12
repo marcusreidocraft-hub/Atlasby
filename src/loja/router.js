@@ -6,6 +6,7 @@ import { formatBrl } from "./products.js";
 import { renderOrder } from "./panel.js";
 import { STORE_COMMANDS } from "./commands.js";
 import { attendanceOf, canAttend, renderAttendance, ticketOverwrites } from "./attendance.js";
+import { emojiText } from "./emojis.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -206,9 +207,9 @@ export async function routeStoreComponent(interaction, app) {
   if (!id.startsWith("atlas:store:") && !id.startsWith("atlas:modal:store:")) return false;
   const guildId = interaction.guildId;
   const actor = { id: interaction.user.id, guildId, permissions: interaction.member?.permissions?.bitfield ?? 0n, roleIds: interaction.member?.roles?.cache?.map?.((role) => role.id) ?? [], owner: interaction.guild?.ownerId === interaction.user.id };
-  if (id === "atlas:store:pick") {
+  if (id.startsWith("atlas:store:pick")) {
     await ack(interaction, false);
-    await present(interaction, notice("Preparando seu pedido... 3...", app.config.panelColor));
+    await present(interaction, notice(`${emojiText("cart")} Preparando seu pedido... 3...`, app.config.panelColor));
     await sleep(700);
     await interaction.editReply({ components: notice("Preparando seu pedido... 2...", app.config.panelColor).components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
     await sleep(700);
@@ -302,7 +303,7 @@ export async function routeStoreComponent(interaction, app) {
       const qr = await import("qrcode");
       file = await qr.toBuffer(result.copiaECola, { type: "png", width: 320, margin: 1 });
     }
-    const payload = notice(`Pix copia e cola:\n${result.copiaECola}\n\nO pagamento expira em 1 hora. A máquina só é criada depois da confirmação da Wyvi.`, app.config.panelColor);
+    const payload = notice(`${emojiText("cash")} Pix copia e cola:\n${result.copiaECola}\n\n${emojiText("timer")} O pagamento expira em 1 hora. A máquina só é criada depois da confirmação da Wyvi.`, app.config.panelColor);
     const body = { components: payload.components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } };
     if (file) body.files = [new AttachmentBuilder(file, { name: "pix.png" })];
     await interaction.editReply(body);

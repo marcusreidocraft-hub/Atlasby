@@ -12,6 +12,8 @@ import { quotePrice } from "../src/loja/promotions.js";
 import { catalogBySku, formatBrl } from "../src/loja/products.js";
 import { buildSpecializedVm, DEFAULT_GALLERY_IMAGE, resolveGalleryImage } from "../src/loja/image.js";
 import { createAzureProvisioner } from "../src/loja/azure.js";
+import { renderStorePanel } from "../src/loja/panel.js";
+import { MessageFlags } from "discord.js";
 import { attendanceOf, canAttend, ticketOverwrites } from "../src/loja/attendance.js";
 import { createAdmin } from "../src/services/admin.js";
 
@@ -64,6 +66,54 @@ test("a VM especializada nasce da imagem da galeria sem perfil de sistema", asyn
   assert.equal(recorded[0].osProfile, undefined);
   assert.equal(recorded[0].storageProfile.imageReference.id, DEFAULT_GALLERY_IMAGE);
   assert.equal(recorded[0].securityProfile.securityType, "TrustedLaunch");
+});
+
+function selectsOf(view) {
+  const found = [];
+  const walk = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === 3) found.push(node);
+    for (const child of node.components || []) walk(child);
+  };
+  walk(view.components[0].toJSON());
+  return found;
+}
+
+test("o painel da loja é Components V2 e cada máquina tem o próprio seletor", () => {
+  const products = [
+    { sku: "t4-4", visible: true, stock: 2, vcpus: 4, headline: "Tesla T4 • 4 vCPUs", specs: "4 núcleos", prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
+    { sku: "t4-8", visible: true, stock: 0, vcpus: 8, headline: "Tesla T4 • 8 vCPUs", specs: "8 núcleos", prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
+    { sku: "t4-16", visible: true, stock: 1, vcpus: 16, headline: "Tesla T4 • 16 vCPUs", specs: "16 núcleos", prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
+  ];
+  const view = renderStorePanel({
+    settings: { title: "🎮 Atlas Cloud PC", description: "Tenha seu próprio computador na nuvem.", accent: 0x0a0a0a, hoursEnabled: true },
+    products,
+    offers: [],
+    now: 0,
+  });
+  assert.equal(view.flags, MessageFlags.IsComponentsV2);
+  assert.equal(view.embeds, undefined);
+  assert.equal(view.content, undefined);
+  const selects = selectsOf(view);
+  assert.equal(selects.length, 3);
+  const four = selects.find((item) => item.custom_id === "atlas:store:pick:t4-4");
+  const eight = selects.find((item) => item.custom_id === "atlas:store:pick:t4-8");
+  const sixteen = selects.find((item) => item.custom_id === "atlas:store:pick:t4-16");
+  assert.deepEqual(four.options.map((item) => item.value), ["t4-4:3h", "t4-4:6h", "t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+  assert.equal(four.disabled, undefined);
+  assert.equal(eight.disabled, true);
+  assert.equal(eight.placeholder, "Sem estoque no momento");
+  assert.deepEqual(eight.options.map((item) => item.value), ["indisponivel"]);
+  assert.deepEqual(sixteen.options.map((item) => item.value), ["t4-16:semanal", "t4-16:quinzenal", "t4-16:mensal"]);
+  assert.doesNotMatch(JSON.stringify(view), /atlas:store:pick"/);
+  const hourlyOff = renderStorePanel({
+    settings: { title: "Atlas Cloud PC", description: "Loja", accent: 0x0a0a0a, hoursEnabled: false },
+    products,
+    offers: [],
+    now: 0,
+  });
+  const fourOff = selectsOf(hourlyOff).find((item) => item.custom_id === "atlas:store:pick:t4-4");
+  assert.deepEqual(fourOff.options.map((item) => item.value), ["t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
 });
 
 test("preços T4 e desconto saem só do servidor", () => {

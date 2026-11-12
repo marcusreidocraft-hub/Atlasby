@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ChannelSelectMenuBuilder, ChannelType, PermissionFlagsBits, RoleSelectMenuBuilder } from "discord.js";
 import { isAdmin } from "../services/admin.js";
 import { container, text } from "../panels/ui.js";
+import { emojiText } from "./emojis.js";
 
 export function attendanceOf(repo, config, guildId) {
   const settings = repo.getSettings(guildId);
@@ -31,7 +32,7 @@ export function ticketOverwrites({ everyoneId, userId, botId, staffRoleIds }) {
 export function renderAttendance(settings, accent) {
   return container(accent, (root) => {
     root.addTextDisplayComponents(text([
-      "## Atendimento",
+      `## ${emojiText("staff")} Atendimento`,
       `Cargo de suporte: ${settings.supportRoleId ? `<@&${settings.supportRoleId}>` : "não definido"}`,
       `Categoria dos tickets: ${settings.ticketCategoryId ? `<#${settings.ticketCategoryId}>` : "não definida"}`,
       `Canal de logs: ${settings.logChannelId ? `<#${settings.logChannelId}>` : "não definido"}`,
