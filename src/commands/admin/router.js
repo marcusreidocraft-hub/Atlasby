@@ -168,6 +168,18 @@ export async function routeAdminComponent(interaction, app) {
     await interaction.showModal(opened.modal);
     return true;
   }
+  const specs = new RegExp(`^atlas:modal:(add|edit):specs:${UUID}$`).exec(id);
+  if (specs) {
+    await ack(interaction, false);
+    const result = app.admin.applySpecs({
+      guildId,
+      actor,
+      draftId: specs[2],
+      fields: { gpu: selected(interaction, "gpu"), vcpus: field(interaction, "vcpus"), ram: field(interaction, "ram") },
+    });
+    await present(interaction, result.payload);
+    return true;
+  }
   const step = new RegExp(`^atlas:modal:(add|edit):([123]):(.+)$`).exec(id);
   if (step) {
     await ack(interaction, false);
@@ -181,7 +193,7 @@ export async function routeAdminComponent(interaction, app) {
         actor,
         kind,
         targetUserId: token,
-        fields: { clientName: field(interaction, "nome"), machineName: field(interaction, "maquina"), gpu: selected(interaction, "gpu"), vcpus: field(interaction, "vcpus"), ram: field(interaction, "ram") },
+        fields: { clientName: field(interaction, "nome"), machineName: field(interaction, "maquina") },
       });
     } else if (number === "2") {
       result = app.admin.applyStep2({
@@ -192,7 +204,6 @@ export async function routeAdminComponent(interaction, app) {
           publicIp: field(interaction, "ip"),
           rdpUser: field(interaction, "usuario"),
           password: interaction.fields.getTextInputValue("senha"),
-          pin: field(interaction, "pin"),
           plan: selected(interaction, "plano"),
         },
       });

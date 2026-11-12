@@ -1,12 +1,31 @@
 import { randomUUID } from "node:crypto";
 import { formatModal, renderFormatConfirm } from "../panels/admin.js";
-import { renderControl, renderMissing, renderPlan, renderSecret } from "../panels/control.js";
+import { cardFacts, renderControl, renderMissing, renderPinSoon, renderPlan, renderSecret } from "../panels/control.js";
 import { notice } from "../panels/ui.js";
+import { logInteractionError } from "../components/reply.js";
 import { phraseMatches } from "./fields.js";
 import { providerError, providerNotice } from "./provider.js";
+import { renderVmCardPng } from "./vm-card.js";
 
-function viewOf(client, context, noticeText) {
-  return renderControl(client, { ...context, notice: noticeText });
+async function viewOf(client, context, noticeText) {
+  let image = null;
+  try {
+    image = await renderVmCardPng(cardFacts(client, context.now));
+  } catch (error) {
+    logInteractionError(error);
+  }
+  return renderControl(client, { ...context, notice: noticeText, image });
+}
+
+function applyMachine(client, machine) {
+  return {
+    ...client,
+    gpu: machine.gpu && machine.gpu !== "não informado" ? machine.gpu : client.gpu,
+    vcpus: machine.vcpus || client.vcpus,
+    ram: machine.ram && machine.ram !== "não informado" ? machine.ram : client.ram,
+    publicIp: machine.publicIp || client.publicIp,
+    powerStatus: machine.power === "ligada" || machine.power === "desligada" ? machine.power : client.powerStatus,
+  };
 }
 
 export function createClients({ config, repo, infra, audit, sealer, emojis, now }) {
@@ -43,11 +62,20 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
       const themeNow = theme(guildId);
       if (!client) return renderMissing(themeNow.accent);
       try {
+        if (client.infraId && infra.readMachine) {
+          const machine = await infra.readMachine(client.infraId);
+          const fresh = machine ? applyMachine(client, machine) : client;
+          repo.updateClient({ ...fresh, now: now() });
+          if (fresh.powerStatus === "ligada" || fresh.powerStatus === "desligada") repo.updatePower(client.id, fresh.powerStatus, now());
+          else repo.touchQuery(client.id, now());
+          return viewOf(repo.getById(guildId, client.id), themeNow, "");
+        }
         const result = await infra.readPower(client.infraId);
         const fresh = await remember(client, result);
         const note = result.mode === "manual" ? providerNotice(result, "read") : "";
         return viewOf(fresh, themeNow, note);
       } catch (error) {
+        logInteractionError(error);
         repo.touchQuery(client.id, now());
         return viewOf(repo.getById(guildId, client.id), themeNow, providerError(error));
       }
@@ -71,17 +99,19 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
         await tracked(client, userId, result.mode === "azure" ? "energia" : "energia_manual", `${providerNotice(result, "power")} Máquina ${client.machineName}.`);
         return viewOf(fresh, themeNow, providerNotice(result, "power"));
       } catch (error) {
+        logInteractionError(error);
         return viewOf(repo.getById(guildId, client.id), themeNow, providerError(error));
       }
     },
     async reveal(guildId, userId, kind) {
       const client = repo.getByOwner(guildId, userId);
       if (!client) return renderMissing(config.panelColor);
-      const cipher = kind === "pin" ? client.pinCipher : client.rdpPasswordCipher;
       const themeNow = theme(guildId);
-      const badge = kind === "pin" ? themeNow.emojis.moonlight : themeNow.emojis.rdp;
+      if (kind === "pin") return renderPinSoon(config.panelColor, themeNow.emojis);
+      const cipher = client.rdpPasswordCipher;
+      const badge = themeNow.emojis.rdp;
       if (!cipher) {
-        return renderSecret(kind === "pin" ? "PIN Moonlight" : "Acesso RDP", ["Nada foi gravado para esta máquina."], config.panelColor, badge);
+        return renderSecret("Acesso RDP", ["Nada foi gravado para esta máquina."], config.panelColor, badge);
       }
       if (!sealer) return notice("A chave de criptografia não está disponível. Nada foi exibido.", config.panelColor);
       let secret = "";
@@ -90,8 +120,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now 
       } catch {
         return notice("Não foi possível ler a credencial. Confira a chave de criptografia.", config.panelColor);
       }
-      await tracked(client, userId, "credencial_exibida", kind === "pin" ? "PIN exibido ao dono." : "Acesso RDP exibido ao dono.", [secret]);
-      if (kind === "pin") return renderSecret("PIN Moonlight", [`PIN: ${secret}`], config.panelColor, badge);
+      await tracked(client, userId, "credencial_exibida", "Acesso RDP exibido ao dono.", [secret]);
       return renderSecret("Acesso RDP", [
         `IP: ${client.publicIp || "não informado"}`,
         `Usuário: ${client.rdpUser || "não informado"}`,

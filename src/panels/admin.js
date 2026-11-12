@@ -98,7 +98,13 @@ export function step1Modal({ kind, targetUserId, current = null }) {
   return modal(`atlas:modal:${kind}:1:${targetUserId}`, "Cliente e máquina", [
     input("nome", "Nome do cliente", "Como a pessoa aparece no painel.", TextInputStyle.Short, { min: 2, max: 48, value: data.clientName }),
     input("maquina", "Nome da máquina", "Usado também na confirmação de formatação.", TextInputStyle.Short, { min: 2, max: 32, value: data.machineName }),
-    select("gpu", "GPU", "Escolha o modelo.", GPUS.map((gpu) => ({ label: gpu, value: gpu })), data.gpu),
+  ]);
+}
+
+export function specsModal(draft) {
+  const data = draft.payload ?? {};
+  return modal(`atlas:modal:${draft.kind}:specs:${draft.id}`, "Hardware", [
+    select("gpu", "GPU", "Só quando nenhuma VM da Azure foi escolhida.", GPUS.map((gpu) => ({ label: gpu, value: gpu })), data.gpu),
     input("vcpus", "vCPUs", "Número de 1 a 128.", TextInputStyle.Short, { max: 4, value: data.vcpus }),
     input("ram", "RAM", "Exemplo: 28 GB.", TextInputStyle.Short, { max: 24, value: data.ram }),
   ]);
@@ -110,7 +116,6 @@ export function step2Modal(draft) {
     input("ip", "IP público", "IPv4. Pode ficar vazio.", TextInputStyle.Short, { required: false, max: 64, value: current.publicIp }),
     input("usuario", "Usuário RDP", "Pode ficar vazio.", TextInputStyle.Short, { required: false, max: 32, value: current.rdpUser }),
     input("senha", "Senha RDP", "Em branco mantém a senha já gravada.", TextInputStyle.Short, { required: false, max: 128 }),
-    input("pin", "PIN Moonlight", "4 a 8 dígitos. Em branco mantém o atual.", TextInputStyle.Short, { required: false, max: 8 }),
     select("plano", "Tipo de plano", "O vencimento pode ser ajustado na próxima etapa.", [
       { label: "Semanal", value: "semanal" },
       { label: "Quinzenal", value: "quinzenal" },

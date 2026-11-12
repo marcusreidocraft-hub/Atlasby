@@ -50,6 +50,10 @@ export function gallery(url) {
   return new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(url).setDescription("Atlas Cloud PC"));
 }
 
+export function attachmentGallery(name) {
+  return new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(`attachment://${name}`).setDescription("Cartão da máquina"));
+}
+
 export function section(content, { bannerUrl, button }) {
   const block = new SectionBuilder().addTextDisplayComponents(text(content));
   if (bannerUrl) block.setThumbnailAccessory(new ThumbnailBuilder().setURL(bannerUrl).setDescription("Atlas Cloud PC"));

@@ -7,7 +7,7 @@ import { createApp } from "../src/app.js";
 import { readConfig } from "../src/config.js";
 import { openDatabase } from "../src/db/database.js";
 import { routeInteraction } from "../src/bot.js";
-import { formatModal, inspectModal, step1Modal, step2Modal, step3Modal } from "../src/panels/admin.js";
+import { formatModal, inspectModal, specsModal, step1Modal, step2Modal, step3Modal } from "../src/panels/admin.js";
 import { renderControl } from "../src/panels/control.js";
 import { renderPublicPanel } from "../src/panels/public.js";
 import { createSealer } from "../src/services/crypto.js";
@@ -16,6 +16,8 @@ import { isAdmin } from "../src/services/admin.js";
 import { expiryFrom, formatDate, parseDate, planStatus, remainingLabel } from "../src/services/plans.js";
 import { validateSchedule } from "../src/services/fields.js";
 import { createInfrastructure, vmOptionValue } from "../src/services/provider.js";
+import { specsFromSize } from "../src/services/vm-size.js";
+import { renderVmCardPng, vmCardSvg } from "../src/services/vm-card.js";
 
 const GUILD = "100000000000000001";
 const OWNER = "100000000000000009";
@@ -158,15 +160,16 @@ test("os três modais cabem na API e o seletor abre o primeiro sem adiar", async
     step2Modal(drafts),
     step3Modal({ id: drafts.id, kind: "add", payload: drafts.payload }),
     step3Modal(drafts),
+    specsModal(drafts),
     formatModal("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
   ];
   for (const modal of modals) assert.deepEqual(inspectModal(modal), []);
   const add = step1Modal({ kind: "add", targetUserId: CLIENT }).toJSON();
-  assert.equal(add.components.length, 5);
-  assert.equal(JSON.stringify(add).includes('"default":false'), false);
-  const edit = step1Modal({ kind: "edit", targetUserId: CLIENT, current: { gpu: "Tesla T4" } }).toJSON();
-  const selected = edit.components.find((item) => item.component.custom_id === "gpu").component.options.filter((option) => option.default);
-  assert.deepEqual(JSON.parse(JSON.stringify(selected)), [{ label: "Tesla T4", value: "Tesla T4", default: true }]);
+  assert.equal(add.components.length, 2);
+  assert.equal(JSON.stringify(add).includes("gpu"), false);
+  const hardware = specsModal({ id: drafts.id, kind: "add", payload: { gpu: "NVIDIA A10" } }).toJSON();
+  const selected = hardware.components.find((item) => item.component.custom_id === "gpu").component.options.filter((option) => option.default);
+  assert.equal(JSON.parse(JSON.stringify(selected))[0].value, "NVIDIA A10");
 
   const env = harness();
   const interaction = button("atlas:admin:add:user", OWNER, { permissions: 8n, values: [CLIENT] });
@@ -317,6 +320,59 @@ test("o seletor preenche o resource ID e esconde VM de outro cliente", async () 
   env.close();
 });
 
+test("o cartão é uma imagem sem senha e o tamanho da VM vira GPU", async () => {
+  assert.equal(specsFromSize("Standard_NC4as_T4_v3").gpu, "Tesla T4");
+  assert.equal(specsFromSize("Standard_NC4as_T4_v3").vcpus, 4);
+  assert.equal(specsFromSize("Standard_NV6ads_A10_v5").gpu, "NVIDIA A10 1/6");
+  assert.equal(specsFromSize("Standard_NC24ads_A100_v4").gpu, "NVIDIA A100");
+  const svg = vmCardSvg({ status: "Ligada", headline: "Tesla T4 · 4 vCPU", ip: "191.232.52.39", time: "29d 21h 38min", plan: "Mensal · Ativo", consulted: "06/10/2026, 22:49" });
+  assert.match(svg, /Atlas/);
+  assert.match(svg, /Seu poder em nuvem/);
+  assert.doesNotMatch(svg, /Senha|PIN/);
+  const png = await renderVmCardPng({ status: "Ligada", headline: "Tesla T4 · 4 vCPU", ip: "191.232.52.39", time: "29d 21h 38min", plan: "Mensal · Ativo", consulted: "06/10/2026, 22:49" });
+  assert.equal(png[0], 0x89);
+  assert.equal(png.includes(Buffer.from(PASSWORD)), false);
+  const book = createEmojiBook({ emoji: {}, allowedGuildIds: [] }, { getSettings: () => ({ emoji: {} }) });
+  book.remember(GUILD, [{ id: "1570365824810877048", name: "reduto_on" }]);
+  assert.equal(book.pack(GUILD).ligada, DEFAULTS.ligada);
+});
+
+test("o IP público sai da interface de rede da VM", async () => {
+  let reads = 0;
+  const compute = {
+    virtualMachines: {
+      async get() {
+        reads += 1;
+        return {
+          hardwareProfile: { vmSize: "Standard_NC8as_T4_v3" },
+          networkProfile: { networkInterfaces: [{ id: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic1" }] },
+        };
+      },
+      async instanceView() {
+        return { statuses: [{ code: "PowerState/running" }] };
+      },
+    },
+  };
+  const network = {
+    networkInterfaces: {
+      async get() {
+        return { ipConfigurations: [{ publicIPAddress: { id: "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg/providers/Microsoft.Network/publicIPAddresses/pip1" } }] };
+      },
+    },
+    publicIPAddresses: { async get() { return { ipAddress: "191.232.52.39" }; } },
+  };
+  const infra = createInfrastructure(readConfig({
+    AZURE_TENANT_ID: "tenant", AZURE_CLIENT_ID: "client", AZURE_CLIENT_SECRET: "secret", AZURE_SUBSCRIPTION_ID: "sub",
+  }), { compute, network, readTimeoutMs: 1_000 });
+  const machine = await infra.readMachine(azureVm("vm-a").id);
+  assert.equal(machine.publicIp, "191.232.52.39");
+  assert.equal(machine.gpu, "Tesla T4");
+  assert.equal(machine.vcpus, 8);
+  assert.equal(machine.power, "ligada");
+  await infra.readMachine(azureVm("vm-a").id);
+  assert.equal(reads, 1);
+});
+
 test("emoji padrão exige o cache e a variável fica na frente", () => {
   const repo = { getSettings: () => ({ emoji: {} }) };
   const book = createEmojiBook({ emoji: {}, allowedGuildIds: [] }, repo);
@@ -389,15 +445,22 @@ test("painéis usam Components V2 e o texto do painel", () => {
   }, { accent: 0x5865f2, emojis: UNICODE, bannerUrl: "https://cdn.discordapp.com/embed/avatars/0.png", now: Date.parse("2026-10-06T03:00:00.000Z") });
   const card = textOf(control);
   assert.match(card, /Ana autorizado com acesso completo/);
-  assert.match(card, /Tesla T4 · 4 vCPU · 28 GB/);
+  assert.match(card, /Tesla T4 · 4 vCPU/);
+  assert.match(card, /Seu poder em nuvem/);
   assert.match(card, /Ligada/);
   assert.match(card, /Mensal · Ativo/);
   assert.match(card, /Instância Spot: se desligar inesperadamente/);
   assert.match(card, /Desligar VM/);
-  assert.match(card, /"type":11/);
-  assert.match(card, /"type":9/);
-  assert.equal(step1Modal({ kind: "add", targetUserId: CLIENT }).toJSON().components.length, 5);
-  assert.equal(step2Modal({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", kind: "add", payload: {} }).toJSON().components.length, 5);
+  const pictured = renderControl({
+    machineName: "Mesa 01", clientName: "Ana", gpu: "Tesla T4", vcpus: 4, ram: "28 GB",
+    publicIp: "203.0.113.10", planType: "mensal", expiresAt: Date.parse("2026-11-05T03:00:00.000Z"),
+    lastQueryAt: Date.parse("2026-10-06T03:00:00.000Z"), powerStatus: "ligada",
+  }, { accent: 0x5865f2, emojis: UNICODE, now: Date.parse("2026-10-06T03:00:00.000Z"), image: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+  assert.match(textOf(pictured), /attachment:\/\/vm-card\.png/);
+  assert.match(textOf(pictured), /"type":12/);
+  assert.equal(pictured.files.length, 1);
+  assert.equal(step1Modal({ kind: "add", targetUserId: CLIENT }).toJSON().components.length, 2);
+  assert.equal(step2Modal({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", kind: "add", payload: {} }).toJSON().components.length, 4);
   assert.equal(step3Modal({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", kind: "add", payload: { startText: "06/10/2026", expiryText: "05/11/2026" } }).toJSON().components.length, 3);
 });
 
@@ -405,9 +468,13 @@ test("cliente só vê a própria máquina e a senha não entra no banco nem no l
   const env = harness();
   await register(env);
   const owner = await env.app.clients.open(GUILD, CLIENT);
-  assert.match(textOf(owner), /203\.0\.113\.10/);
+  const ownerText = textOf(owner);
+  assert.ok(ownerText.includes("203.0.113.10") || owner.files?.length === 1);
   const stranger = await env.app.clients.open(GUILD, OTHER);
   assert.doesNotMatch(textOf(stranger), /203\.0\.113\.10/);
+  const soon = await env.app.clients.reveal(GUILD, CLIENT, "pin");
+  assert.match(textOf(soon), /Em breve/);
+  assert.doesNotMatch(textOf(soon), new RegExp(PIN));
   const revealed = await env.app.clients.reveal(GUILD, CLIENT, "rdp");
   assert.match(textOf(revealed), new RegExp(PASSWORD));
   const hidden = await env.app.clients.reveal(GUILD, OTHER, "rdp");
@@ -549,7 +616,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
     "PANEL_COLOR", "OLLAMA_BASE_URL", "OLLAMA_MODEL", "OLLAMA_API_KEY", "AI_ASSISTANT_ENABLED",
     "SUPPORT_CHANNEL_URL", "ADMIN_ROLE_IDS", "ADMIN_LOG_CHANNEL_ID", "CREDENTIALS_KEY", "PANEL_BANNER_URL",
     "EMOJI_CONTROLE", "EMOJI_CALENDARIO", "EMOJI_TICKET", "EMOJI_MOONLIGHT", "EMOJI_RDP", "EMOJI_ALERTA",
-    "EMOJI_ENGRENAGEM", "EMOJI_POWER",
+    "EMOJI_ENGRENAGEM", "EMOJI_POWER", "EMOJI_LIGADA",
   ]) {
     assert.match(example, new RegExp(`^${key}=`, "m"));
   }

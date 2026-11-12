@@ -14,28 +14,30 @@ function clean(value, max) {
 export function validateIdentity(input) {
   const clientName = clean(input.clientName, 48);
   const machineName = clean(input.machineName, 32);
+  if (clientName.length < 2) return fail("Informe o nome do cliente.");
+  if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{1,31}$/.test(machineName)) return fail("O nome da máquina usa letras, números, espaço, hífen ou sublinhado.");
+  return { ok: true, value: { clientName, machineName } };
+}
+
+export function validateSpecs(input) {
   const gpu = clean(input.gpu, 32);
   const ram = clean(input.ram, 24);
   const vcpus = Number(clean(input.vcpus, 4));
-  if (clientName.length < 2) return fail("Informe o nome do cliente.");
-  if (!/^[A-Za-z0-9][A-Za-z0-9 _-]{1,31}$/.test(machineName)) return fail("O nome da máquina usa letras, números, espaço, hífen ou sublinhado.");
   if (!GPUS.includes(gpu)) return fail("Escolha uma GPU da lista.");
   if (!Number.isInteger(vcpus) || vcpus < 1 || vcpus > 128) return fail("Os vCPUs precisam ser um número de 1 a 128.");
   if (ram.length < 2) return fail("Informe a RAM, por exemplo 28 GB.");
-  return { ok: true, value: { clientName, machineName, gpu, vcpus, ram } };
+  return { ok: true, value: { gpu, vcpus, ram } };
 }
 
 export function validateAccess(input) {
   const publicIp = clean(input.publicIp, 64);
   const rdpUser = clean(input.rdpUser, 32);
   const password = String(input.password ?? "");
-  const pin = clean(input.pin, 8);
   if (publicIp && !IPV4.test(publicIp)) return fail("O IP público precisa ser um IPv4 válido ou ficar vazio.");
   if (rdpUser && !/^[A-Za-z0-9._-]{1,32}$/.test(rdpUser)) return fail("O usuário RDP usa letras, números, ponto, hífen ou sublinhado.");
   if (password && (password.length < 4 || password.length > 128 || /\s/.test(password))) return fail("A senha RDP, se informada, tem de 4 a 128 caracteres e não leva espaço.");
-  if (pin && !/^\d{4,8}$/.test(pin)) return fail("O PIN do Moonlight, se informado, tem de 4 a 8 dígitos.");
   if (!PLAN_DAYS[input.plan]) return fail("Escolha um plano semanal, quinzenal ou mensal.");
-  return { ok: true, value: { publicIp, rdpUser, password, pin, plan: input.plan } };
+  return { ok: true, value: { publicIp, rdpUser, password, plan: input.plan } };
 }
 
 export function validateSchedule(input) {

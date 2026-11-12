@@ -14,6 +14,7 @@ export async function ack(interaction, update) {
 export async function present(interaction, payload) {
   const flags = interaction.atlasMode === "update" ? V2 : V2_EPHEMERAL;
   const body = { components: payload.components, flags, allowedMentions: { parse: [] } };
+  if (payload.files?.length) body.files = payload.files;
   if (interaction.deferred || interaction.replied) await interaction.editReply(body);
   else await interaction.reply(body);
 }

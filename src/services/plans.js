@@ -2,7 +2,7 @@ const ZONE = "America/Sao_Paulo";
 
 export const PLAN_DAYS = Object.freeze({ semanal: 7, quinzenal: 15, mensal: 30 });
 export const PLAN_LABEL = Object.freeze({ semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" });
-export const GPUS = Object.freeze(["Tesla T4", "RTX 2050", "RTX 3060", "RTX 3090", "RTX 4070", "RTX 4090"]);
+export const GPUS = Object.freeze(["Tesla T4", "NVIDIA A10", "RTX 2050", "RTX 3060", "RTX 3090", "RTX 4070", "RTX 4090"]);
 
 function parts(ms) {
   const formatter = new Intl.DateTimeFormat("en-US", {

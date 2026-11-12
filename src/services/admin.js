@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
+import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, specsModal, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { vmOptionValue } from "./provider.js";
-import { validateAccess, validateIdentity, validateSchedule } from "./fields.js";
+import { validateAccess, validateIdentity, validateSchedule, validateSpecs } from "./fields.js";
+import { specsFromSize } from "./vm-size.js";
 import { expiryFrom, formatDate, startOfToday } from "./plans.js";
 
 const PAGE = 5;
@@ -74,6 +75,10 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
         kind,
         payload: {
           ...identity.value,
+          gpu: existing?.gpu && existing.gpu !== "não informado" ? existing.gpu : "não informado",
+          vcpus: existing?.vcpus || 0,
+          ram: existing?.ram && existing.ram !== "não informado" ? existing.ram : "não informado",
+          specsReady: Boolean(existing?.gpu && existing.gpu !== "não informado"),
           targetUserId,
           publicIp: existing?.publicIp ?? "",
           rdpUser: existing?.rdpUser ?? "",
@@ -97,7 +102,19 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (blocked) return { error: blocked };
       const draft = requireDraft(guildId, actor.id, draftId);
       if (!draft) return { error: notice("O rascunho expirou. Comece de novo.", config.panelColor) };
+      if (step === "3" && !draft.payload.infraId && !draft.payload.specsReady) return { modal: specsModal(draft) };
       return { modal: step === "3" ? step3Modal(draft) : step2Modal(draft) };
+    },
+    applySpecs({ guildId, actor, draftId, fields }) {
+      const blocked = gate(actor);
+      if (blocked) return { payload: blocked };
+      const draft = requireDraft(guildId, actor.id, draftId);
+      if (!draft) return { payload: notice("O rascunho expirou. Comece de novo.", config.panelColor) };
+      const specs = validateSpecs(fields);
+      if (!specs.ok) return { payload: notice(specs.error, config.panelColor) };
+      draft.payload = { ...draft.payload, ...specs.value, specsReady: true };
+      storeDraft(draft);
+      return { payload: renderContinue(config.panelColor, draft.id, 3, "Hardware anotado. Continue para as datas. O Resource ID manual continua opcional.", emojis.pack(guildId)) };
     },
     applyStep2({ guildId, actor, draftId, fields }) {
       const blocked = gate(actor);
@@ -107,9 +124,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       const access = validateAccess(fields);
       if (!access.ok) return { payload: notice(access.error, config.panelColor) };
       const password = sealValue(sealer, access.value.password);
-      const pin = sealValue(sealer, access.value.pin);
       if (!password.ok) return { payload: notice(password.error, config.panelColor) };
-      if (!pin.ok) return { payload: notice(pin.error, config.panelColor) };
       const start = draft.payload.startedAt || startOfToday(now());
       draft.payload = {
         ...draft.payload,
@@ -117,9 +132,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
         rdpUser: access.value.rdpUser,
         plan: access.value.plan,
         rdpPasswordCipher: access.value.password ? password.cipher : draft.payload.rdpPasswordCipher,
-        pinCipher: access.value.pin ? pin.cipher : draft.payload.pinCipher,
         keepPassword: access.value.password ? false : Boolean(draft.payload.rdpPasswordCipher),
-        keepPin: access.value.pin ? false : Boolean(draft.payload.pinCipher),
         startedAt: start,
         startText: formatDate(start),
         expiryText: formatDate(expiryFrom(start, access.value.plan)),
@@ -181,8 +194,13 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!vm) return notice("Essa VM não está mais na lista. Abra a lista de novo.", config.panelColor);
       const other = repo.findByInfra(guildId, vm.id);
       if (other && other.userId !== draft.payload.targetUserId) return notice("Essa VM já está vinculada a outro cliente.", config.panelColor);
+      const specs = specsFromSize(vm.size);
       draft.payload.infraId = vm.id;
       draft.payload.vmName = vm.name;
+      draft.payload.gpu = specs.gpu;
+      draft.payload.vcpus = specs.vcpus;
+      draft.payload.ram = specs.ram;
+      draft.payload.specsReady = true;
       storeDraft(draft);
       return this.vmPicker(guildId, actor, draftId, 0);
     },

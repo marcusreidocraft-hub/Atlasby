@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@azure/arm-compute": "^23.1.0",
+    "@azure/arm-network": "^39.1.0",
     "@azure/identity": "^4.13.0",
+    "@resvg/resvg-wasm": "^2.6.2",
     "discord.js": "14.28.1"
   }
 }

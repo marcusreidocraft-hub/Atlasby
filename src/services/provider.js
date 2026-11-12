@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { specsFromSize } from "./vm-size.js";
 
 export function vmOptionValue(resourceId) {
   return createHash("sha256").update(String(resourceId)).digest("hex").slice(0, 32);
@@ -59,6 +60,12 @@ function summarizeVm(vm, power) {
   };
 }
 
+function parseProviderId(value, provider) {
+  const match = new RegExp(`^/subscriptions/([^/]+)/resourceGroups/([^/]+)/providers/${provider}/([^/]+)$`, "i").exec(String(value ?? "").trim());
+  if (!match) return null;
+  return { resourceGroup: match[2], name: match[3] };
+}
+
 function diskName(vmName) {
   const base = String(vmName).replace(/[^A-Za-z0-9]/g, "").slice(0, 40) || "vm";
   return `os${base}${Date.now()}`.slice(0, 80);
@@ -78,18 +85,49 @@ export function createInfrastructure(config, deps = {}) {
   const cacheMs = deps.vmCacheMs ?? 60_000;
   const statusMs = deps.statusTimeoutMs ?? 8_000;
   const clock = deps.now ?? (() => Date.now());
+  let credential;
   let computeClient;
+  let networkClient;
   let vmCache = null;
+  const machineCache = new Map();
+
+  async function tokenCredential() {
+    if (deps.credential) return deps.credential;
+    if (!credential) {
+      const identity = await import("@azure/identity");
+      credential = new identity.ClientSecretCredential(config.azure.tenantId, config.azure.clientId, config.azure.clientSecret);
+    }
+    return credential;
+  }
 
   async function compute() {
     if (deps.compute) return deps.compute;
     if (!computeClient) {
-      const identity = await import("@azure/identity");
       const arm = await import("@azure/arm-compute");
-      const credential = new identity.ClientSecretCredential(config.azure.tenantId, config.azure.clientId, config.azure.clientSecret);
-      computeClient = new arm.ComputeManagementClient(credential, config.azure.subscriptionId);
+      computeClient = new arm.ComputeManagementClient(await tokenCredential(), config.azure.subscriptionId);
     }
     return computeClient;
+  }
+
+  async function network() {
+    if (deps.network) return deps.network;
+    if (!networkClient) {
+      const arm = await import("@azure/arm-network");
+      networkClient = new arm.NetworkManagementClient(await tokenCredential(), config.azure.subscriptionId);
+    }
+    return networkClient;
+  }
+
+  async function publicIpOf(vm) {
+    const nicRef = vm.networkProfile?.networkInterfaces?.[0]?.id;
+    const nicId = parseProviderId(nicRef, "Microsoft\\.Network/networkInterfaces");
+    if (!nicId) return "";
+    const nic = await (await network()).networkInterfaces.get(nicId.resourceGroup, nicId.name);
+    const pipRef = nic.ipConfigurations?.find((item) => item.publicIPAddress?.id)?.publicIPAddress?.id;
+    const pipId = parseProviderId(pipRef, "Microsoft\\.Network/publicIPAddresses");
+    if (!pipId) return "";
+    const pip = await (await network()).publicIPAddresses.get(pipId.resourceGroup, pipId.name);
+    return pip.ipAddress || "";
   }
 
   function manual(reason) {
@@ -132,6 +170,32 @@ export function createInfrastructure(config, deps = {}) {
       } catch (error) {
         throw Object.assign(error instanceof Error ? error : new Error("azure"), { code: failureCode(error) });
       }
+    },
+    async readMachine(infraId) {
+      if (!config.azure.configured) return null;
+      const target = parseVmResourceId(infraId);
+      if (!target) return null;
+      const cached = machineCache.get(infraId);
+      if (cached && clock() - cached.at < cacheMs) return cached.value;
+      const client = await compute();
+      const vm = await withTimeout(() => client.virtualMachines.get(target.resourceGroup, target.name), readMs);
+      let power = null;
+      try {
+        const view = await withTimeout(() => client.virtualMachines.instanceView(target.resourceGroup, target.name), readMs);
+        power = powerFromView(view);
+      } catch (error) {
+        logAzure("Estado da VM não consultado", error);
+      }
+      let publicIp = "";
+      try {
+        publicIp = await withTimeout(() => publicIpOf(vm), readMs);
+      } catch (error) {
+        logAzure("IP público não consultado", error);
+      }
+      const specs = specsFromSize(vm.hardwareProfile?.vmSize);
+      const value = { power, publicIp, gpu: specs.gpu, vcpus: specs.vcpus, ram: specs.ram, size: specs.size };
+      machineCache.set(infraId, { at: clock(), value });
+      return value;
     },
     async readPower(infraId) {
       const result = await azureCall(infraId, readMs, async (client, target) => {

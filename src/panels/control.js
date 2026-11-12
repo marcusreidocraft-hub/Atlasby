@@ -1,6 +1,39 @@
-import { ActionRowBuilder, ButtonStyle } from "discord.js";
+import { ActionRowBuilder, AttachmentBuilder, ButtonStyle } from "discord.js";
 import { PLAN_LABEL, formatStamp, planStatus, powerLabel, remainingLabel } from "../services/plans.js";
-import { container, heading, mark, press, section, separator, text } from "./ui.js";
+import { headlineOf } from "../services/vm-size.js";
+import { attachmentGallery, container, heading, mark, press, text } from "./ui.js";
+
+const CARD_FILE = "vm-card.png";
+
+export function cardFacts(client, now) {
+  const status = powerLabel(client.powerStatus);
+  const state = planStatus(now, client.expiresAt);
+  return {
+    status,
+    headline: headlineOf(client.gpu, client.vcpus),
+    ip: client.publicIp || "não informado",
+    time: remainingLabel(now, client.expiresAt),
+    plan: `${PLAN_LABEL[client.planType] || client.planType || "Plano"} · ${state}`,
+    consulted: formatStamp(client.lastQueryAt),
+  };
+}
+
+function fallbackLines(client, now, emojis) {
+  const card = cardFacts(client, now);
+  const status = client.powerStatus === "ligada" ? mark(emojis, "ligada", card.status) : card.status;
+  return [
+    "**Atlas**",
+    "Seu poder em nuvem",
+    `Status: **${status}**`,
+    `**${card.headline}**`,
+    `**IP público** · ${card.ip}`,
+    `**Tempo do plano** · ${card.time}`,
+    `**Plano** · ${card.plan}`,
+    `**Última consulta da VM** · ${card.consulted}`,
+    "Use os botões abaixo para controlar sua máquina.",
+    "Instância Spot: se desligar inesperadamente, tente ligá-la novamente.",
+  ].join("\n");
+}
 
 export function renderMissing(accent) {
   return container(accent, (root) => {
@@ -8,36 +41,15 @@ export function renderMissing(accent) {
   });
 }
 
-export function renderControl(client, { accent, emojis, bannerUrl, now, notice }) {
-  const status = powerLabel(client.powerStatus);
+export function renderControl(client, { accent, emojis, now, notice, image }) {
   const on = client.powerStatus === "ligada";
-  const state = planStatus(now, client.expiresAt);
-  const header = [
-    mark(emojis, "monitor", `**${client.machineName}**`),
-    "Sua Máquina",
-    "",
-    mark(emojis, "windows", `**${client.gpu} · ${client.vcpus} vCPU · ${client.ram}**`),
-    `Status: **${status}**`,
-  ].join("\n");
-  const facts = [
-    mark(emojis, "world", `**IP público** · ${client.publicIp || "não informado"}`),
-    mark(emojis, "calendario", `**Tempo do plano** · ${remainingLabel(now, client.expiresAt)}`),
-    mark(emojis, "vip", `**Plano** · ${PLAN_LABEL[client.planType] || client.planType} · ${state}`),
-    mark(emojis, "bell", `**Última consulta da VM** · ${formatStamp(client.lastQueryAt)}`),
-  ].join("\n");
-  return container(accent, (root) => {
+  const payload = container(accent, (root) => {
     if (notice) root.addTextDisplayComponents(text(notice));
     root.addTextDisplayComponents(text(mark(emojis, "verified", `${client.clientName} autorizado com acesso completo.`)));
-    root.addSeparatorComponents(separator());
-    root.addSectionComponents(section(header, {
-      bannerUrl,
-      button: press("atlas:vm:status", status, on ? ButtonStyle.Success : ButtonStyle.Secondary, emojis.power).setDisabled(false),
-    }));
-    root.addTextDisplayComponents(text(facts));
-    root.addSeparatorComponents(separator());
-    root.addTextDisplayComponents(text(mark(emojis, "megaphone", "Use os botões abaixo para controlar sua máquina.\nInstância Spot: se desligar inesperadamente, tente ligá-la novamente.")));
+    if (image) root.addMediaGalleryComponents(attachmentGallery(CARD_FILE));
+    else root.addTextDisplayComponents(text(fallbackLines(client, now, emojis)));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, emojis.power),
+      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, on ? emojis.ligada : emojis.power),
       press("atlas:vm:pin", "PIN Moonlight", ButtonStyle.Secondary, emojis.moonlight),
       press("atlas:vm:rdp", "Acesso RDP", ButtonStyle.Secondary, emojis.rdp),
       press("atlas:vm:format", "Formatar VM", ButtonStyle.Danger, emojis.alerta),
@@ -45,6 +57,14 @@ export function renderControl(client, { accent, emojis, bannerUrl, now, notice }
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
       press("atlas:vm:refresh", "Atualizar", ButtonStyle.Secondary, emojis.engrenagem),
     ));
+  });
+  if (image) payload.files = [new AttachmentBuilder(image, { name: CARD_FILE })];
+  return payload;
+}
+
+export function renderPinSoon(accent, emojis = {}) {
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text(`${heading(emojis, "moonlight", "Liberar PIN Moonlight")}\nEm breve. Um agente na máquina vai liberar o PIN. Nada foi exibido agora.`));
   });
 }
 

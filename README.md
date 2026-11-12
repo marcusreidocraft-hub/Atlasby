@@ -72,15 +72,15 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/configurar logs` | grava o canal de log |
 | `/configurar emoji` | substitui um emoji deste servidor |
 
-O cadastro pede nome do cliente, nome da máquina, GPU, vCPUs, RAM, IP, usuário RDP, senha RDP, PIN e plano. Depois disso, um seletor lista as VMs da assinatura: o nome é o rótulo e a descrição traz grupo, tamanho e região. A escolha grava o Resource ID. **Nenhuma VM agora** deixa o campo vazio. VMs já de outro cliente não entram nessa lista. O passo seguinte ainda tem o Resource ID manual, opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.
+O cadastro pede nome do cliente, nome da máquina, IP de reserva, usuário RDP, senha RDP e plano. Depois, um seletor lista as VMs da assinatura. A escolha preenche o Resource ID e lê GPU, vCPU e RAM do tamanho da VM. **Nenhuma VM agora** deixa o hardware para o administrador informar, inclusive NVIDIA A10, e o Resource ID manual continua opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.
 
-GPU disponível: Tesla T4, RTX 2050, RTX 3060, RTX 3090, RTX 4070 e RTX 4090.
+O IP público da VM, quando ela tem Resource ID, vem da interface de rede na Azure e substitui o IP digitado. Se a nuvem não tiver IP, fica o valor manual.
 
 Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paulo`. A data de vencimento pode ser editada.
 
 ## O que o cliente vê
 
-**Controlar VM** abre um cartão privado: nome, status, GPU, vCPUs, RAM, IP, tempo restante, plano e a última consulta. Os botões são Ligar ou Desligar, PIN Moonlight, Acesso RDP, Formatar VM e Atualizar.
+**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, PIN Moonlight, Acesso RDP, Formatar VM e Atualizar. PIN Moonlight avisa que a liberação fica para um agente futuro na máquina.
 
 **Consultar plano** mostra plano, início, vencimento, tempo restante e status.
 
@@ -106,6 +106,7 @@ O padrão só entra no botão se o bot enxergar o emoji no cache (`guild.emojis.
 | `alerta` | `<:5577warning:1568512629847101531>` | Formatar VM | ⚠️ |
 | `engrenagem` | `<:dgear:1568512697002098728>` | Atualizar | ⚙️ |
 | `power` | `<:disactiv:1568512700739362897>` | Ligar e Desligar | ⏻ |
+| `ligada` | `<:reduto_on:1570365824810877048>` | status Ligada | 🟢 |
 
 Quando um título, status ou campo combina com outro emoji do mesmo servidor, ele também entra, se o bot o enxergar: monitor, windows, world, externallink, mail, pencil, tools, star, cash, bell, megaphone, 8011admin, 47106member, 1906add, 53136verified, 12560blackarrow, 7957link, 44216vip e gavel. Fora do cache, esse detalhe fica sem emoji. Publique o painel de novo se trocar um emoji da mensagem do canal.
 
@@ -140,4 +141,4 @@ No Discord, depois que o host reiniciar o processo: publique o painel, cadastre 
 
 ## Limitações
 
-Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. A GPU precisa ser uma das opções da lista. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado.
+Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. O cartão usa `@resvg/resvg-wasm` e a fonte Inter. O IP público usa `@azure/arm-network`. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado.
