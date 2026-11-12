@@ -458,16 +458,22 @@ test("painéis usam Components V2 e o texto do painel", () => {
     publicIp: "203.0.113.10", planType: "mensal", expiresAt: Date.parse("2026-11-05T03:00:00.000Z"),
     lastQueryAt: Date.parse("2026-10-06T03:00:00.000Z"), powerStatus: "ligada",
   }, { accent: 0x5865f2, emojis: UNICODE, now: Date.parse("2026-10-06T03:00:00.000Z"), image: Buffer.from([0x89, 0x50, 0x4e, 0x47]) });
+  const shutdown = renderControl({
+    machineName: "Mesa 01", clientName: "Ana", gpu: "Tesla T4", vcpus: 4, ram: "28 GB",
+    publicIp: "203.0.113.10", planType: "mensal", expiresAt: Date.parse("2026-11-05T03:00:00.000Z"),
+    lastQueryAt: Date.parse("2026-10-06T03:00:00.000Z"), powerStatus: "ligada",
+  }, { accent: 0x5865f2, emojis: { ...UNICODE, desligar: "<:desligar:1570370496673873952>", ligada: "<:reduto_on:1570365824810877048>" }, now: Date.parse("2026-10-06T03:00:00.000Z") });
+  const shutdownButton = shutdown.components[0].toJSON().components.flatMap((row) => row.components ?? []).find((item) => item.custom_id === "atlas:vm:power");
+  assert.equal(shutdownButton.label, "Desligar VM");
+  assert.equal(shutdownButton.emoji.id, "1570370496673873952");
+  assert.match(textOf(shutdown), /reduto_on:1570365824810877048/);
   const off = renderControl({
     machineName: "Mesa 01", clientName: "Ana", gpu: "Tesla T4", vcpus: 4, ram: "28 GB",
     publicIp: "203.0.113.10", planType: "mensal", expiresAt: Date.parse("2026-11-05T03:00:00.000Z"),
     lastQueryAt: Date.parse("2026-10-06T03:00:00.000Z"), powerStatus: "desligada",
-  }, { accent: 0x5865f2, emojis: { ...UNICODE, desligar: "<:desligar:1570370496673873952>", power: "⏻" }, now: Date.parse("2026-10-06T03:00:00.000Z") });
-  assert.match(textOf(off), /desligar:1570370496673873952/);
-  assert.match(textOf(off), /Ligar VM/);
-  const power = off.components[0].toJSON().components.flatMap((row) => row.components ?? []).find((item) => item.custom_id === "atlas:vm:power");
-  assert.equal(power.label, "Ligar VM");
-  assert.notEqual(power.emoji?.id, "1570370496673873952");
+  }, { accent: 0x5865f2, emojis: { ...UNICODE, desligar: "<:desligar:1570370496673873952>", ligada: "<:reduto_on:1570365824810877048>", power: "⏻" }, now: Date.parse("2026-10-06T03:00:00.000Z") });
+  assert.doesNotMatch(textOf(off), /1570370496673873952|1570365824810877048/);
+  assert.match(textOf(off), /Desligada/);
   assert.match(textOf(pictured), /attachment:\/\/vm-card\.png/);
   assert.match(textOf(pictured), /"type":12/);
   assert.equal(pictured.files.length, 1);

@@ -18,15 +18,9 @@ export function cardFacts(client, now) {
   };
 }
 
-function statusLine(client, emojis, card) {
-  if (client.powerStatus === "ligada") return mark(emojis, "ligada", card.status);
-  if (client.powerStatus === "desligada") return mark(emojis, "desligar", card.status);
-  return card.status;
-}
-
 function fallbackLines(client, now, emojis) {
   const card = cardFacts(client, now);
-  const status = statusLine(client, emojis, card);
+  const status = client.powerStatus === "ligada" ? mark(emojis, "ligada", card.status) : card.status;
   return [
     "**Atlas**",
     "Seu poder em nuvem",
@@ -52,12 +46,10 @@ export function renderControl(client, { accent, emojis, now, notice, image }) {
   const payload = container(accent, (root) => {
     if (notice) root.addTextDisplayComponents(text(notice));
     root.addTextDisplayComponents(text(mark(emojis, "verified", `${client.clientName} autorizado com acesso completo.`)));
-    if (image) {
-      root.addTextDisplayComponents(text(`Status: **${statusLine(client, emojis, cardFacts(client, now))}**`));
-      root.addMediaGalleryComponents(attachmentGallery(CARD_FILE));
-    } else root.addTextDisplayComponents(text(fallbackLines(client, now, emojis)));
+    if (image) root.addMediaGalleryComponents(attachmentGallery(CARD_FILE));
+    else root.addTextDisplayComponents(text(fallbackLines(client, now, emojis)));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, on ? emojis.ligada : emojis.power),
+      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, on ? emojis.desligar : emojis.power),
       press("atlas:vm:pin", "PIN Moonlight", ButtonStyle.Secondary, emojis.moonlight),
       press("atlas:vm:rdp", "Acesso RDP", ButtonStyle.Secondary, emojis.rdp),
       press("atlas:vm:format", "Formatar VM", ButtonStyle.Danger, emojis.alerta),
