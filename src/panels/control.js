@@ -62,7 +62,7 @@ export function renderControl(client, { accent, emojis, now, notice, image }) {
   return payload;
 }
 
-export function renderPinSoon(accent, emojis = {}, message = "Agente não instalado nesta máquina. Um administrador pode instalá-lo ao salvar a VM ou pelo botão Instalar/Reinstalar agente.") {
+export function renderPinSoon(accent, emojis = {}, message = "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.") {
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(`${heading(emojis, "moonlight", "Liberar PIN Moonlight")}\n${message}`));
   });

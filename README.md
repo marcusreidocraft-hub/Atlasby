@@ -32,8 +32,6 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | --- | --- | --- |
 | `DATA_DIR` | `data` | pasta do `atlas.sqlite` |
 | `SERVER_PORT` | vazio | porta HTTP da API do agente; o Bot-Hosting preenche. Vazio desliga a API |
-| `PUBLIC_BOT_URL` | vazio | endereço público que a VM usa, por exemplo `http://IP:PORT` |
-| `INSTALL_SUNSHINE` | `false` | `true` instala o Sunshine em silêncio se ele não estiver na VM |
 | `CONFIRMATION_TTL_SECONDS` | `60` | prazo da formatação, de 15 a 300 |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | falso | lida e não usada |
 | `PANEL_COLOR` | `5865F2` | cor dos containers, com ou sem `#` |
@@ -70,7 +68,7 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
 | `/listar-vms` | lista as VMs da assinatura Azure, com estado, cliente e agente |
-| `/agente-token` | fallback oculto para administradores; só mostra o token e não instala nada |
+| `/agente-token` | gera o token do agente daquela máquina; ele aparece uma vez |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
 | `/configurar logs` | grava o canal de log |
@@ -125,15 +123,19 @@ O log vai para `ADMIN_LOG_CHANNEL_ID` ou para o canal de `/configurar logs`, e t
 
 ## Agente na VM
 
-A VM não abre porta. O bot escuta HTTP em `SERVER_PORT` e a VM fala com `PUBLIC_BOT_URL`, o endereço público desse processo. Exemplo: `http://203.0.113.10:12345`. Sem essa variável, salvar a máquina ou reinstalar o agente responde que falta o endereço e não chama a Azure.
+A VM não abre porta para o bot. O agente, dentro do Windows, consulta o bot por HTTPS. O processo escuta HTTP em `0.0.0.0` na `SERVER_PORT` que o Bot-Hosting informa. O endereço público é o que o painel do host mostra para essa porta. Use esse endereço, com `https://` quando o host termina o TLS, no campo `BOT_URL`.
 
-Ao salvar um cliente com Resource ID, ou ao usar **Instalar/Reinstalar agente** em `/buscar-cliente` e `/listar-vms`, o bot gera o token daquela máquina, guarda só o hash e envia um Run Command (`RunPowerShellScript`) para a VM ligada. O script grava `agent.ps1` e `C:\ProgramData\AtlasCloudPC\config.json`, registra a tarefa **Atlas Cloud PC Agent** e a inicia como SYSTEM. Se a VM estiver desligada, nada é instalado e o aviso pede para ligá-la. Se o Run Command falhar, o token novo não é gravado e o erro real vai para o log do host, sem o token.
+1. No Discord, um administrador usa `/agente-token` no membro dono da máquina e copia o token. Ele não aparece de novo. Gerar outro token invalida o anterior.
+2. Na VM, baixe a pasta `agent` do repositório (`agent.ps1`, `install.ps1` e `config.example.json`).
+3. Copie `config.example.json` para `config.json` na mesma pasta e preencha `BOT_URL`, `AGENT_TOKEN`, `SUNSHINE_USER` e `SUNSHINE_PASSWORD`. A senha é a do painel web do Sunshine.
+4. Abra o PowerShell como Administrador nessa pasta e execute `.\install.ps1`.
+5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\` e registra a tarefa **Atlas Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, e também é iniciada na hora.
 
-Se o `config.json` da VM não tiver usuário e senha do Sunshine, o script cria os dois na própria VM com `sunshine.exe --creds` e os deixa só nesse arquivo. Eles não voltam para o Discord. Com `INSTALL_SUNSHINE=true`, a ausência do Sunshine tenta `winget install LizardByte.Sunshine` e, se precisar, o instalador da última release. O padrão é não instalar nada.
+O agente faz long-poll em `GET /agent/v1/poll` e, quando há pedido, envia `{ pin, name }` para `https://localhost:47990/api/pin`. O certificado local do Sunshine é ignorado só nessa chamada. O resultado volta em `POST /agent/v1/result`.
 
-O agente continua no long-poll `GET /agent/v1/poll` e envia o PIN para `https://localhost:47990/api/pin`. `/listar-vms` e `/buscar-cliente` mostram online, offline ou não instalado. Online é um contato nos últimos 60 segundos. `/agente-token` fica só como fallback de administrador: mostra um token e não instala o agente.
+`/listar-vms` e `/buscar-cliente` mostram agente online, offline ou não instalado. Online significa um poll nos últimos 60 segundos. Se o agente estiver offline no momento do PIN, o pedido continua válido por 2 minutos.
 
-O token autentica uma única máquina. A comparação é em tempo constante. O PIN não entra no log.
+O token autentica uma única máquina. Ele fica só como hash. A comparação é em tempo constante. Pedido de outra máquina responde como se não existisse. O PIN não vai para o log. Não publique `config.json`.
 
 ## Como testar
 

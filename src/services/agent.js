@@ -52,22 +52,10 @@ export function createAgentService({ repo, audit, now = () => Date.now(), waiter
   return {
     authenticate,
     limited,
-    issueToken(guildId, client) {
+    issueToken(guildId, client, actorId) {
       const token = randomBytes(32).toString("base64url");
-      this.rememberToken(guildId, client, token);
-      return token;
-    },
-    rememberToken(guildId, client, token) {
       repo.saveAgentToken({ clientId: client.id, guildId, tokenHash: hashAgentToken(token), now: now() });
-    },
-    async waitForSeen(clientId, waitMs = 0) {
-      const deadline = Date.now() + Math.max(0, waitMs);
-      let label = this.statusFor(clientId);
-      while (label !== "agente online" && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-        label = this.statusFor(clientId);
-      }
-      return label;
+      return token;
     },
     async recordIssue(guildId, actorId, client) {
       await audit.record({

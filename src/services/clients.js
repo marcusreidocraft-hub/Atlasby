@@ -131,7 +131,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
       const client = repo.getByOwner(guildId, userId);
       if (!client) return { payload: renderMissing(config.panelColor) };
       if (!agents?.hasToken(client.id)) {
-        return { payload: renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Um administrador pode instalá-lo ao salvar a VM ou pelo botão Instalar/Reinstalar agente.") };
+        return { payload: renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.") };
       }
       if (!config.serverPort) {
         return { payload: renderPinSoon(config.panelColor, emojis.pack(guildId), "A API do agente não está escutando neste processo. Confira SERVER_PORT no host.") };
@@ -143,7 +143,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
       if (!client) return renderMissing(config.panelColor);
       if (!/^\d{4}$/.test(String(pin ?? ""))) return notice("O PIN mostrado pelo Moonlight tem 4 dígitos.", config.panelColor);
       if (!agents?.hasToken(client.id)) {
-        return renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Um administrador pode instalá-lo ao salvar a VM ou pelo botão Instalar/Reinstalar agente.");
+        return renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.");
       }
       if (!config.serverPort) return renderPinSoon(config.panelColor, emojis.pack(guildId), "A API do agente não está escutando neste processo. Confira SERVER_PORT no host.");
       const job = agents.queuePin({ guildId, client, userId, pin: String(pin) });

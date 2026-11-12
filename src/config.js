@@ -93,8 +93,6 @@ export function readConfig(env = {}) {
     allowedGuildIds: snowflakes(env.ALLOWED_GUILD_IDS),
     dataDir: text(env.DATA_DIR) || "data",
     serverPort: parsePort(env.SERVER_PORT),
-    publicBotUrl: parseUrl(env.PUBLIC_BOT_URL).replace(/\/$/, ""),
-    installSunshine: parseBoolean(env.INSTALL_SUNSHINE, false),
     confirmationTtlMs: parseTtl(env.CONFIRMATION_TTL_SECONDS) * 1000,
     messageContentIntent: parseBoolean(env.ENABLE_MESSAGE_CONTENT_INTENT, false),
     panelColor: parsePanelColor(env.PANEL_COLOR),

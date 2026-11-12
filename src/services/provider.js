@@ -71,13 +71,6 @@ function diskName(vmName) {
   return `os${base}${Date.now()}`.slice(0, 80);
 }
 
-function scrubText(value, secrets) {
-  let text = String(value ?? "");
-  const hidden = [...secrets].filter(Boolean).sort((left, right) => right.length - left.length);
-  for (const secret of hidden) text = text.split(secret).join("[omitido]");
-  return text.slice(0, 500);
-}
-
 function logAzure(prefix, error) {
   const name = error?.name ?? "Error";
   const message = error instanceof Error ? error.message : String(error ?? "erro");
@@ -217,41 +210,6 @@ export function createInfrastructure(config, deps = {}) {
         else await client.virtualMachines.beginDeallocateAndWait(target.resourceGroup, target.name);
         return { mode: "azure", status: desired === "ligada" ? "ligada" : "desligada" };
       });
-    },
-    async runCommand(infraId, script) {
-      if (!config.azure.configured) return manual("unconfigured");
-      const target = parseVmResourceId(infraId);
-      if (!target) return manual("infra");
-      const secrets = [script];
-      try {
-        const client = await compute();
-        try {
-          const view = await withTimeout(() => client.virtualMachines.instanceView(target.resourceGroup, target.name), readMs);
-          if (powerFromView(view) === "desligada") return { mode: "azure", status: "desligada", reason: "stopped" };
-        } catch (error) {
-          logAzure("Estado da VM não consultado", error);
-        }
-        const runMs = config.installSunshine ? 300_000 : writeMs;
-        const result = await withTimeout(
-          () => client.virtualMachines.beginRunCommandAndWait(target.resourceGroup, target.name, {
-            commandId: "RunPowerShellScript",
-            script: [script],
-          }),
-          runMs,
-        );
-        const rows = result?.value ?? [];
-        const failed = rows.find((row) => /failed/i.test(String(row?.code ?? "")));
-        const stdout = rows.find((row) => /StdOut/i.test(String(row?.code ?? "")))?.message ?? "";
-        if (failed || (stdout && !stdout.includes("agente instalado"))) {
-          const detail = scrubText(failed?.message || stdout || "falhou", secrets);
-          logAzure("Run Command falhou", new Error(detail));
-          return { mode: "azure", reason: "script" };
-        }
-        return { mode: "azure", status: "ligada" };
-      } catch (error) {
-        logAzure("Run Command falhou", new Error(scrubText(error instanceof Error ? error.message : error, secrets)));
-        throw Object.assign(new Error("azure"), { code: failureCode(error) });
-      }
     },
     async format(infraId) {
       if (!config.azure.snapshotId) return manual(config.azure.configured ? "snapshot" : "unconfigured");
