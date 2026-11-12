@@ -5,7 +5,7 @@ const UUID = "([0-9a-f-]{36})";
 
 export async function routeClient(interaction, app) {
   const id = interaction.customId ?? "";
-  if (!id.startsWith("atlas:panel:") && !id.startsWith("atlas:vm:") && !id.startsWith("atlas:modal:format:")) return false;
+  if (!id.startsWith("atlas:panel:") && !id.startsWith("atlas:vm:") && !id.startsWith("atlas:modal:format:") && id !== "atlas:modal:moonlight") return false;
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
   const formatModalId = new RegExp(`^atlas:modal:format:${UUID}$`).exec(id);
@@ -52,9 +52,41 @@ export async function routeClient(interaction, app) {
     await present(interaction, app.clients.plan(guildId, userId));
     return true;
   }
-  if (id === "atlas:vm:pin" || id === "atlas:vm:rdp") {
+  if (id === "atlas:vm:pin") {
+    const opened = app.clients.pinStart(guildId, userId);
+    if (opened.modal) {
+      await interaction.showModal(opened.modal);
+      return true;
+    }
     await ack(interaction, false);
-    await present(interaction, await app.clients.reveal(guildId, userId, id.endsWith("pin") ? "pin" : "rdp"));
+    await present(interaction, opened.payload);
+    return true;
+  }
+  if (id === "atlas:modal:moonlight") {
+    await ack(interaction, false);
+    await present(interaction, await app.clients.submitPin(guildId, userId, interaction.fields.getTextInputValue("pin").trim()));
+    return true;
+  }
+  if (id === "atlas:vm:unpair") {
+    await ack(interaction, false);
+    await present(interaction, await app.clients.askUnpair(guildId, userId));
+    return true;
+  }
+  const unpairYes = new RegExp(`^atlas:vm:unpair:yes:${UUID}$`).exec(id);
+  if (unpairYes) {
+    await ack(interaction, true);
+    await present(interaction, await app.clients.confirmUnpair(guildId, userId, unpairYes[1]));
+    return true;
+  }
+  const unpairNo = new RegExp(`^atlas:vm:unpair:no:${UUID}$`).exec(id);
+  if (unpairNo) {
+    await ack(interaction, true);
+    await present(interaction, await app.clients.cancelUnpair(guildId, userId, unpairNo[1]));
+    return true;
+  }
+  if (id === "atlas:vm:rdp") {
+    await ack(interaction, false);
+    await present(interaction, await app.clients.reveal(guildId, userId, "rdp"));
     return true;
   }
   if (id === "atlas:vm:format") {

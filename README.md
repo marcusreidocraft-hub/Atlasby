@@ -31,6 +31,8 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `DATA_DIR` | `data` | pasta do `atlas.sqlite` |
+| `AGENT_SECRET` | vazio | segredo igual em todas as VMs. Vazio desliga o PIN |
+| `AGENT_PORT` | `7474` | porta do agente dentro da VM |
 | `CONFIRMATION_TTL_SECONDS` | `60` | prazo da formatação, de 15 a 300 |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | falso | lida e não usada |
 | `PANEL_COLOR` | `5865F2` | cor dos containers, com ou sem `#` |
@@ -80,7 +82,7 @@ Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paul
 
 ## O que o cliente vê
 
-**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, PIN Moonlight, Acesso RDP, Formatar VM e Atualizar. PIN Moonlight avisa que a liberação fica para um agente futuro na máquina.
+**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
 
 **Consultar plano** mostra plano, início, vencimento, tempo restante e status.
 
@@ -118,6 +120,22 @@ Com as quatro variáveis Azure, o bot usa `@azure/identity` e `@azure/arm-comput
 Sem as quatro variáveis, o provedor manual só registra e avisa a equipe.
 
 O log vai para `ADMIN_LOG_CHANNEL_ID` ou para o canal de `/configurar logs`, e também para a tabela `action_logs`. Senha e PIN não entram nesse texto.
+
+## Agente na VM
+
+Todas as máquinas usam o mesmo `AGENT_SECRET`. Ele entra no bot e no `agent.config.json` da imagem base. Uma VM criada dessa imagem já fala com o bot, sem token por cliente.
+
+1. Na VM base, instale o Sunshine e defina o usuário e a senha do painel web.
+2. Copie a pasta `agent` para a VM.
+3. Preencha `agent/agent.config.json`: `AgentSecret` com o mesmo valor de `AGENT_SECRET`, `SunshineUser` e `SunshinePassword` com o painel do Sunshine. `AgentPort` fica `7474` se você não mudar `AGENT_PORT`.
+4. Abra o PowerShell como Administrador nessa pasta e execute `.\install.ps1`.
+5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\`, libera a porta TCP no firewall do Windows e registra a tarefa **Atlas Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, reinicia após falha e não tem limite de tempo.
+6. No grupo de segurança da Azure, libere entrada TCP `7474` para o endereço de saída do bot. O bot chama `http://<IP público da VM>:7474`.
+7. Confira o agente e capture a imagem. As próximas VMs saem com o agente e o mesmo segredo.
+
+O agente escuta `http://+:7474/` e só aceita `Authorization: Bearer` com comparação em tempo constante. `POST /pin` manda `{pin, name:"Cliente"}` ao Sunshine em `https://127.0.0.1:47990/api/pin`. O certificado autoassinado só é aceito nesse endereço. `POST /unpair-all` chama `/api/clients/unpair-all`. `GET /health` diz se o agente está online. O PIN não é gravado em log.
+
+Sem `AGENT_SECRET`, o bot avisa o administrador e não chama a VM. Se a VM estiver desligada, a resposta pede para ligá-la. Se o agente não responder em 12 segundos, a mensagem é: "Agente da VM não respondeu, tente de novo em instantes".
 
 ## Como testar
 

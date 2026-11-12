@@ -491,7 +491,7 @@ test("cliente só vê a própria máquina e a senha não entra no banco nem no l
   const stranger = await env.app.clients.open(GUILD, OTHER);
   assert.doesNotMatch(textOf(stranger), /203\.0\.113\.10/);
   const soon = await env.app.clients.reveal(GUILD, CLIENT, "pin");
-  assert.match(textOf(soon), /Em breve/);
+  assert.match(textOf(soon), /AGENT_SECRET/);
   assert.doesNotMatch(textOf(soon), new RegExp(PIN));
   const revealed = await env.app.clients.reveal(GUILD, CLIENT, "rdp");
   assert.match(textOf(revealed), new RegExp(PASSWORD));
@@ -627,7 +627,7 @@ test("não administrador não grava cliente", async () => {
 test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
   const example = fs.readFileSync(path.join(process.cwd(), ".env.example"), "utf8");
   for (const key of [
-    "DISCORD_TOKEN", "DISCORD_CLIENT_ID", "ALLOWED_GUILD_IDS", "DATA_DIR", "CONFIRMATION_TTL_SECONDS",
+    "DISCORD_TOKEN", "DISCORD_CLIENT_ID", "ALLOWED_GUILD_IDS", "DATA_DIR", "AGENT_SECRET", "AGENT_PORT", "CONFIRMATION_TTL_SECONDS",
     "ENABLE_MESSAGE_CONTENT_INTENT", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET",
     "AZURE_SUBSCRIPTION_ID", "AZURE_CREDENTIALS_KEY", "AZURE_SNAPSHOT_ID", "AZURE_LOCATION",
     "AZURE_DEFAULT_VM_SIZE", "AZURE_OS_TYPE", "AZURE_VIRTUAL_NETWORK", "AZURE_SUBNET", "AZURE_MAX_OS_DISK_GB",
@@ -638,7 +638,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
   ]) {
     assert.match(example, new RegExp(`^${key}=`, "m"));
   }
-  for (const secret of ["DISCORD_TOKEN=", "DISCORD_CLIENT_ID=", "AZURE_CLIENT_SECRET=", "AZURE_CREDENTIALS_KEY=", "CREDENTIALS_KEY=", "OLLAMA_API_KEY="]) {
+  for (const secret of ["DISCORD_TOKEN=", "DISCORD_CLIENT_ID=", "AZURE_CLIENT_SECRET=", "AZURE_CREDENTIALS_KEY=", "CREDENTIALS_KEY=", "OLLAMA_API_KEY=", "AGENT_SECRET="]) {
     assert.match(example, new RegExp(`^${secret}$`, "m"));
   }
   const ignore = fs.readFileSync(path.join(process.cwd(), ".gitignore"), "utf8");
@@ -646,7 +646,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
 });
 
 test("o código não cita marcas de outros painéis", () => {
-  const roots = ["src", "test", "docs", "README.md", ".env.example", "index.js", "package.json"];
+  const roots = ["src", "test", "docs", "agent", "README.md", ".env.example", "index.js", "package.json"];
   for (const root of roots) {
     const full = path.join(process.cwd(), root);
     const files = fs.statSync(full).isDirectory() ? walk(full) : [full];
