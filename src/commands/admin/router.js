@@ -6,6 +6,7 @@ import { ack, actorFrom, present } from "../../components/reply.js";
 import { adminCommands } from "./commands.js";
 import { storeCommands } from "../../loja/commands.js";
 import { handleStoreCommand } from "../../loja/router.js";
+import { renderAttendance } from "../../loja/attendance.js";
 
 const UUID = "([0-9a-f-]{36})";
 const SNOWFLAKE = "(\\d{17,20})";
@@ -136,12 +137,28 @@ export async function routeCommand(interaction, app) {
 
 export async function routeAdminComponent(interaction, app) {
   const id = interaction.customId ?? "";
-  if (!id.startsWith("atlas:admin:") && !id.startsWith("atlas:modal:add:") && !id.startsWith("atlas:modal:edit:")) return false;
+  if (!id.startsWith("atlas:admin:") && !id.startsWith("atlas:modal:add:") && !id.startsWith("atlas:modal:edit:") && !id.startsWith("atlas:attend:")) return false;
   const actor = actorFrom(interaction);
   const guildId = interaction.guildId;
   if (!app.admin.isAdmin(actor)) {
     await ack(interaction, false);
     await present(interaction, notice("Só um administrador do servidor, ou um cargo de ADMIN_ROLE_IDS, pode fazer isso.", app.config.panelColor));
+    return true;
+  }
+  if (id.startsWith("atlas:attend:")) {
+    await ack(interaction, true);
+    const patch = id.endsWith("role")
+      ? { supportRoleId: interaction.values?.[0] }
+      : id.endsWith("category")
+        ? { ticketCategoryId: interaction.values?.[0] }
+        : { logChannelId: interaction.values?.[0] };
+    app.admin.updateSettings(guildId, actor, patch);
+    if (patch.ticketCategoryId) {
+      app.store.settings(guildId);
+      const current = app.repo.storeSettings(guildId);
+      app.repo.saveStore({ ...current, ticketCategoryId: patch.ticketCategoryId, updatedAt: Date.now() });
+    }
+    await present(interaction, renderAttendance(app.repo.getSettings(guildId), app.config.panelColor));
     return true;
   }
   if (id === "atlas:admin:add:user") {

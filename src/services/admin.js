@@ -364,6 +364,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       const next = {
         supportUrl: patch.supportUrl === undefined ? current.supportUrl : patch.supportUrl,
         logChannelId: patch.logChannelId === undefined ? current.logChannelId : patch.logChannelId,
+        supportRoleId: patch.supportRoleId === undefined ? current.supportRoleId : patch.supportRoleId,
+        ticketCategoryId: patch.ticketCategoryId === undefined ? current.ticketCategoryId : patch.ticketCategoryId,
         emoji: { ...current.emoji, ...(patch.emoji ?? {}) },
       };
       repo.saveSettings(guildId, next, now());

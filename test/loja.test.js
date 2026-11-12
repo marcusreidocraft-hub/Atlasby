@@ -10,6 +10,8 @@ import { createStore } from "../src/loja/service.js";
 import { advanceProvision } from "../src/loja/provision.js";
 import { quotePrice } from "../src/loja/promotions.js";
 import { catalogBySku, formatBrl } from "../src/loja/products.js";
+import { attendanceOf, canAttend, ticketOverwrites } from "../src/loja/attendance.js";
+import { createAdmin } from "../src/services/admin.js";
 
 const GUILD = "100000000000000001";
 
@@ -144,6 +146,33 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
     assert.equal(vms, 1);
     assert.equal(repeated.done, true);
     assert.equal(env.repo.getByOwner(GUILD, "200000000000000009").publicIp, "203.0.113.50");
+    env.repo.saveSettings(GUILD, { supportUrl: "", logChannelId: "777", supportRoleId: "123", ticketCategoryId: "456", emoji: {} }, 1);
+    env.repo.saveStore({ ...env.repo.storeSettings(GUILD), ticketCategoryId: "999", updatedAt: 1 });
+    const desk = attendanceOf(env.repo, { adminRoleIds: ["9999"], adminLogChannelId: "888" }, GUILD);
+    assert.equal(desk.supportRoleId, "123");
+    assert.equal(desk.categoryId, "456");
+    assert.equal(desk.logChannelId, "777");
+    assert.deepEqual(desk.staffRoleIds, ["123", "9999"]);
+    const fallbackRepo = openDatabase(fs.mkdtempSync(path.join(os.tmpdir(), "atlas-desk-")));
+    const fallback = attendanceOf(fallbackRepo, { adminRoleIds: ["9999"], adminLogChannelId: "888" }, GUILD);
+    fallbackRepo.close();
+    assert.equal(fallback.logChannelId, "888");
+    assert.equal(fallback.categoryId, "");
+    assert.equal(canAttend({ id: "1", owner: false, permissions: 0n, roleIds: ["123"] }, { adminRoleIds: [] }, desk), true);
+    assert.equal(canAttend({ id: "2", owner: false, permissions: 0n, roleIds: [] }, { adminRoleIds: [] }, desk), false);
+    assert.equal(ticketOverwrites({ everyoneId: "e", userId: "u", botId: "b", staffRoleIds: desk.staffRoleIds })[3].id, "123");
+    const admin = createAdmin({
+      config: { panelColor: 1, adminRoleIds: [], supportUrl: "" },
+      repo: env.repo,
+      audit: { async record() {} },
+      sealer: null,
+      emojis: { pack() { return {}; } },
+      now: () => 1,
+      infra: { configured: false },
+    });
+    admin.updateSettings(GUILD, { id: "1", owner: true, permissions: 8n, roleIds: [] }, { emoji: { controle: "x" } });
+    assert.equal(env.repo.getSettings(GUILD).supportRoleId, "123");
+    assert.equal(env.repo.getSettings(GUILD).logChannelId, "777");
   } finally {
     env.close();
   }

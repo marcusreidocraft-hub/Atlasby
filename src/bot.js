@@ -8,6 +8,7 @@ import { routeStoreComponent, editStorePanel } from "./loja/router.js";
 import { renderOrder } from "./loja/panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { V2 } from "./panels/ui.js";
+import { attendanceOf } from "./loja/attendance.js";
 
 async function deliver(client, channelId, payload) {
   const channel = await client.channels.fetch(channelId);
@@ -60,8 +61,10 @@ async function fulfill(client, app, orderId) {
     if (result.delivered.roleId) {
       client.guilds.fetch(order.guildId).then((guild) => guild.members.fetch(order.userId)).then((member) => member.roles.add(result.delivered.roleId)).catch(() => {});
     }
-  } else if (!result.ok && app.config.adminLogChannelId) {
-    deliver(client, app.config.adminLogChannelId, {
+  } else if (!result.ok) {
+    const logChannelId = attendanceOf(app.repo, app.config, order.guildId).logChannelId;
+    if (!logChannelId) return;
+    deliver(client, logChannelId, {
       components: renderOrder(order, product).components,
       flags: V2,
       allowedMentions: { parse: [] },

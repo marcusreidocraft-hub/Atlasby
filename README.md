@@ -71,7 +71,8 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
-| `/configurar logs` | grava o canal de log |
+| `/configurar logs` | grava o canal de log. O mesmo campo do `/configurar-atendimento` |
+| `/configurar-atendimento` | cargo de suporte, categoria dos tickets e canal de logs |
 | `/configurar emoji` | substitui um emoji deste servidor |
 
 O cadastro pede nome do cliente, nome da máquina, IP de reserva, usuário RDP, senha RDP e plano. Depois, um seletor lista as VMs da assinatura. A escolha preenche o Resource ID e lê GPU, vCPU e RAM do tamanho da VM. **Nenhuma VM agora** deixa o hardware para o administrador informar, inclusive NVIDIA A10, e o Resource ID manual continua opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.

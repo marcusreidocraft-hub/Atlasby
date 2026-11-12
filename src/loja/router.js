@@ -1,10 +1,11 @@
-import { AttachmentBuilder, ChannelType, ModalBuilder, PermissionFlagsBits, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
+import { AttachmentBuilder, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
 import { notice, V2, V2_EPHEMERAL } from "../panels/ui.js";
 import { ack, present } from "../components/reply.js";
 import { parseDate } from "../services/plans.js";
 import { formatBrl } from "./products.js";
 import { renderOrder } from "./panel.js";
 import { STORE_COMMANDS } from "./commands.js";
+import { attendanceOf, canAttend, renderAttendance, ticketOverwrites } from "./attendance.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -25,6 +26,11 @@ export async function handleStoreCommand(interaction, app, actor) {
   if (!STORE_COMMANDS.has(interaction.commandName)) return false;
   const guildId = interaction.guildId;
   const name = interaction.commandName;
+  if (name === "configurar-atendimento") {
+    app.store.settings(guildId);
+    await present(interaction, renderAttendance(app.repo.getSettings(guildId), app.config.panelColor));
+    return true;
+  }
   if (name === "configurar-loja") {
     const sub = interaction.options.getSubcommand();
     if (sub === "publicar") {
@@ -160,18 +166,38 @@ export async function handleStoreCommand(interaction, app, actor) {
 }
 
 async function ticketChannel(interaction, app, order) {
-  const settings = app.store.settings(interaction.guildId);
-  const overwrites = [
-    { id: interaction.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-    { id: interaction.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-    { id: interaction.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
-  ];
-  for (const roleId of app.config.adminRoleIds) overwrites.push({ id: roleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] });
+  const desk = attendanceOf(app.repo, app.config, interaction.guildId);
   return interaction.guild.channels.create({
     name: `pedido-${order.id.slice(0, 8)}`,
     type: ChannelType.GuildText,
-    parent: settings.ticketCategoryId || null,
-    permissionOverwrites: overwrites,
+    parent: desk.categoryId || null,
+    permissionOverwrites: ticketOverwrites({
+      everyoneId: interaction.guild.roles.everyone.id,
+      userId: interaction.user.id,
+      botId: interaction.client.user.id,
+      staffRoleIds: desk.staffRoleIds,
+    }),
+  });
+}
+
+async function writeTranscript(interaction, app, order, reason) {
+  const desk = attendanceOf(app.repo, app.config, interaction.guildId);
+  if (!desk.logChannelId) return;
+  let history = "";
+  try {
+    const fetched = await interaction.channel?.messages?.fetch({ limit: 20 });
+    history = [...(fetched?.values?.() ?? [])].reverse().map((message) => `${message.author?.username || "sistema"}: ${message.content || "[painel]"}`).join("\n").slice(0, 1500);
+  } catch { /* o canal pode já ter sido fechado */ }
+  const channel = await interaction.client.channels.fetch(desk.logChannelId);
+  await channel.send({
+    components: notice([
+      `Transcrição do pedido ${order?.id || "sem id"}`,
+      `Cliente: <@${order?.userId || interaction.user.id}>`,
+      `Motivo: ${String(reason || "não informado").slice(0, 180)}`,
+      history,
+    ].filter(Boolean).join("\n"), app.config.panelColor).components,
+    flags: V2,
+    allowedMentions: { parse: [] },
   });
 }
 
@@ -194,8 +220,13 @@ export async function routeStoreComponent(interaction, app) {
     }
     try {
       const channel = await ticketChannel(interaction, app, chosen.order);
-      const view = renderOrder(chosen.order, chosen.product, { accent: app.store.settings(guildId).accent });
-      const message = await channel.send({ components: view.components, flags: V2, allowedMentions: { parse: [] } });
+      const desk = attendanceOf(app.repo, app.config, guildId);
+      const view = renderOrder(chosen.order, chosen.product, { accent: app.store.settings(guildId).accent, supportRoleId: desk.supportRoleId });
+      const message = await channel.send({
+        components: view.components,
+        flags: V2,
+        allowedMentions: desk.supportRoleId ? { roles: [desk.supportRoleId] } : { parse: [] },
+      });
       app.store.rememberTicket(chosen.order.id, channel.id, message.id);
       await refresh(interaction, app).catch(() => false);
       await present(interaction, notice(`Pedido aberto em <#${channel.id}>.`, app.config.panelColor));
@@ -211,7 +242,7 @@ export async function routeStoreComponent(interaction, app) {
   const notify = /^atlas:store:notify:([0-9a-f-]{36})$/.exec(id);
   const close = /^atlas:store:close:([0-9a-f-]{36})$/.exec(id);
   if (claim || notify || close) {
-    if (!app.admin.isAdmin(actor)) {
+    if (!canAttend(actor, app.config, attendanceOf(app.repo, app.config, guildId))) {
       await ack(interaction, false);
       await present(interaction, notice("Só a equipe pode fazer isso.", app.config.panelColor));
       return true;
@@ -231,7 +262,7 @@ export async function routeStoreComponent(interaction, app) {
     return true;
   }
   if (id.startsWith("atlas:modal:store:")) {
-    if (!app.admin.isAdmin(actor)) {
+    if (!canAttend(actor, app.config, attendanceOf(app.repo, app.config, guildId))) {
       await ack(interaction, false);
       await present(interaction, notice("Só a equipe pode fazer isso.", app.config.panelColor));
       return true;
@@ -239,6 +270,8 @@ export async function routeStoreComponent(interaction, app) {
     await ack(interaction, false);
     const orderId = id.slice("atlas:modal:store:".length);
     const reason = interaction.fields.getTextInputValue("motivo");
+    const order = app.store.order(orderId);
+    await writeTranscript(interaction, app, order, reason);
     const closed = await app.store.close(guildId, actor.id, orderId, reason);
     await refresh(interaction, app).catch(() => false);
     await present(interaction, notice(closed.ok ? "Ticket fechado. O reembolso de um Pix pago é feito no painel da Wyvi." : closed.error, app.config.panelColor));

@@ -16,6 +16,7 @@ const plan = (option) => option.setName("plano").setDescription("Duração").set
 
 export function storeCommands() {
   return [
+    new SlashCommandBuilder().setName("configurar-atendimento").setDescription("Define cargo, categoria e logs dos tickets.").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
     new SlashCommandBuilder().setName("configurar-loja").setDescription("Ajusta a loja da Atlas Cloud PC.")
       .addSubcommand((sub) => sub.setName("publicar").setDescription("Publica ou atualiza o painel no canal atual."))
       .addSubcommand((sub) => sub.setName("banner").setDescription("Define a imagem do painel.").addStringOption((option) => option.setName("url").setDescription("URL https").setRequired(true)))
@@ -69,4 +70,4 @@ export function storeCommands() {
   ].map((command) => command.setContexts(InteractionContextType.Guild).toJSON());
 }
 
-export const STORE_COMMANDS = new Set(["configurar-loja", "configurar-horas", "criar-oferta", "remover-oferta", "estoque", "adicionar-estoque", "remover-estoque", "configurar-cargo", "configurar-azure", "configurar-imagem", "pedidos", "pedido", "cancelar-pedido"]);
+export const STORE_COMMANDS = new Set(["configurar-loja", "configurar-atendimento", "configurar-horas", "criar-oferta", "remover-oferta", "estoque", "adicionar-estoque", "remover-estoque", "configurar-cargo", "configurar-azure", "configurar-imagem", "pedidos", "pedido", "cancelar-pedido"]);

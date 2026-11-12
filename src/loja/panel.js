@@ -60,7 +60,7 @@ export function renderStorePanel({ settings, products, offers, now, phase = 0 })
   return { components: [root], flags: V2 };
 }
 
-export function renderOrder(order, product, { accent = 0x0a0a0a } = {}) {
+export function renderOrder(order, product, { accent = 0x0a0a0a, supportRoleId = "" } = {}) {
   const root = new ContainerBuilder().setAccentColor(accent);
   root.addTextDisplayComponents(text([
     "## 🛒 Pedido Atlas Cloud PC",
@@ -72,6 +72,7 @@ export function renderOrder(order, product, { accent = 0x0a0a0a } = {}) {
     `Total: ${formatBrl(order.totalCents)}`,
     `Status: ${statusLabel(order.status)}`,
     order.assigneeId ? `Atendimento: <@${order.assigneeId}>` : "",
+    supportRoleId ? `Equipe: <@&${supportRoleId}>` : "",
   ].filter(Boolean).join("\n")));
   root.addActionRowComponents(new ActionRowBuilder().addComponents(
     press(`atlas:store:claim:${order.id}`, "Assumir atendimento", ButtonStyle.Secondary),
