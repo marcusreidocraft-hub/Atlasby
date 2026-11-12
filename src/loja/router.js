@@ -7,6 +7,7 @@ import { renderOrder } from "./panel.js";
 import { STORE_COMMANDS } from "./commands.js";
 import { attendanceOf, canAttend, renderAttendance, ticketOverwrites } from "./attendance.js";
 import { emojiText } from "./emojis.js";
+import { deliverComponents, isStaleMessage, publishStorePanel, panelLocation } from "./publish.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,10 +18,15 @@ async function refresh(interaction, app) {
   const view = app.store.panel(guildId);
   const settings = app.store.settings(guildId);
   if (!settings.channelId || !settings.messageId) return false;
-  const channel = await interaction.client.channels.fetch(settings.channelId);
-  const message = await channel.messages.fetch(settings.messageId);
-  await message.edit({ components: view.components, flags: V2, allowedMentions: { parse: [] } });
-  return true;
+  try {
+    const channel = await interaction.client.channels.fetch(settings.channelId);
+    const message = await channel.messages.fetch(settings.messageId);
+    await deliverComponents((body) => message.edit(body), view);
+    return true;
+  } catch (error) {
+    if (isStaleMessage(error)) await app.store.saveSettings(guildId, interaction.user.id, { messageId: "" });
+    throw error;
+  }
 }
 
 export async function handleStoreCommand(interaction, app, actor) {
@@ -35,16 +41,21 @@ export async function handleStoreCommand(interaction, app, actor) {
   if (name === "configurar-loja") {
     const sub = interaction.options.getSubcommand();
     if (sub === "publicar") {
-      const view = app.store.panel(guildId);
       const settings = app.store.settings(guildId);
-      if (settings.channelId && settings.messageId) {
-        await refresh(interaction, app);
-        await present(interaction, notice("Painel da loja atualizado no lugar.", app.config.panelColor));
-        return true;
-      }
-      const message = await interaction.channel.send({ components: view.components, flags: V2, allowedMentions: { parse: [] } });
-      await app.store.saveSettings(guildId, actor.id, { channelId: interaction.channelId, messageId: message.id });
-      await present(interaction, notice("Painel da loja publicado.", app.config.panelColor));
+      const outcome = await publishStorePanel({
+        channelId: interaction.channelId,
+        settings,
+        view: app.store.panel(guildId),
+        fetchMessage: async (channelId, messageId) => {
+          const channel = await interaction.client.channels.fetch(channelId);
+          if (!channel?.messages?.fetch) throw Object.assign(new Error("Unknown Channel"), { code: 10003 });
+          return channel.messages.fetch(messageId);
+        },
+        edit: (message, body) => message.edit(body),
+        send: (body) => interaction.channel.send(body),
+      });
+      if (outcome.created) await app.store.saveSettings(guildId, actor.id, { channelId: outcome.channelId, messageId: outcome.messageId });
+      await present(interaction, notice(outcome.created ? "Painel da loja publicado." : "Painel da loja atualizado no lugar.", app.config.panelColor));
       return true;
     }
     if (sub === "banner") {
@@ -53,7 +64,13 @@ export async function handleStoreCommand(interaction, app, actor) {
       await app.store.saveSettings(guildId, actor.id, { title: interaction.options.getString("titulo"), description: interaction.options.getString("descricao") });
     } else if (sub === "canal") {
       const category = interaction.options.getChannel("categoria");
-      await app.store.saveSettings(guildId, actor.id, { channelId: interaction.options.getChannel("painel").id, ticketCategoryId: category?.id || "" });
+      const current = app.store.settings(guildId);
+      const location = panelLocation({
+        currentChannelId: current.channelId,
+        nextChannelId: interaction.options.getChannel("painel").id,
+        messageId: current.messageId,
+      });
+      await app.store.saveSettings(guildId, actor.id, { ...location, ticketCategoryId: category?.id || "" });
     } else if (sub === "produto") {
       const prices = Object.fromEntries(interaction.options.getString("precos").split(",").map((part) => part.split("=")).filter((pair) => pair.length === 2).map(([key, value]) => [key.trim(), Number(value)]));
       await app.store.saveProduct(guildId, actor.id, {
@@ -321,9 +338,10 @@ export async function editStorePanel(client, app, phase) {
       const channel = await client.channels.fetch(settings.channelId);
       const message = await channel.messages.fetch(settings.messageId);
       const view = app.store.panel(guildId, phase);
-      await message.edit({ components: view.components, flags: V2, allowedMentions: { parse: [] } });
+      await deliverComponents((body) => message.edit(body), view);
     } catch (error) {
-      console.error(`Painel da loja: ${error instanceof Error ? error.message : "erro"}`);
+      if (isStaleMessage(error)) await app.store.saveSettings(guildId, "sistema", { messageId: "" }).catch(() => {});
+      console.error(`Painel da loja [${error?.code ?? "erro"}]: ${error instanceof Error ? error.message : "erro"}`);
     }
   }
 }

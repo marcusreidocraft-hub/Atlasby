@@ -36,7 +36,7 @@ export async function routeInteraction(interaction, app) {
     if (await routeAdminComponent(interaction, app)) return;
   } catch (error) {
     logInteractionError(error);
-    await fail(interaction, app.config.panelColor);
+    await fail(interaction, app.config.panelColor, error, app);
   }
 }
 

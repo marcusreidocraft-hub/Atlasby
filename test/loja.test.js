@@ -14,6 +14,8 @@ import { buildSpecializedVm, DEFAULT_GALLERY_IMAGE, resolveGalleryImage } from "
 import { createAzureProvisioner } from "../src/loja/azure.js";
 import { renderStorePanel } from "../src/loja/panel.js";
 import { MessageFlags } from "discord.js";
+import { isEmojiRejection, isStaleMessage, panelLocation, publishStorePanel, stripComponentEmojis } from "../src/loja/publish.js";
+import { interactionErrorText } from "../src/components/reply.js";
 import { attendanceOf, canAttend, ticketOverwrites } from "../src/loja/attendance.js";
 import { createAdmin } from "../src/services/admin.js";
 
@@ -114,6 +116,53 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
   });
   const fourOff = selectsOf(hourlyOff).find((item) => item.custom_id === "atlas:store:pick:t4-4");
   assert.deepEqual(fourOff.options.map((item) => item.value), ["t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+});
+
+test("publicar cria outro painel quando a mensagem guardada não existe", async () => {
+  const view = { components: [{ type: 17, components: [{ type: 3, emoji: { id: "1", name: "carrinho" } }] }], flags: MessageFlags.IsComponentsV2 };
+  const sent = [];
+  const outcome = await publishStorePanel({
+    channelId: "canal-atual",
+    settings: { channelId: "canal-atual", messageId: "mensagem-antiga" },
+    view,
+    fetchMessage: async () => {
+      throw Object.assign(new Error("Unknown Message"), { code: 10008 });
+    },
+    edit: async () => {
+      throw new Error("não deveria editar");
+    },
+    send: async (body) => {
+      sent.push(body);
+      return { id: "mensagem-nova" };
+    },
+  });
+  assert.equal(outcome.created, true);
+  assert.equal(outcome.messageId, "mensagem-nova");
+  assert.equal(outcome.channelId, "canal-atual");
+  assert.equal(sent.length, 1);
+  assert.equal(isStaleMessage(Object.assign(new Error("Unknown Channel"), { code: 10003 })), true);
+  assert.deepEqual(panelLocation({ currentChannelId: "a", nextChannelId: "b", messageId: "old" }), { channelId: "b", messageId: "" });
+  assert.equal(panelLocation({ currentChannelId: "a", nextChannelId: "a", messageId: "old" }).messageId, "old");
+  const emojiError = Object.assign(new Error("Invalid Form Body"), { code: 50035, rawError: { errors: { components: { 0: { emoji: "Invalid emoji" } } } } });
+  assert.equal(isEmojiRejection(emojiError), true);
+  let attempts = 0;
+  await publishStorePanel({
+    channelId: "outro",
+    settings: { channelId: "antigo", messageId: "x" },
+    view,
+    fetchMessage: async () => { throw new Error("não consulta outro canal"); },
+    edit: async () => { throw new Error("não edita"); },
+    send: async (body) => {
+      attempts += 1;
+      if (attempts === 1) throw emojiError;
+      assert.equal(JSON.stringify(body.components).includes("\"emoji\""), false);
+      return { id: "sem-emoji" };
+    },
+  });
+  assert.equal(attempts, 2);
+  assert.equal(stripComponentEmojis(view.components)[0].components[0].emoji, undefined);
+  assert.match(interactionErrorText(emojiError, true), /Código: 50035/);
+  assert.doesNotMatch(interactionErrorText(emojiError, false), /50035/);
 });
 
 test("preços T4 e desconto saem só do servidor", () => {
