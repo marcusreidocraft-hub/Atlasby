@@ -109,6 +109,18 @@ test("VM desligada, agente fora e segredo vazio têm avisos próprios", async ()
   }
 });
 
+test("o agente do Windows registra o callback e não aceita outro nome de config", () => {
+  const agent = fs.readFileSync(path.join(process.cwd(), "agent/agent.ps1"), "utf8");
+  const install = fs.readFileSync(path.join(process.cwd(), "agent/install.ps1"), "utf8");
+  assert.match(agent, /class LocalTrust2/);
+  assert.match(agent, /RemoteCertificateValidationCallback Callback/);
+  assert.match(agent, /ServerCertificateValidationCallback = \[AtlasCloudPC\.LocalTrust2\]::Callback/);
+  assert.match(agent, /C:\\ProgramData\\AtlasCloudPC\\agent\.log/);
+  assert.doesNotMatch(agent, /LocalTrust\]::Allow/);
+  assert.match(install, /Não encontrei agent\.config\.json/);
+  assert.doesNotMatch(install, /agent\.config \(1\)/);
+});
+
 test("desparear só chama o agente depois da confirmação", async () => {
   const calls = [];
   const sunshine = createSunshineAgent({

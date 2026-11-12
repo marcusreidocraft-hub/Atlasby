@@ -1,10 +1,14 @@
 # Execute uma vez como Administrador, na VM que vai virar a imagem base.
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$sourceConfig = Join-Path $root "agent.config.json"
+if (-not (Test-Path $sourceConfig)) {
+  Write-Host "Não encontrei agent.config.json nesta pasta. O arquivo precisa estar ao lado de install.ps1, com esse nome. Nada foi instalado."
+  exit 1
+}
 $dest = "C:\ProgramData\AtlasCloudPC"
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item (Join-Path $root "agent.ps1") (Join-Path $dest "agent.ps1") -Force
-$sourceConfig = Join-Path $root "agent.config.json"
 $destConfig = Join-Path $dest "agent.config.json"
 if (-not (Test-Path $destConfig)) { Copy-Item $sourceConfig $destConfig }
 $config = Get-Content -Raw -Path $destConfig | ConvertFrom-Json

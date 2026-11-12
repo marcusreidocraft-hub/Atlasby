@@ -133,7 +133,7 @@ Todas as máquinas usam o mesmo `AGENT_SECRET`. Ele entra no bot e no `agent.con
 6. No grupo de segurança da Azure, libere entrada TCP `7474` para o endereço de saída do bot. O bot chama `http://<IP público da VM>:7474`.
 7. Confira o agente e capture a imagem. As próximas VMs saem com o agente e o mesmo segredo.
 
-O agente escuta `http://+:7474/` e só aceita `Authorization: Bearer` com comparação em tempo constante. `POST /pin` manda `{pin, name:"Cliente"}` ao Sunshine em `https://127.0.0.1:47990/api/pin`. O certificado autoassinado só é aceito nesse endereço. `POST /unpair-all` chama `/api/clients/unpair-all`. `GET /health` diz se o agente está online. O PIN não é gravado em log.
+O agente escuta `http://+:7474/` e só aceita `Authorization: Bearer` com comparação em tempo constante. Falhas de início, do listener e do Sunshine ficam em `C:\ProgramData\AtlasCloudPC\agent.log`, sem PIN e sem segredo. Se `agent.config.json` não estiver ao lado do instalador, a instalação para e avisa. `POST /pin` manda `{pin, name:"Cliente"}` ao Sunshine em `https://127.0.0.1:47990/api/pin`. O certificado autoassinado só é aceito nesse endereço. `POST /unpair-all` chama `/api/clients/unpair-all`. `GET /health` diz se o agente está online. O PIN não é gravado em log.
 
 Sem `AGENT_SECRET`, o bot avisa o administrador e não chama a VM. Se a VM estiver desligada, a resposta pede para ligá-la. Se o agente não responder em 12 segundos, a mensagem é: "Agente da VM não respondeu, tente de novo em instantes".
 

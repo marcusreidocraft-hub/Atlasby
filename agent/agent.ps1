@@ -1,31 +1,61 @@
 $ErrorActionPreference = "Stop"
-$here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$config = Get-Content -Raw -Path (Join-Path $here "agent.config.json") | ConvertFrom-Json
-$port = 7474
-if ($config.AgentPort) { $port = [int]$config.AgentPort }
-$sunshinePort = 47990
-if ($config.SunshinePort) { $sunshinePort = [int]$config.SunshinePort }
-$secret = [string]$config.AgentSecret
 $fails = @{}
+$logFile = "C:\ProgramData\AtlasCloudPC\agent.log"
 
-if (-not ("AtlasCloudPC.LocalTrust" -as [type])) {
-  Add-Type @"
+function Write-AgentLog([string]$message) {
+  try {
+    $dir = Split-Path -Parent $logFile
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $clean = [string]$message
+    $hidden = @()
+    if ($script:secret) { $hidden += [string]$script:secret }
+    if ($script:config -and $script:config.AgentSecret) { $hidden += [string]$script:config.AgentSecret }
+    if ($script:config -and $script:config.SunshinePassword) { $hidden += [string]$script:config.SunshinePassword }
+    foreach ($item in $hidden) {
+      if ($item) { $clean = $clean.Replace($item, "[omitido]") }
+    }
+    $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    Add-Content -Path $logFile -Value ($stamp + " " + $clean) -Encoding UTF8
+  } catch {}
+}
+
+try {
+  $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+  $configPath = Join-Path $here "agent.config.json"
+  if (-not (Test-Path $configPath)) { throw "Falta agent.config.json ao lado do agente." }
+  $config = Get-Content -Raw -Path $configPath | ConvertFrom-Json
+  $port = 7474
+  if ($config.AgentPort) { $port = [int]$config.AgentPort }
+  $sunshinePort = 47990
+  if ($config.SunshinePort) { $sunshinePort = [int]$config.SunshinePort }
+  $secret = [string]$config.AgentSecret
+  if (-not ("AtlasCloudPC.LocalTrust2" -as [type])) {
+    Add-Type @"
 using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 namespace AtlasCloudPC {
-  public static class LocalTrust {
+  public static class LocalTrust2 {
     public static bool Allow(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors errors) {
       var request = sender as HttpWebRequest;
       if (request == null || request.RequestUri == null) return false;
       return request.RequestUri.Host == "127.0.0.1";
     }
+    public static RemoteCertificateValidationCallback Callback { get { return new RemoteCertificateValidationCallback(Allow); } }
   }
 }
 "@
+  }
+  [System.Net.ServicePointManager]::ServerCertificateValidationCallback = [AtlasCloudPC.LocalTrust2]::Callback
+  [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+  $listener = New-Object System.Net.HttpListener
+  $listener.Prefixes.Add("http://+:$port/")
+  $listener.Start()
+  Write-AgentLog ("Agente iniciado. Escutando na porta " + $port + ".")
+} catch {
+  Write-AgentLog ("Falha ao iniciar o agente: " + $_.Exception.Message)
+  throw
 }
-[System.Net.ServicePointManager]::ServerCertificateValidationCallback = [AtlasCloudPC.LocalTrust]::Allow
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
 function Test-Secret([string]$given, [string]$expected) {
   $left = [Text.Encoding]::UTF8.GetBytes([string]$given)
@@ -63,7 +93,10 @@ function Send-Json($response, [int]$status, $body) {
 }
 
 function Invoke-Sunshine([string]$path, $payload) {
-  if (-not $config.SunshineUser -or -not $config.SunshinePassword) { return @{ ok = $false; error = "sunshine" } }
+  if (-not $config.SunshineUser -or -not $config.SunshinePassword) {
+    Write-AgentLog ("Falha ao chamar o Sunshine em " + $path + ": credenciais ausentes.")
+    return @{ ok = $false; error = "sunshine" }
+  }
   $pair = "{0}:{1}" -f [string]$config.SunshineUser, [string]$config.SunshinePassword
   $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
   $request = [System.Net.HttpWebRequest]::Create("https://127.0.0.1:$sunshinePort$path")
@@ -81,13 +114,12 @@ function Invoke-Sunshine([string]$path, $payload) {
     $response.Close()
     return @{ ok = $true; result = "aceito" }
   } catch {
+    $detail = [string]$_.Exception.Message
+    if ($payload -and $payload.pin) { $detail = $detail.Replace([string]$payload.pin, "[omitido]") }
+    Write-AgentLog ("Falha ao chamar o Sunshine em " + $path + ": " + $detail)
     return @{ ok = $false; error = "sunshine" }
   }
 }
-
-$listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://+:$port/")
-$listener.Start()
 
 while ($listener.IsListening) {
   $context = $listener.GetContext()
@@ -137,6 +169,11 @@ while ($listener.IsListening) {
     }
     Send-Json $response 404 @{ ok = $false; error = "não encontrado" }
   } catch {
+    $detail = [string]$_.Exception.Message
+    if ($raw) { $detail = $detail.Replace([string]$raw, "[omitido]") }
+    if ($data -and $data.pin) { $detail = $detail.Replace([string]$data.pin, "[omitido]") }
+    if ($given) { $detail = $detail.Replace([string]$given, "[omitido]") }
+    Write-AgentLog ("Erro no listener: " + $detail)
     try { Send-Json $response 500 @{ ok = $false; error = "erro interno" } } catch {}
   }
 }
