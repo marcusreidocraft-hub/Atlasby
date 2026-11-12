@@ -1,11 +1,11 @@
-import { notice, V2_EPHEMERAL } from "../../panels/ui.js";
+import { notice } from "../../panels/ui.js";
 import { ack, present } from "../reply.js";
 
 const UUID = "([0-9a-f-]{36})";
 
 export async function routeClient(interaction, app) {
   const id = interaction.customId ?? "";
-  if (!id.startsWith("atlas:panel:") && !id.startsWith("atlas:vm:") && !id.startsWith("atlas:modal:format:") && id !== "atlas:modal:moonlight") return false;
+  if (!id.startsWith("atlas:panel:") && !id.startsWith("atlas:vm:") && !id.startsWith("atlas:modal:format:")) return false;
   const guildId = interaction.guildId;
   const userId = interaction.user.id;
   const formatModalId = new RegExp(`^atlas:modal:format:${UUID}$`).exec(id);
@@ -52,27 +52,9 @@ export async function routeClient(interaction, app) {
     await present(interaction, app.clients.plan(guildId, userId));
     return true;
   }
-  if (id === "atlas:vm:pin") {
-    const opened = app.clients.pinStart(guildId, userId);
-    if (opened.modal) {
-      await interaction.showModal(opened.modal);
-      return true;
-    }
+  if (id === "atlas:vm:pin" || id === "atlas:vm:rdp") {
     await ack(interaction, false);
-    await present(interaction, opened.payload);
-    return true;
-  }
-  if (id === "atlas:modal:moonlight") {
-    await ack(interaction, false);
-    const pin = interaction.fields.getTextInputValue("pin").trim();
-    await present(interaction, await app.clients.submitPin(guildId, userId, pin, async (next) => {
-      await interaction.editReply({ components: next.components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
-    }));
-    return true;
-  }
-  if (id === "atlas:vm:rdp") {
-    await ack(interaction, false);
-    await present(interaction, await app.clients.reveal(guildId, userId, "rdp"));
+    await present(interaction, await app.clients.reveal(guildId, userId, id.endsWith("pin") ? "pin" : "rdp"));
     return true;
   }
   if (id === "atlas:vm:format") {

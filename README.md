@@ -31,7 +31,6 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `DATA_DIR` | `data` | pasta do `atlas.sqlite` |
-| `SERVER_PORT` | vazio | porta HTTP da API do agente; o Bot-Hosting preenche. Vazio desliga a API |
 | `CONFIRMATION_TTL_SECONDS` | `60` | prazo da formatação, de 15 a 300 |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | falso | lida e não usada |
 | `PANEL_COLOR` | `5865F2` | cor dos containers, com ou sem `#` |
@@ -67,8 +66,7 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/remover-cliente` | pede confirmação e apaga o cadastro, não a VM |
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
-| `/listar-vms` | lista as VMs da assinatura Azure, com estado, cliente e agente |
-| `/agente-token` | gera o token do agente daquela máquina; ele aparece uma vez |
+| `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
 | `/configurar logs` | grava o canal de log |
@@ -82,7 +80,7 @@ Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paul
 
 ## O que o cliente vê
 
-**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, PIN Moonlight, Acesso RDP, Formatar VM e Atualizar. PIN Moonlight pede os 4 dígitos mostrados no Moonlight e o agente da VM entrega esse PIN ao Sunshine. Sem token, a resposta diz que o agente não está instalado.
+**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, PIN Moonlight, Acesso RDP, Formatar VM e Atualizar. PIN Moonlight avisa que a liberação fica para um agente futuro na máquina.
 
 **Consultar plano** mostra plano, início, vencimento, tempo restante e status.
 
@@ -119,23 +117,7 @@ Com as quatro variáveis Azure, o bot usa `@azure/identity` e `@azure/arm-comput
 
 Sem as quatro variáveis, o provedor manual só registra e avisa a equipe.
 
-O log vai para `ADMIN_LOG_CHANNEL_ID` ou para o canal de `/configurar logs`, e também para a tabela `action_logs`. Senha, PIN e token do agente não entram nesse texto.
-
-## Agente na VM
-
-A VM não abre porta para o bot. O agente, dentro do Windows, consulta o bot por HTTPS. O processo escuta HTTP em `0.0.0.0` na `SERVER_PORT` que o Bot-Hosting informa. O endereço público é o que o painel do host mostra para essa porta. Use esse endereço, com `https://` quando o host termina o TLS, no campo `BOT_URL`.
-
-1. No Discord, um administrador usa `/agente-token` no membro dono da máquina e copia o token. Ele não aparece de novo. Gerar outro token invalida o anterior.
-2. Na VM, baixe a pasta `agent` do repositório (`agent.ps1`, `install.ps1` e `config.example.json`).
-3. Copie `config.example.json` para `config.json` na mesma pasta e preencha `BOT_URL`, `AGENT_TOKEN`, `SUNSHINE_USER` e `SUNSHINE_PASSWORD`. A senha é a do painel web do Sunshine.
-4. Abra o PowerShell como Administrador nessa pasta e execute `.\install.ps1`.
-5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\` e registra a tarefa **Atlas Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, e também é iniciada na hora.
-
-O agente faz long-poll em `GET /agent/v1/poll` e, quando há pedido, envia `{ pin, name }` para `https://localhost:47990/api/pin`. O certificado local do Sunshine é ignorado só nessa chamada. O resultado volta em `POST /agent/v1/result`.
-
-`/listar-vms` e `/buscar-cliente` mostram agente online, offline ou não instalado. Online significa um poll nos últimos 60 segundos. Se o agente estiver offline no momento do PIN, o pedido continua válido por 2 minutos.
-
-O token autentica uma única máquina. Ele fica só como hash. A comparação é em tempo constante. Pedido de outra máquina responde como se não existisse. O PIN não vai para o log. Não publique `config.json`.
+O log vai para `ADMIN_LOG_CHANNEL_ID` ou para o canal de `/configurar logs`, e também para a tabela `action_logs`. Senha e PIN não entram nesse texto.
 
 ## Como testar
 
@@ -160,4 +142,4 @@ No Discord, depois que o host reiniciar o processo: publique o painel, cadastre 
 
 ## Limitações
 
-Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. O cartão usa `@resvg/resvg-wasm` e a fonte Inter. O IP público usa `@azure/arm-network`. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado. Sem `SERVER_PORT`, o bot sobe e a liberação do PIN avisa que a API não está escutando. O aviso do Discord some se o processo reiniciar antes do agente responder.
+Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. O cartão usa `@resvg/resvg-wasm` e a fonte Inter. O IP público usa `@azure/arm-network`. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado.

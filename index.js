@@ -17,7 +17,6 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
-  client.agentServer?.close();
   client.destroy();
   repo.close();
   process.exit(0);

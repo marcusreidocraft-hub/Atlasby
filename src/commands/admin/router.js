@@ -83,10 +83,6 @@ export async function routeCommand(interaction, app) {
     await present(interaction, await app.admin.listAzureVms(interaction.guildId, actor, 0));
     return;
   }
-  if (name === "agente-token") {
-    await present(interaction, await app.admin.issueAgentToken(interaction.guildId, actor, interaction.options.getUser("membro").id));
-    return;
-  }
   if (name === "renovar-plano") {
     const start = interaction.options.getString("inicio") || "";
     const expiry = interaction.options.getString("vencimento") || "";

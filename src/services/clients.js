@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { formatModal, renderFormatConfirm } from "../panels/admin.js";
-import { cardFacts, renderControl, renderMissing, renderPinDone, renderPinModal, renderPinSoon, renderPinWait, renderPlan, renderSecret } from "../panels/control.js";
+import { cardFacts, renderControl, renderMissing, renderPinSoon, renderPlan, renderSecret } from "../panels/control.js";
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { phraseMatches } from "./fields.js";
@@ -28,7 +28,7 @@ function applyMachine(client, machine) {
   };
 }
 
-export function createClients({ config, repo, infra, audit, sealer, emojis, now, agents = null }) {
+export function createClients({ config, repo, infra, audit, sealer, emojis, now }) {
   function theme(guildId) {
     return {
       accent: config.panelColor,
@@ -107,7 +107,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
       const client = repo.getByOwner(guildId, userId);
       if (!client) return renderMissing(config.panelColor);
       const themeNow = theme(guildId);
-      if (kind === "pin") return this.pinStart(guildId, userId).payload ?? renderPinSoon(config.panelColor, themeNow.emojis);
+      if (kind === "pin") return renderPinSoon(config.panelColor, themeNow.emojis);
       const cipher = client.rdpPasswordCipher;
       const badge = themeNow.emojis.rdp;
       if (!cipher) {
@@ -126,45 +126,6 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
         `Usuário: ${client.rdpUser || "não informado"}`,
         `Senha: ${secret}`,
       ], config.panelColor, badge);
-    },
-    pinStart(guildId, userId) {
-      const client = repo.getByOwner(guildId, userId);
-      if (!client) return { payload: renderMissing(config.panelColor) };
-      if (!agents?.hasToken(client.id)) {
-        return { payload: renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.") };
-      }
-      if (!config.serverPort) {
-        return { payload: renderPinSoon(config.panelColor, emojis.pack(guildId), "A API do agente não está escutando neste processo. Confira SERVER_PORT no host.") };
-      }
-      return { modal: renderPinModal() };
-    },
-    async submitPin(guildId, userId, pin, notify) {
-      const client = repo.getByOwner(guildId, userId);
-      if (!client) return renderMissing(config.panelColor);
-      if (!/^\d{4}$/.test(String(pin ?? ""))) return notice("O PIN mostrado pelo Moonlight tem 4 dígitos.", config.panelColor);
-      if (!agents?.hasToken(client.id)) {
-        return renderPinSoon(config.panelColor, emojis.pack(guildId), "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.");
-      }
-      if (!config.serverPort) return renderPinSoon(config.panelColor, emojis.pack(guildId), "A API do agente não está escutando neste processo. Confira SERVER_PORT no host.");
-      const job = agents.queuePin({ guildId, client, userId, pin: String(pin) });
-      agents.watch(job.id, async (result) => {
-        try {
-          await notify(renderPinDone(config.panelColor, result.ok));
-        } catch (error) {
-          logInteractionError(error);
-        }
-      });
-      await audit.record({
-        guildId,
-        actorId: userId,
-        action: "moonlight_pedido",
-        targetUserId: userId,
-        machineName: client.machineName,
-        detail: `PIN do Moonlight solicitado para ${client.machineName}.`,
-        secrets: [String(pin)],
-      });
-      const offline = !agents.online(client.id);
-      return renderPinWait(config.panelColor, offline);
     },
     async askFormat(guildId, userId) {
       const client = repo.getByOwner(guildId, userId);

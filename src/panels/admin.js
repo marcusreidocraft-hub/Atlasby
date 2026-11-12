@@ -234,7 +234,7 @@ export function renderAzureVmList({ accent, rows, page, pages }) {
   const lines = [
     `## VMs da assinatura · página ${page + 1} de ${pages}`,
     rows.length
-      ? rows.map((vm) => `**${vm.name}** · ${vm.resourceGroup} · ${vm.size || "tamanho não informado"} · ${vm.location || "região não informada"} · ${vm.power || "estado não consultado"} · ${vm.clientName || "sem cliente"}${vm.agentLabel ? ` · ${vm.agentLabel}` : ""}`).join("\n")
+      ? rows.map((vm) => `**${vm.name}** · ${vm.resourceGroup} · ${vm.size || "tamanho não informado"} · ${vm.location || "região não informada"} · ${vm.power || "estado não consultado"} · ${vm.clientName || "sem cliente"}`).join("\n")
       : "A assinatura não devolveu máquinas virtuais.",
   ];
   return container(accent, (root) => {
@@ -259,7 +259,7 @@ export function renderRemoveConfirm(client, accent, emojis = {}) {
 }
 
 export function renderClientList(rows, { accent, page, pages, title, emojis = {} }) {
-  const lines = [heading(emojis, "member", title), rows.length ? rows.map((row) => `**${row.clientName}** · ${row.machineName} · <@${row.userId}> · ${PLAN_LABEL[row.planType] || row.planType}${row.agentLabel ? ` · ${row.agentLabel}` : ""}`).join("\n") : "Nenhum cliente encontrado."];
+  const lines = [heading(emojis, "member", title), rows.length ? rows.map((row) => `**${row.clientName}** · ${row.machineName} · <@${row.userId}> · ${PLAN_LABEL[row.planType] || row.planType}`).join("\n") : "Nenhum cliente encontrado."];
   return container(accent, (root) => {
     root.addTextDisplayComponents(text(lines.join("\n")));
     if (pages > 1) {
