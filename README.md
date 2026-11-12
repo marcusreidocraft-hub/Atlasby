@@ -107,7 +107,7 @@ O padrão só entra no botão se o bot enxergar o emoji no cache (`guild.emojis.
 | `engrenagem` | `<:dgear:1568512697002098728>` | Atualizar | ⚙️ |
 | `power` | `<:disactiv:1568512700739362897>` | Ligar e Desligar | ⏻ |
 | `ligada` | `<:reduto_on:1570365824810877048>` | status Ligada | 🟢 |
-| `desligar` | `<:desligar:1570370496673873952>` | botão Desligar VM | ⏹️ |
+| `desligar` | `<:desligar:1570370496673873952>` | status Desligada | ⏹️ |
 
 Quando um título, status ou campo combina com outro emoji do mesmo servidor, ele também entra, se o bot o enxergar: monitor, windows, world, externallink, mail, pencil, tools, star, cash, bell, megaphone, 8011admin, 47106member, 1906add, 53136verified, 12560blackarrow, 7957link, 44216vip e gavel. Fora do cache, esse detalhe fica sem emoji. Publique o painel de novo se trocar um emoji da mensagem do canal.
 
