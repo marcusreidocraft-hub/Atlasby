@@ -67,7 +67,57 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     PRIMARY KEY (guild_id, channel_id, message_id)
   );
+  CREATE TABLE IF NOT EXISTS agent_tokens (
+    client_id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER,
+    agent_version TEXT,
+    sunshine_ok INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS agent_jobs (
+    id TEXT PRIMARY KEY,
+    guild_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    pin TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    detail TEXT,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
 `;
+
+function mapAgent(row) {
+  if (!row) return null;
+  return {
+    clientId: row.client_id,
+    guildId: row.guild_id,
+    tokenHash: row.token_hash,
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    agentVersion: row.agent_version,
+    sunshineOk: row.sunshine_ok === 1,
+  };
+}
+
+function mapJob(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    clientId: row.client_id,
+    userId: row.user_id,
+    pin: row.pin,
+    deviceName: row.device_name,
+    status: row.status,
+    detail: row.detail,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+  };
+}
 
 function mapClient(row) {
   if (!row) return null;
@@ -107,7 +157,7 @@ export function openDatabase(dataDir) {
     byOwner: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND user_id = ?"),
     byId: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND id = ?"),
     byInfra: db.prepare("SELECT * FROM clients WHERE guild_id = ? AND infra_id = ? AND infra_id IS NOT NULL"),
-    infraLinks: db.prepare("SELECT user_id, client_name, infra_id FROM clients WHERE guild_id = ? AND infra_id IS NOT NULL AND infra_id != ''"),
+    infraLinks: db.prepare("SELECT id, user_id, client_name, infra_id FROM clients WHERE guild_id = ? AND infra_id IS NOT NULL AND infra_id != ''"),
     insert: db.prepare(`INSERT INTO clients (
       id, guild_id, user_id, client_name, machine_name, gpu, vcpus, ram, public_ip, rdp_user,
       rdp_password_cipher, pin_cipher, plan_type, started_at, expires_at, infra_id, power_status,
@@ -147,6 +197,18 @@ export function openDatabase(dataDir) {
     useConfirm: db.prepare("UPDATE confirmations SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?"),
     panel: db.prepare(`INSERT INTO panels (guild_id, channel_id, message_id, created_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(guild_id, channel_id, message_id) DO NOTHING`),
+    saveAgent: db.prepare(`INSERT INTO agent_tokens (client_id, guild_id, token_hash, created_at, last_seen_at, agent_version, sunshine_ok)
+      VALUES (?, ?, ?, ?, NULL, NULL, NULL)
+      ON CONFLICT(client_id) DO UPDATE SET token_hash = excluded.token_hash, created_at = excluded.created_at, last_seen_at = NULL, agent_version = NULL, sunshine_ok = NULL`),
+    agents: db.prepare("SELECT * FROM agent_tokens WHERE guild_id = ?"),
+    agentByClient: db.prepare("SELECT * FROM agent_tokens WHERE client_id = ?"),
+    touchAgent: db.prepare("UPDATE agent_tokens SET last_seen_at = ?, agent_version = ?, sunshine_ok = ? WHERE client_id = ?"),
+    insertJob: db.prepare(`INSERT INTO agent_jobs (id, guild_id, client_id, user_id, pin, device_name, status, detail, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'queued', NULL, ?, ?)`),
+    claimJob: db.prepare("SELECT * FROM agent_jobs WHERE client_id = ? AND status = 'queued' AND expires_at > ? ORDER BY created_at LIMIT 1"),
+    markJob: db.prepare("UPDATE agent_jobs SET status = ? WHERE id = ? AND client_id = ? AND status = 'queued'"),
+    finishJob: db.prepare("UPDATE agent_jobs SET status = ?, detail = ? WHERE id = ? AND client_id = ? AND status = 'sent'"),
+    jobById: db.prepare("SELECT * FROM agent_jobs WHERE id = ?"),
   };
 
   return {
@@ -166,10 +228,41 @@ export function openDatabase(dataDir) {
     },
     listInfraLinks(guildId) {
       return statements.infraLinks.all(guildId).map((row) => ({
+        clientId: row.id,
         userId: row.user_id,
         clientName: row.client_name,
         infraId: row.infra_id,
       }));
+    },
+    saveAgentToken({ clientId, guildId, tokenHash, now }) {
+      statements.saveAgent.run(clientId, guildId, tokenHash, now);
+    },
+    listAgents(guildId) {
+      return statements.agents.all(guildId).map(mapAgent);
+    },
+    agentForClient(clientId) {
+      return mapAgent(statements.agentByClient.get(clientId));
+    },
+    allAgentTokens() {
+      return db.prepare("SELECT * FROM agent_tokens").all().map(mapAgent);
+    },
+    touchAgent({ clientId, now, version, sunshineOk }) {
+      statements.touchAgent.run(now, version || null, sunshineOk ? 1 : 0, clientId);
+    },
+    insertAgentJob(row) {
+      statements.insertJob.run(row.id, row.guildId, row.clientId, row.userId, row.pin, row.deviceName, row.now, row.expiresAt);
+    },
+    claimAgentJob(clientId, now) {
+      const row = statements.claimJob.get(clientId, now);
+      if (!row) return null;
+      if (statements.markJob.run("sent", row.id, clientId).changes !== 1) return null;
+      return mapJob(row);
+    },
+    finishAgentJob({ id, clientId, status, detail }) {
+      return statements.finishJob.run(status, detail, id, clientId).changes === 1;
+    },
+    getAgentJob(id) {
+      return mapJob(statements.jobById.get(id));
     },
     insertClient(row) {
       statements.insert.run(

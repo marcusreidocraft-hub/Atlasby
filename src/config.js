@@ -52,6 +52,13 @@ function parseMaxDisk(value) {
   return number;
 }
 
+function parsePort(value) {
+  if (!text(value)) return null;
+  const number = Number(text(value));
+  if (!Number.isInteger(number) || number < 1 || number > 65535) return null;
+  return number;
+}
+
 function parseTtl(value) {
   const number = Number(text(value));
   if (!Number.isInteger(number) || number < 15 || number > 300) return 60;
@@ -85,6 +92,7 @@ export function readConfig(env = {}) {
     clientId: text(env.DISCORD_CLIENT_ID),
     allowedGuildIds: snowflakes(env.ALLOWED_GUILD_IDS),
     dataDir: text(env.DATA_DIR) || "data",
+    serverPort: parsePort(env.SERVER_PORT),
     confirmationTtlMs: parseTtl(env.CONFIRMATION_TTL_SECONDS) * 1000,
     messageContentIntent: parseBoolean(env.ENABLE_MESSAGE_CONTENT_INTENT, false),
     panelColor: parsePanelColor(env.PANEL_COLOR),

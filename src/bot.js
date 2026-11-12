@@ -4,6 +4,7 @@ import { fail, logInteractionError } from "./components/reply.js";
 import { routeClient } from "./components/client/router.js";
 import { registerCommands, routeAdminComponent, routeCommand } from "./commands/admin/router.js";
 import { createInfrastructure } from "./services/provider.js";
+import { createAgentHttp, listenAgent } from "./agent-http.js";
 
 async function deliver(client, channelId, payload) {
   const channel = await client.channels.fetch(channelId);
@@ -50,5 +51,15 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     await app.emojis.refresh(ready);
   });
   await client.login(config.token);
+  if (config.serverPort) {
+    try {
+      const server = createAgentHttp(app.agents);
+      await listenAgent(server, config.serverPort);
+      client.agentServer = server;
+      console.log(`API do agente escutando na porta ${config.serverPort}.`);
+    } catch (error) {
+      logInteractionError(error);
+    }
+  }
   return client;
 }

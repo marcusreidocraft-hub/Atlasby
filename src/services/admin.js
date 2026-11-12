@@ -27,7 +27,7 @@ function sealValue(sealer, value) {
   return { ok: true, cipher: sealer.seal(value) };
 }
 
-export function createAdmin({ config, repo, audit, sealer, emojis, now, infra }) {
+export function createAdmin({ config, repo, audit, sealer, emojis, now, infra, agents = null }) {
   function gate(actor) {
     return isAdmin(actor, config) ? null : denied(config.panelColor);
   }
@@ -49,6 +49,15 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
 
   return {
     isAdmin: (actor) => isAdmin(actor, config),
+    async issueAgentToken(guildId, actor, userId) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const client = repo.getByOwner(guildId, userId);
+      if (!client) return notice("Este membro não tem máquina cadastrada.", config.panelColor);
+      const token = agents.issueToken(guildId, client, actor.id);
+      await agents.recordIssue(guildId, actor.id, client);
+      return notice(`Token do agente de ${client.clientName}. Ele aparece só nesta mensagem. Guarde no arquivo de configuração da VM e não o envie em canal aberto.\n\n\`${token}\``, config.panelColor);
+    },
     addPicker(guildId) {
       return renderAddPicker(config.panelColor, emojis.pack(guildId));
     },
@@ -211,8 +220,11 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!infra.configured) return notice("A Azure não está configurada. Nada foi listado.", config.panelColor);
       try {
         const vms = infra.listVms ? await infra.listVms() : [];
-        const links = new Map(repo.listInfraLinks(guildId).map((link) => [link.infraId, link.clientName]));
-        const rows = vms.map((vm) => ({ ...vm, clientName: links.get(vm.id) || "" }));
+        const links = new Map(repo.listInfraLinks(guildId).map((link) => [link.infraId, link]));
+        const rows = vms.map((vm) => {
+          const link = links.get(vm.id);
+          return { ...vm, clientName: link?.clientName || "", agentLabel: link && agents ? agents.statusFor(link.clientId) : "" };
+        });
         const pages = Math.max(1, Math.ceil(rows.length / size));
         const safePage = Math.min(Math.max(0, page), pages - 1);
         return renderAzureVmList({ accent: config.panelColor, rows: rows.slice(safePage * size, safePage * size + size), page: safePage, pages });
@@ -299,7 +311,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (blocked) return blocked;
       const clean = String(term ?? "").trim().slice(0, 40);
       if (clean.length < 2) return notice("Informe pelo menos 2 caracteres.", config.panelColor);
-      return renderClientList(repo.searchClients(guildId, clean), { accent: config.panelColor, page: 0, pages: 1, title: "Busca", emojis: emojis.pack(guildId) });
+      const rows = repo.searchClients(guildId, clean).map((row) => ({ ...row, agentLabel: agents ? agents.statusFor(row.id) : "" }));
+      return renderClientList(rows, { accent: config.panelColor, page: 0, pages: 1, title: "Busca", emojis: emojis.pack(guildId) });
     },
     list(guildId, actor, page) {
       const blocked = gate(actor);
@@ -307,7 +320,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       const total = repo.countClients(guildId);
       const pages = Math.max(1, Math.ceil(total / PAGE));
       const safePage = Math.min(Math.max(0, page), pages - 1);
-      return renderClientList(repo.pageClients(guildId, PAGE, safePage * PAGE), { accent: config.panelColor, page: safePage, pages, title: `Clientes · página ${safePage + 1} de ${pages}`, emojis: emojis.pack(guildId) });
+      const rows = repo.pageClients(guildId, PAGE, safePage * PAGE).map((row) => ({ ...row, agentLabel: agents ? agents.statusFor(row.id) : "" }));
+      return renderClientList(rows, { accent: config.panelColor, page: safePage, pages, title: `Clientes · página ${safePage + 1} de ${pages}`, emojis: emojis.pack(guildId) });
     },
     renewPreview(guildId, actor, input) {
       const blocked = gate(actor);

@@ -1,4 +1,4 @@
-import { ActionRowBuilder, AttachmentBuilder, ButtonStyle } from "discord.js";
+import { ActionRowBuilder, AttachmentBuilder, ButtonStyle, LabelBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
 import { PLAN_LABEL, formatStamp, planStatus, powerLabel, remainingLabel } from "../services/plans.js";
 import { headlineOf } from "../services/vm-size.js";
 import { attachmentGallery, container, heading, mark, press, text } from "./ui.js";
@@ -62,9 +62,35 @@ export function renderControl(client, { accent, emojis, now, notice, image }) {
   return payload;
 }
 
-export function renderPinSoon(accent, emojis = {}) {
+export function renderPinSoon(accent, emojis = {}, message = "Agente não instalado nesta máquina. Peça a um administrador para gerar o token com /agente-token.") {
   return container(accent, (root) => {
-    root.addTextDisplayComponents(text(`${heading(emojis, "moonlight", "Liberar PIN Moonlight")}\nEm breve. Um agente na máquina vai liberar o PIN. Nada foi exibido agora.`));
+    root.addTextDisplayComponents(text(`${heading(emojis, "moonlight", "Liberar PIN Moonlight")}\n${message}`));
+  });
+}
+
+export function renderPinModal() {
+  const field = new TextInputBuilder().setCustomId("pin").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(4).setMaxLength(4).setPlaceholder("4 dígitos");
+  return new ModalBuilder()
+    .setCustomId("atlas:modal:moonlight")
+    .setTitle("PIN Moonlight")
+    .addLabelComponents(new LabelBuilder().setLabel("PIN do Moonlight").setDescription("Os 4 dígitos mostrados na tela do Moonlight.").setTextInputComponent(field));
+}
+
+export function renderPinWait(accent, offline) {
+  const message = offline
+    ? "O agente desta máquina não respondeu nos últimos 60 segundos. Ligue a VM e deixe o agente em execução. O pedido continua ativo por 2 minutos."
+    : "Pedido enviado ao agente. Aguarde a liberação do PIN.";
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text(`## Liberar PIN Moonlight\n${message}`));
+  });
+}
+
+export function renderPinDone(accent, ok) {
+  const message = ok
+    ? "Moonlight autorizado com acesso completo."
+    : "O agente não conseguiu liberar o PIN. Confira o Sunshine na máquina.";
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text(`## Liberar PIN Moonlight\n${message}`));
   });
 }
 
