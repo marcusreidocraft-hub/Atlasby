@@ -1,6 +1,6 @@
 import { Client, Events, GatewayIntentBits } from "discord.js";
 import { createApp } from "./app.js";
-import { fail } from "./components/reply.js";
+import { fail, logInteractionError } from "./components/reply.js";
 import { routeClient } from "./components/client/router.js";
 import { registerCommands, routeAdminComponent, routeCommand } from "./commands/admin/router.js";
 import { createInfrastructure } from "./services/provider.js";
@@ -29,8 +29,7 @@ export async function routeInteraction(interaction, app) {
     if (await routeClient(interaction, app)) return;
     if (await routeAdminComponent(interaction, app)) return;
   } catch (error) {
-    const message = error instanceof Error ? error.message : "erro";
-    console.error(`Falha ao processar interação: ${message}`);
+    logInteractionError(error);
     await fail(interaction, app.config.panelColor);
   }
 }
@@ -42,8 +41,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   bridge.send = (channelId, payload) => deliver(client, channelId, payload);
   client.on(Events.InteractionCreate, (interaction) => {
     routeInteraction(interaction, app).catch((error) => {
-      const message = error instanceof Error ? error.message : "erro";
-      console.error(`Falha ao processar interação: ${message}`);
+      logInteractionError(error);
     });
   });
   client.once(Events.ClientReady, async (ready) => {

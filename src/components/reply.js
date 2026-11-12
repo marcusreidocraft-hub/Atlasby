@@ -18,6 +18,14 @@ export async function present(interaction, payload) {
   else await interaction.reply(body);
 }
 
+export function logInteractionError(error) {
+  const name = error?.name ?? "Error";
+  const message = error instanceof Error ? error.message : String(error ?? "erro");
+  const code = error?.code;
+  console.error(`Falha ao processar interação: ${name}${code === undefined ? "" : ` [${code}]`}: ${message}`);
+  if (error?.rawError) console.error(JSON.stringify(error.rawError));
+}
+
 export async function fail(interaction, accent) {
   const payload = notice("A ação não foi concluída. Tente de novo. Nenhum botão fica preso se esta mensagem aparecer.", accent);
   try {

@@ -11,26 +11,72 @@ import {
 import { GPUS, PLAN_LABEL, formatDate } from "../services/plans.js";
 import { container, heading, mark, press, text } from "./ui.js";
 
+function clip(value, max) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
 function input(id, label, description, style = TextInputStyle.Short, extra = {}) {
-  const field = new TextInputBuilder().setCustomId(id).setStyle(style).setRequired(extra.required !== false).setMaxLength(extra.max ?? 80);
-  if (extra.min) field.setMinLength(extra.min);
-  if (extra.value) field.setValue(String(extra.value).slice(0, extra.max ?? 80));
-  if (extra.placeholder) field.setPlaceholder(extra.placeholder);
-  const item = new LabelBuilder().setLabel(label).setTextInputComponent(field);
-  if (description) item.setDescription(description);
+  const max = extra.max ?? 80;
+  const min = extra.min ?? 0;
+  const field = new TextInputBuilder().setCustomId(id).setStyle(style).setRequired(extra.required !== false).setMaxLength(max);
+  if (min > 0) field.setMinLength(min);
+  if (extra.value) {
+    const value = clip(extra.value, max);
+    if (value.length >= min) field.setValue(value);
+  }
+  if (extra.placeholder) field.setPlaceholder(clip(extra.placeholder, 100));
+  const item = new LabelBuilder().setLabel(clip(label, 45)).setTextInputComponent(field);
+  const hint = clip(description, 100);
+  if (hint) item.setDescription(hint);
   return item;
 }
 
 function select(id, label, description, options, current) {
   const menu = new StringSelectMenuBuilder()
     .setCustomId(id)
-    .setPlaceholder(label)
+    .setPlaceholder(clip(label, 150))
     .setMinValues(1)
     .setMaxValues(1)
-    .addOptions(options.map((option) => ({ label: option.label, value: option.value, default: option.value === current })));
-  const item = new LabelBuilder().setLabel(label).setStringSelectMenuComponent(menu);
-  if (description) item.setDescription(description);
+    .addOptions(options.map((option) => {
+      const data = { label: clip(option.label, 100), value: clip(option.value, 100) };
+      if (data.value === current) data.default = true;
+      return data;
+    }));
+  const item = new LabelBuilder().setLabel(clip(label, 45)).setStringSelectMenuComponent(menu);
+  const hint = clip(description, 100);
+  if (hint) item.setDescription(hint);
   return item;
+}
+
+export function inspectModal(modal) {
+  const data = modal.toJSON();
+  const issues = [];
+  if (typeof data.custom_id !== "string" || data.custom_id.length < 1 || data.custom_id.length > 100) issues.push("custom_id");
+  if (typeof data.title !== "string" || data.title.length < 1 || data.title.length > 45) issues.push("title");
+  if (!Array.isArray(data.components) || data.components.length < 1 || data.components.length > 5) issues.push("count");
+  const ids = new Set();
+  for (const component of data.components ?? []) {
+    if (component.type !== 18) issues.push("not-label");
+    if (typeof component.label !== "string" || component.label.length < 1 || component.label.length > 45) issues.push("label");
+    if (component.description != null && (component.description.length < 1 || component.description.length > 100)) issues.push("description");
+    const child = component.component ?? {};
+    if (typeof child.custom_id !== "string" || child.custom_id.length < 1 || child.custom_id.length > 100 || ids.has(child.custom_id)) issues.push("child-id");
+    if (child.custom_id) ids.add(child.custom_id);
+    if (child.type === 4) {
+      if (child.placeholder && child.placeholder.length > 100) issues.push("placeholder");
+      if (child.value && child.min_length && child.value.length < child.min_length) issues.push("value-short");
+      if (child.value && child.max_length && child.value.length > child.max_length) issues.push("value-long");
+    } else if (child.type === 3) {
+      if (child.disabled) issues.push("disabled");
+      if (child.placeholder && child.placeholder.length > 150) issues.push("select-placeholder");
+      if (!Array.isArray(child.options) || child.options.length < 1 || child.options.length > 25) issues.push("options");
+      for (const option of child.options ?? []) {
+        if (option.default === false) issues.push("default-false");
+        if (!option.label || option.label.length > 100 || !option.value || option.value.length > 100) issues.push("option");
+      }
+    } else issues.push("child-type");
+  }
+  return issues;
 }
 
 function modal(customId, title, labels) {
@@ -46,13 +92,14 @@ export function renderAddPicker(accent, emojis = {}) {
   });
 }
 
-export function step1Modal({ kind, targetUserId, current = {} }) {
+export function step1Modal({ kind, targetUserId, current = null }) {
+  const data = current ?? {};
   return modal(`atlas:modal:${kind}:1:${targetUserId}`, "Cliente e máquina", [
-    input("nome", "Nome do cliente", "Como a pessoa aparece no painel.", TextInputStyle.Short, { min: 2, max: 48, value: current.clientName }),
-    input("maquina", "Nome da máquina", "Usado também na confirmação de formatação.", TextInputStyle.Short, { min: 2, max: 32, value: current.machineName }),
-    select("gpu", "GPU", "Escolha o modelo.", GPUS.map((gpu) => ({ label: gpu, value: gpu })), current.gpu),
-    input("vcpus", "vCPUs", "Número de 1 a 128.", TextInputStyle.Short, { max: 4, value: current.vcpus }),
-    input("ram", "RAM", "Exemplo: 28 GB.", TextInputStyle.Short, { max: 24, value: current.ram }),
+    input("nome", "Nome do cliente", "Como a pessoa aparece no painel.", TextInputStyle.Short, { min: 2, max: 48, value: data.clientName }),
+    input("maquina", "Nome da máquina", "Usado também na confirmação de formatação.", TextInputStyle.Short, { min: 2, max: 32, value: data.machineName }),
+    select("gpu", "GPU", "Escolha o modelo.", GPUS.map((gpu) => ({ label: gpu, value: gpu })), data.gpu),
+    input("vcpus", "vCPUs", "Número de 1 a 128.", TextInputStyle.Short, { max: 4, value: data.vcpus }),
+    input("ram", "RAM", "Exemplo: 28 GB.", TextInputStyle.Short, { max: 24, value: data.ram }),
   ]);
 }
 

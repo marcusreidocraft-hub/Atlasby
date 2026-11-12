@@ -7,7 +7,7 @@ import { createApp } from "../src/app.js";
 import { readConfig } from "../src/config.js";
 import { openDatabase } from "../src/db/database.js";
 import { routeInteraction } from "../src/bot.js";
-import { step1Modal, step2Modal, step3Modal } from "../src/panels/admin.js";
+import { formatModal, inspectModal, step1Modal, step2Modal, step3Modal } from "../src/panels/admin.js";
 import { renderControl } from "../src/panels/control.js";
 import { renderPublicPanel } from "../src/panels/public.js";
 import { createSealer } from "../src/services/crypto.js";
@@ -145,6 +145,63 @@ async function register(env, actor = adminActor()) {
   await env.app.admin.save(GUILD, actor, draft);
   return draft;
 }
+
+test("os três modais cabem na API e o seletor abre o primeiro sem adiar", async () => {
+  const drafts = { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", kind: "edit", payload: { plan: "mensal", publicIp: "203.0.113.10", rdpUser: "pc", startText: "06/10/2026", expiryText: "05/11/2026", infraId: "" } };
+  const modals = [
+    step1Modal({ kind: "add", targetUserId: CLIENT }),
+    step1Modal({ kind: "edit", targetUserId: CLIENT, current: { clientName: "Ana", machineName: "Mesa 01", gpu: "Tesla T4", vcpus: 4, ram: "28 GB" } }),
+    step2Modal({ id: drafts.id, kind: "add", payload: { plan: "semanal" } }),
+    step2Modal(drafts),
+    step3Modal({ id: drafts.id, kind: "add", payload: drafts.payload }),
+    step3Modal(drafts),
+    formatModal("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+  ];
+  for (const modal of modals) assert.deepEqual(inspectModal(modal), []);
+  const add = step1Modal({ kind: "add", targetUserId: CLIENT }).toJSON();
+  assert.equal(add.components.length, 5);
+  assert.equal(JSON.stringify(add).includes('"default":false'), false);
+  const edit = step1Modal({ kind: "edit", targetUserId: CLIENT, current: { gpu: "Tesla T4" } }).toJSON();
+  const selected = edit.components.find((item) => item.component.custom_id === "gpu").component.options.filter((option) => option.default);
+  assert.deepEqual(JSON.parse(JSON.stringify(selected)), [{ label: "Tesla T4", value: "Tesla T4", default: true }]);
+
+  const env = harness();
+  const interaction = button("atlas:admin:add:user", OWNER, { permissions: 8n, values: [CLIENT] });
+  interaction.showModal = async (modal) => {
+    interaction.order.push("modal");
+    interaction.modal = modal;
+  };
+  await routeInteraction(interaction, env.app);
+  assert.deepEqual(interaction.order, ["modal"]);
+  assert.equal(interaction.deferred, false);
+  assert.deepEqual(inspectModal(interaction.modal), []);
+  env.close();
+});
+
+test("o erro genérico registra o erro cru do Discord", async () => {
+  const env = harness();
+  const interaction = button("atlas:admin:add:user", OWNER, { permissions: 8n, values: [CLIENT] });
+  interaction.showModal = async () => {
+    const error = new Error("Invalid Form Body");
+    error.name = "DiscordAPIError[50035]";
+    error.code = 50035;
+    error.rawError = { message: "Invalid Form Body", code: 50035, errors: { data: { components: { 2: { component: { options: "default" } } } } } };
+    throw error;
+  };
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => lines.push(args.map((item) => String(item)).join(" "));
+  try {
+    await routeInteraction(interaction, env.app);
+  } finally {
+    console.error = original;
+  }
+  const log = lines.join("\n");
+  assert.match(log, /DiscordAPIError\[50035\] \[50035\]/);
+  assert.match(log, /Invalid Form Body/);
+  assert.match(log, /"code":50035/);
+  env.close();
+});
 
 test("emoji padrão exige o cache e a variável fica na frente", () => {
   const repo = { getSettings: () => ({ emoji: {} }) };
