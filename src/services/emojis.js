@@ -1,4 +1,4 @@
-export const EMOJI_KEYS = Object.freeze(["controle", "calendario", "ticket", "moonlight", "rdp", "alerta", "engrenagem", "power", "ligada"]);
+export const EMOJI_KEYS = Object.freeze(["controle", "calendario", "ticket", "moonlight", "rdp", "alerta", "engrenagem", "power", "ligada", "desligar"]);
 
 export const UNICODE = Object.freeze({
   controle: "🎮",
@@ -10,6 +10,7 @@ export const UNICODE = Object.freeze({
   engrenagem: "⚙️",
   power: "⏻",
   ligada: "🟢",
+  desligar: "⏹️",
 });
 
 export const DEFAULTS = Object.freeze({
@@ -22,6 +23,7 @@ export const DEFAULTS = Object.freeze({
   engrenagem: "<:dgear:1568512697002098728>",
   power: "<:disactiv:1568512700739362897>",
   ligada: "<:reduto_on:1570365824810877048>",
+  desligar: "<:desligar:1570370496673873952>",
 });
 
 export const EXTRAS = Object.freeze({

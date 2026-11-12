@@ -22,6 +22,7 @@ export const EMOJI_ENV = {
   engrenagem: "EMOJI_ENGRENAGEM",
   power: "EMOJI_POWER",
   ligada: "EMOJI_LIGADA",
+  desligar: "EMOJI_DESLIGAR",
 };
 
 function text(value) {

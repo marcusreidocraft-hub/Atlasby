@@ -49,7 +49,7 @@ export function renderControl(client, { accent, emojis, now, notice, image }) {
     if (image) root.addMediaGalleryComponents(attachmentGallery(CARD_FILE));
     else root.addTextDisplayComponents(text(fallbackLines(client, now, emojis)));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
-      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, on ? emojis.ligada : emojis.power),
+      press("atlas:vm:power", on ? "Desligar VM" : "Ligar VM", on ? ButtonStyle.Primary : ButtonStyle.Success, on ? emojis.desligar : emojis.power),
       press("atlas:vm:pin", "PIN Moonlight", ButtonStyle.Secondary, emojis.moonlight),
       press("atlas:vm:rdp", "Acesso RDP", ButtonStyle.Secondary, emojis.rdp),
       press("atlas:vm:format", "Formatar VM", ButtonStyle.Danger, emojis.alerta),

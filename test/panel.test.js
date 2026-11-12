@@ -335,6 +335,8 @@ test("o cartão é uma imagem sem senha e o tamanho da VM vira GPU", async () =>
   const book = createEmojiBook({ emoji: {}, allowedGuildIds: [] }, { getSettings: () => ({ emoji: {} }) });
   book.remember(GUILD, [{ id: "1570365824810877048", name: "reduto_on" }]);
   assert.equal(book.pack(GUILD).ligada, DEFAULTS.ligada);
+  book.remember(GUILD, [{ id: "1570370496673873952", name: "desligar" }]);
+  assert.equal(book.pack(GUILD).desligar, DEFAULTS.desligar);
 });
 
 test("o IP público sai da interface de rede da VM", async () => {
@@ -616,7 +618,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
     "PANEL_COLOR", "OLLAMA_BASE_URL", "OLLAMA_MODEL", "OLLAMA_API_KEY", "AI_ASSISTANT_ENABLED",
     "SUPPORT_CHANNEL_URL", "ADMIN_ROLE_IDS", "ADMIN_LOG_CHANNEL_ID", "CREDENTIALS_KEY", "PANEL_BANNER_URL",
     "EMOJI_CONTROLE", "EMOJI_CALENDARIO", "EMOJI_TICKET", "EMOJI_MOONLIGHT", "EMOJI_RDP", "EMOJI_ALERTA",
-    "EMOJI_ENGRENAGEM", "EMOJI_POWER", "EMOJI_LIGADA",
+    "EMOJI_ENGRENAGEM", "EMOJI_POWER", "EMOJI_LIGADA", "EMOJI_DESLIGAR",
   ]) {
     assert.match(example, new RegExp(`^${key}=`, "m"));
   }
