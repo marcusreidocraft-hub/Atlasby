@@ -627,7 +627,7 @@ test("não administrador não grava cliente", async () => {
 test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
   const example = fs.readFileSync(path.join(process.cwd(), ".env.example"), "utf8");
   for (const key of [
-    "DISCORD_TOKEN", "DISCORD_CLIENT_ID", "ALLOWED_GUILD_IDS", "DATA_DIR", "AGENT_SECRET", "AGENT_PORT", "CONFIRMATION_TTL_SECONDS",
+    "DISCORD_TOKEN", "DISCORD_CLIENT_ID", "ALLOWED_GUILD_IDS", "DATA_DIR", "AGENT_SECRET", "AGENT_PORT", "SERVER_PORT", "WYVI_API_KEY", "WYVI_WEBHOOK_SECRET", "WYVI_API_BASE", "CONFIRMATION_TTL_SECONDS",
     "ENABLE_MESSAGE_CONTENT_INTENT", "AZURE_TENANT_ID", "AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET",
     "AZURE_SUBSCRIPTION_ID", "AZURE_CREDENTIALS_KEY", "AZURE_SNAPSHOT_ID", "AZURE_LOCATION",
     "AZURE_DEFAULT_VM_SIZE", "AZURE_OS_TYPE", "AZURE_VIRTUAL_NETWORK", "AZURE_SUBNET", "AZURE_MAX_OS_DISK_GB",
@@ -638,7 +638,7 @@ test("exemplo de ambiente conserva as variáveis e não traz segredo", () => {
   ]) {
     assert.match(example, new RegExp(`^${key}=`, "m"));
   }
-  for (const secret of ["DISCORD_TOKEN=", "DISCORD_CLIENT_ID=", "AZURE_CLIENT_SECRET=", "AZURE_CREDENTIALS_KEY=", "CREDENTIALS_KEY=", "OLLAMA_API_KEY=", "AGENT_SECRET="]) {
+  for (const secret of ["DISCORD_TOKEN=", "DISCORD_CLIENT_ID=", "AZURE_CLIENT_SECRET=", "AZURE_CREDENTIALS_KEY=", "CREDENTIALS_KEY=", "OLLAMA_API_KEY=", "AGENT_SECRET=", "WYVI_API_KEY=", "WYVI_WEBHOOK_SECRET="]) {
     assert.match(example, new RegExp(`^${secret}$`, "m"));
   }
   const ignore = fs.readFileSync(path.join(process.cwd(), ".gitignore"), "utf8");

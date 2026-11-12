@@ -4,6 +4,8 @@ import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
 import { adminCommands } from "./commands.js";
+import { storeCommands } from "../../loja/commands.js";
+import { handleStoreCommand } from "../../loja/router.js";
 
 const UUID = "([0-9a-f-]{36})";
 const SNOWFLAKE = "(\\d{17,20})";
@@ -19,7 +21,7 @@ function selected(interaction, id) {
 export async function registerCommands(config) {
   if (!config.token || !config.clientId || !config.allowedGuildIds.length) return;
   const rest = new REST({ version: "10" }).setToken(config.token);
-  const body = adminCommands();
+  const body = [...adminCommands(), ...storeCommands()];
   for (const guildId of config.allowedGuildIds) {
     try {
       await rest.put(Routes.applicationGuildCommands(config.clientId, guildId), { body });
@@ -51,6 +53,7 @@ export async function routeCommand(interaction, app) {
     return;
   }
   await ack(interaction, false);
+  if (await handleStoreCommand(interaction, app, actor)) return;
   if (name === "painel-publicar") {
     const payload = renderPublicPanel({
       accent: app.config.panelColor,

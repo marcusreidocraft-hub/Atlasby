@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { attachStore } from "../loja/db.js";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS clients (
@@ -149,7 +150,9 @@ export function openDatabase(dataDir) {
       ON CONFLICT(guild_id, channel_id, message_id) DO NOTHING`),
   };
 
+  const store = attachStore(db);
   return {
+    ...store,
     file,
     close() {
       db.close();

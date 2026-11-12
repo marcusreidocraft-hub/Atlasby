@@ -17,6 +17,8 @@ let closing = false;
 async function shutdown() {
   if (closing) return;
   closing = true;
+  clearInterval(client.storePulse);
+  client.storeServer?.close();
   client.destroy();
   repo.close();
   process.exit(0);

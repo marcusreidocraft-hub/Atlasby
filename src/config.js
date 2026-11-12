@@ -52,6 +52,13 @@ function parseMaxDisk(value) {
   return number;
 }
 
+function parsePort(value) {
+  if (!text(value)) return null;
+  const number = Number(text(value));
+  if (!Number.isInteger(number) || number < 1 || number > 65535) return null;
+  return number;
+}
+
 function parseAgentPort(value) {
   if (!text(value)) return 7474;
   const number = Number(text(value));
@@ -94,6 +101,12 @@ export function readConfig(env = {}) {
     dataDir: text(env.DATA_DIR) || "data",
     agentSecret: text(env.AGENT_SECRET),
     agentPort: parseAgentPort(env.AGENT_PORT),
+    serverPort: parsePort(env.SERVER_PORT),
+    wyvi: {
+      apiKey: text(env.WYVI_API_KEY),
+      webhookSecret: text(env.WYVI_WEBHOOK_SECRET),
+      baseUrl: text(env.WYVI_API_BASE) || "https://api.wyvipay.com.br",
+    },
     confirmationTtlMs: parseTtl(env.CONFIRMATION_TTL_SECONDS) * 1000,
     messageContentIntent: parseBoolean(env.ENABLE_MESSAGE_CONTENT_INTENT, false),
     panelColor: parsePanelColor(env.PANEL_COLOR),

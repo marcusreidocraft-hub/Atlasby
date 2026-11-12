@@ -158,6 +158,14 @@ Os testes não usam Discord, Azure nem segredo real.
 
 No Discord, depois que o host reiniciar o processo: publique o painel, cadastre um cliente de teste, clique em Controlar VM com a conta do cliente e com outra conta, consulte o plano, mostre PIN e RDP, atualize, ligue e desligue, e só então teste a formatação com o nome da máquina.
 
+## Loja
+
+O painel comercial fica no canal escolhido em `/configurar-loja`. Ele é editado no lugar. Os planos de 3h e 6h somem por completo quando `/configurar-horas` os desliga. Sem estoque, o produto mostra "Sem estoque no momento" e não entra na compra.
+
+O webhook Pix é `http://<endereço público>:<SERVER_PORT>/wyvi/webhook`. No painel da Wyvi, cadastre essa URL em HTTPS se o host termina TLS, com os eventos `cobranca.paga`, `cobranca.expirada` e `cobranca.estornada`. O segredo que a Wyvi mostra uma vez vai em `WYVI_WEBHOOK_SECRET`. A chave com `cobranca:criar` e `cobranca:ler` vai em `WYVI_API_KEY`.
+
+Antes da primeira venda, publique a loja, defina estoque, cargo, rede (`/configurar-azure`, grupo, vnet, subnet e NSG) e a imagem especializada (`/configurar-imagem`). A imagem da VM Atlas é specialized, Trusted Launch, geração 2. O agente já está nela. A máquina só nasce depois do evento `cobranca.paga`.
+
 ## Limitações
 
 Há uma máquina por membro em cada servidor. O banco antigo não é importado. Formatar troca o disco do sistema e deixa a VM desligada; discos de dados não entram nessa operação. O cartão usa `@resvg/resvg-wasm` e a fonte Inter. O IP público usa `@azure/arm-network`. A cor `PANEL_COLOR` passa a valer no próximo processo. Ollama permanece desligado.
