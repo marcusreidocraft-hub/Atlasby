@@ -6,6 +6,7 @@ import { registerCommands, routeAdminComponent, routeCommand } from "./commands/
 import { createInfrastructure } from "./services/provider.js";
 import { routeStoreComponent, editStorePanel } from "./loja/router.js";
 import { routeTicket } from "./tickets/router.js";
+import { routeAnnounceComponent } from "./announce/router.js";
 import { renderOrder } from "./loja/panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { V2 } from "./panels/ui.js";
@@ -32,6 +33,7 @@ export async function routeInteraction(interaction, app) {
       await routeCommand(interaction, app);
       return;
     }
+    if (await routeAnnounceComponent(interaction, app)) return;
     if (await routeTicket(interaction, app)) return;
     if (await routeClient(interaction, app)) return;
     if (await routeStoreComponent(interaction, app)) return;

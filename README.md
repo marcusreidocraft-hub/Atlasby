@@ -90,6 +90,10 @@ Um administrador publica a central com `/atendimento-publicar` no canal desejado
 
 Um administrador publica os Termos de Uso com `/termos`. O canal é opcional e, se ficar vazio, a publicação sai no canal atual. O texto fica em `src/content/termos.js`. A mensagem abre com o título Termos de Uso - Atlas e termina com a data da publicação. O link de suporte da seção de atendimento sai de `/configurar suporte`.
 
+## Anúncio
+
+Um administrador publica com `/anuncio publicar`. O canal é opcional. O comando abre um formulário com título, texto, rodapé, URL da imagem e botão no formato `texto|https://`. Antes de enviar, aparece uma prévia com Publicar, Editar e Cancelar. A imagem anexada em `imagem` vale mais que a URL. `miniatura` ou `url_miniatura` fica ao lado do título. `cor` aceita hexadecimal e, vazia, usa a cor do painel. `mencionar` aceita um cargo, `@everyone` ou `@here`. `emoji` troca o megafone do título; `nenhum` o omite. `/anuncio editar mensagem:` reabre um anúncio que este bot publicou. O canal de logs recebe o registro.
+
 ## O que o cliente vê
 
 **Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.

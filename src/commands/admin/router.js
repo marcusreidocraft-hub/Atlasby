@@ -2,6 +2,7 @@ import { REST, Routes } from "discord.js";
 import { renderPublicPanel } from "../../panels/public.js";
 import { renderTicketDesk } from "../../tickets/panel.js";
 import { renderTermsMessages } from "../../panels/termos.js";
+import { routeAnnounceCommand } from "../../announce/router.js";
 import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
@@ -42,6 +43,10 @@ export async function routeCommand(interaction, app) {
   if (!app.admin.isAdmin(actor)) {
     await ack(interaction, false);
     await present(interaction, notice("Só um administrador do servidor, ou um cargo de ADMIN_ROLE_IDS, pode usar este comando.", app.config.panelColor));
+    return;
+  }
+  if (name === "anuncio") {
+    await routeAnnounceCommand(interaction, app, actor);
     return;
   }
   if (name === "editar-cliente") {

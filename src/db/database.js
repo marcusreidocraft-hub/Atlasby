@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { attachStore } from "../loja/db.js";
 import { attachTickets } from "../tickets/db.js";
+import { attachAnnouncements } from "../announce/db.js";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS clients (
@@ -163,9 +164,11 @@ export function openDatabase(dataDir) {
 
   const store = attachStore(db);
   const tickets = attachTickets(db);
+  const announcements = attachAnnouncements(db);
   return {
     ...store,
     ...tickets,
+    ...announcements,
     file,
     close() {
       db.close();

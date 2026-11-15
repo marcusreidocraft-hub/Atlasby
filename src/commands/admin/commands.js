@@ -8,6 +8,29 @@ export function adminCommands() {
     guild(new SlashCommandBuilder().setName("painel-publicar").setDescription("Publica o painel da Atlas Cloud PC neste canal.")),
     guild(new SlashCommandBuilder().setName("atendimento-publicar").setDescription("Publica a central de atendimento neste canal.")),
     guild(new SlashCommandBuilder().setName("termos").setDescription("Publica os Termos de Uso da Atlas Cloud PC.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio publica neste canal.").addChannelTypes(ChannelType.GuildText).setRequired(false))),
+    guild(new SlashCommandBuilder()
+      .setName("anuncio")
+      .setDescription("Publica ou edita um anúncio da Atlas Cloud PC.")
+      .addSubcommand((sub) => sub
+        .setName("publicar")
+        .setDescription("Abre o anúncio para revisão antes de publicar.")
+        .addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio usa este canal.").addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement).setRequired(false))
+        .addAttachmentOption((option) => option.setName("imagem").setDescription("Imagem grande. Tem prioridade sobre a URL.").setRequired(false))
+        .addAttachmentOption((option) => option.setName("miniatura").setDescription("Miniatura ao lado do título.").setRequired(false))
+        .addStringOption((option) => option.setName("url_miniatura").setDescription("URL https da miniatura, se não houver anexo.").setRequired(false).setMaxLength(2000))
+        .addStringOption((option) => option.setName("cor").setDescription("Cor hexadecimal. Vazio usa a cor do painel.").setRequired(false).setMaxLength(7))
+        .addStringOption((option) => option.setName("mencionar").setDescription("Cargo, @everyone ou @here.").setRequired(false).setMaxLength(32))
+        .addStringOption((option) => option.setName("emoji").setDescription("Emoji do título. Vazio usa o megafone. nenhum omite.").setRequired(false).setMaxLength(64)))
+      .addSubcommand((sub) => sub
+        .setName("editar")
+        .setDescription("Reabre um anúncio publicado por este bot.")
+        .addStringOption((option) => option.setName("mensagem").setDescription("Link ou ID da mensagem.").setRequired(true).setMaxLength(200))
+        .addAttachmentOption((option) => option.setName("imagem").setDescription("Nova imagem grande.").setRequired(false))
+        .addAttachmentOption((option) => option.setName("miniatura").setDescription("Nova miniatura.").setRequired(false))
+        .addStringOption((option) => option.setName("url_miniatura").setDescription("URL https da miniatura.").setRequired(false).setMaxLength(2000))
+        .addStringOption((option) => option.setName("cor").setDescription("Nova cor hexadecimal.").setRequired(false).setMaxLength(7))
+        .addStringOption((option) => option.setName("mencionar").setDescription("Cargo, @everyone ou @here.").setRequired(false).setMaxLength(32))
+        .addStringOption((option) => option.setName("emoji").setDescription("Emoji do título, ou nenhum.").setRequired(false).setMaxLength(64)))),
     guild(new SlashCommandBuilder().setName("adicionar-cliente").setDescription("Cadastra a máquina de um membro.")),
     guild(new SlashCommandBuilder().setName("editar-cliente").setDescription("Edita a máquina de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
