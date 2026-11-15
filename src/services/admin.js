@@ -367,6 +367,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
         supportRoleId: patch.supportRoleId === undefined ? current.supportRoleId : patch.supportRoleId,
         ticketCategoryId: patch.ticketCategoryId === undefined ? current.ticketCategoryId : patch.ticketCategoryId,
         emoji: { ...current.emoji, ...(patch.emoji ?? {}) },
+        ticket: patch.ticket === undefined ? current.ticket : { ...current.ticket, ...patch.ticket },
       };
       repo.saveSettings(guildId, next, now());
       return notice("Configuração salva para este servidor.", config.panelColor);

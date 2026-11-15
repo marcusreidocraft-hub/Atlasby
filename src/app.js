@@ -24,5 +24,5 @@ export function createApp({ config, repo, infra, now = () => Date.now(), deliver
   };
   const wyvi = createWyviClient({ apiKey: config.wyvi?.apiKey || "", baseUrl: config.wyvi?.baseUrl });
   const store = createStore({ repo, config, audit, now, wyvi, sunshine: agent, provisioner, infra });
-  return { config, repo, infra, emojis, clients, admin, sealer, store };
+  return { config, repo, infra, emojis, clients, admin, sealer, store, wyvi };
 }

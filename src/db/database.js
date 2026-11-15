@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { attachStore } from "../loja/db.js";
+import { attachTickets } from "../tickets/db.js";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS clients (
@@ -44,6 +45,7 @@ const SCHEMA = `
     emoji_json TEXT,
     support_role_id TEXT,
     ticket_category_id TEXT,
+    ticket_json TEXT,
     updated_at INTEGER NOT NULL
   );
   CREATE TABLE IF NOT EXISTS drafts (
@@ -105,7 +107,7 @@ export function openDatabase(dataDir) {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(SCHEMA);
-  for (const [column, definition] of [["support_role_id", "TEXT"], ["ticket_category_id", "TEXT"]]) {
+  for (const [column, definition] of [["support_role_id", "TEXT"], ["ticket_category_id", "TEXT"], ["ticket_json", "TEXT"]]) {
     const columns = db.prepare("PRAGMA table_info(guild_settings)").all();
     if (!columns.some((item) => item.name === column)) db.exec(`ALTER TABLE guild_settings ADD COLUMN ${column} ${definition}`);
   }
@@ -136,14 +138,15 @@ export function openDatabase(dataDir) {
     log: db.prepare(`INSERT INTO action_logs (id, guild_id, actor_id, action, target_user_id, machine_name, detail, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
     settings: db.prepare("SELECT * FROM guild_settings WHERE guild_id = ?"),
-    saveSettings: db.prepare(`INSERT INTO guild_settings (guild_id, support_url, log_channel_id, emoji_json, support_role_id, ticket_category_id, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    saveSettings: db.prepare(`INSERT INTO guild_settings (guild_id, support_url, log_channel_id, emoji_json, support_role_id, ticket_category_id, ticket_json, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(guild_id) DO UPDATE SET
         support_url = excluded.support_url,
         log_channel_id = excluded.log_channel_id,
         emoji_json = excluded.emoji_json,
         support_role_id = excluded.support_role_id,
         ticket_category_id = excluded.ticket_category_id,
+        ticket_json = excluded.ticket_json,
         updated_at = excluded.updated_at`),
     draft: db.prepare("SELECT * FROM drafts WHERE id = ?"),
     saveDraft: db.prepare(`INSERT INTO drafts (id, guild_id, actor_id, kind, payload, expires_at)
@@ -159,8 +162,10 @@ export function openDatabase(dataDir) {
   };
 
   const store = attachStore(db);
+  const tickets = attachTickets(db);
   return {
     ...store,
+    ...tickets,
     file,
     close() {
       db.close();
@@ -226,12 +231,13 @@ export function openDatabase(dataDir) {
         supportRoleId: row?.support_role_id ?? "",
         ticketCategoryId: row?.ticket_category_id ?? "",
         emoji: row?.emoji_json ? JSON.parse(row.emoji_json) : {},
+        ticket: row?.ticket_json ? JSON.parse(row.ticket_json) : {},
       };
     },
     saveSettings(guildId, settings, now) {
       statements.saveSettings.run(
         guildId, settings.supportUrl || null, settings.logChannelId || null, JSON.stringify(settings.emoji ?? {}),
-        settings.supportRoleId || null, settings.ticketCategoryId || null, now,
+        settings.supportRoleId || null, settings.ticketCategoryId || null, JSON.stringify(settings.ticket ?? {}), now,
       );
     },
     getDraft(id) {

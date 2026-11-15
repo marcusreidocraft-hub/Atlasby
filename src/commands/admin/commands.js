@@ -6,6 +6,7 @@ const guild = (builder) => builder.setContexts(InteractionContextType.Guild);
 export function adminCommands() {
   return [
     guild(new SlashCommandBuilder().setName("painel-publicar").setDescription("Publica o painel da Atlas Cloud PC neste canal.")),
+    guild(new SlashCommandBuilder().setName("atendimento-publicar").setDescription("Publica a central de atendimento neste canal.")),
     guild(new SlashCommandBuilder().setName("adicionar-cliente").setDescription("Cadastra a máquina de um membro.")),
     guild(new SlashCommandBuilder().setName("editar-cliente").setDescription("Edita a máquina de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
@@ -28,6 +29,8 @@ export function adminCommands() {
       .setDescription("Ajusta suporte, logs ou emoji deste servidor.")
       .addSubcommand((sub) => sub.setName("suporte").setDescription("Define o link do botão de suporte.").addStringOption((option) => option.setName("url").setDescription("URL https do canal ou site").setRequired(true)))
       .addSubcommand((sub) => sub.setName("logs").setDescription("Define o canal de logs administrativos.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto").addChannelTypes(ChannelType.GuildText).setRequired(true)))
-      .addSubcommand((sub) => sub.setName("emoji").setDescription("Substitui um emoji do painel.").addStringOption((option) => option.setName("nome").setDescription("Nome do emoji").setRequired(true).addChoices(...EMOJI_KEYS.map((key) => ({ name: key, value: key })))).addStringOption((option) => option.setName("valor").setDescription("Unicode ou <:nome:id>").setRequired(true).setMaxLength(80)))),
+      .addSubcommand((sub) => sub.setName("emoji").setDescription("Substitui um emoji do painel.").addStringOption((option) => option.setName("nome").setDescription("Nome do emoji").setRequired(true).addChoices(...EMOJI_KEYS.map((key) => ({ name: key, value: key })))).addStringOption((option) => option.setName("valor").setDescription("Unicode ou <:nome:id>").setRequired(true).setMaxLength(80)))
+      .addSubcommand((sub) => sub.setName("horario").setDescription("Texto do horário no painel de atendimento.").addStringOption((option) => option.setName("texto").setDescription("Horário exibido no rodapé").setRequired(true).setMaxLength(150)))
+      .addSubcommand((sub) => sub.setName("ticket-emoji").setDescription("Troca um emoji do atendimento.").addStringOption((option) => option.setName("nome").setDescription("Slot").setRequired(true).addChoices(...["suporte", "parcerias", "outros", "abrir", "acessar", "motivo", "chamar", "fechar", "voz", "adicionar", "remover", "pagamento", "horario", "erro", "titulo"].map((key) => ({ name: key, value: key })))).addStringOption((option) => option.setName("valor").setDescription("<:nome:id>").setRequired(true).setMaxLength(80)))),
   ].map((command) => command.toJSON());
 }

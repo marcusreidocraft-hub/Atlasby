@@ -1,5 +1,6 @@
 import { REST, Routes } from "discord.js";
 import { renderPublicPanel } from "../../panels/public.js";
+import { renderTicketDesk } from "../../tickets/panel.js";
 import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
@@ -55,6 +56,12 @@ export async function routeCommand(interaction, app) {
   }
   await ack(interaction, false);
   if (await handleStoreCommand(interaction, app, actor)) return;
+  if (name === "atendimento-publicar") {
+    const payload = renderTicketDesk(app.repo.getSettings(interaction.guildId));
+    await interaction.channel.send({ components: payload.components, flags: V2, allowedMentions: { parse: [] } });
+    await present(interaction, notice("Central de atendimento publicada neste canal.", app.config.panelColor));
+    return;
+  }
   if (name === "painel-publicar") {
     const payload = renderPublicPanel({
       accent: app.config.panelColor,
@@ -123,6 +130,21 @@ export async function routeCommand(interaction, app) {
     if (sub === "logs") {
       const channel = interaction.options.getChannel("canal");
       await present(interaction, app.admin.updateSettings(interaction.guildId, actor, { logChannelId: channel.id }));
+      return;
+    }
+    if (sub === "horario") {
+      await present(interaction, app.admin.updateSettings(interaction.guildId, actor, { ticket: { hours: interaction.options.getString("texto").trim() } }));
+      return;
+    }
+    if (sub === "ticket-emoji") {
+      const key = interaction.options.getString("nome");
+      const value = interaction.options.getString("valor").trim();
+      if (!/^<a?:[\w]+:\d+>$/.test(value)) {
+        await present(interaction, notice("Use um emoji no formato <:nome:id>.", app.config.panelColor));
+        return;
+      }
+      const current = app.repo.getSettings(interaction.guildId).ticket?.emojis || {};
+      await present(interaction, app.admin.updateSettings(interaction.guildId, actor, { ticket: { emojis: { ...current, [key]: value } } }));
       return;
     }
     if (sub === "emoji") {
