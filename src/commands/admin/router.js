@@ -1,6 +1,7 @@
 import { REST, Routes } from "discord.js";
 import { renderPublicPanel } from "../../panels/public.js";
 import { renderTicketDesk } from "../../tickets/panel.js";
+import { renderTermsMessages } from "../../panels/termos.js";
 import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
@@ -56,6 +57,23 @@ export async function routeCommand(interaction, app) {
   }
   await ack(interaction, false);
   if (await handleStoreCommand(interaction, app, actor)) return;
+  if (name === "termos") {
+    const chosen = interaction.options.getChannel("canal");
+    const channel = chosen ?? interaction.channel;
+    if (!channel?.isTextBased?.() || channel.isDMBased?.()) {
+      await present(interaction, notice("Escolha um canal de texto do servidor.", app.config.panelColor));
+      return;
+    }
+    const messages = renderTermsMessages({
+      supportUrl: app.admin.supportUrl(interaction.guildId),
+      publishedAt: Date.now(),
+    });
+    for (const payload of messages) {
+      await channel.send({ components: payload.components, flags: V2, allowedMentions: { parse: [] } });
+    }
+    await present(interaction, notice("Termos de Uso publicados neste canal.", app.config.panelColor));
+    return;
+  }
   if (name === "atendimento-publicar") {
     const payload = renderTicketDesk(app.repo.getSettings(interaction.guildId));
     await interaction.channel.send({ components: payload.components, flags: V2, allowedMentions: { parse: [] } });

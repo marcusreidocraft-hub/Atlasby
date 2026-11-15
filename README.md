@@ -86,6 +86,10 @@ Planos: semanal soma 7 dias, quinzenal 15 e mensal 30, no fuso `America/Sao_Paul
 
 Um administrador publica a central com `/atendimento-publicar` no canal desejado. O membro escolhe Suporte, Parcerias ou Outros, descreve o motivo e recebe o link do canal privado. A equipe usa o seletor **Ações administrativas** para chamar o cliente, abrir ou remover a sala de voz, adicionar ou remover um membro, gerar o Pix ou fechar o ticket. O horário do rodapé muda com `/configurar horario`. Um emoji da central muda com `/configurar ticket-emoji`. Quem não é da equipe vê que a ação é restrita. Fechar grava a transcrição no canal de logs.
 
+## Termos
+
+Um administrador publica os Termos de Uso com `/termos`. O canal é opcional e, se ficar vazio, a publicação sai no canal atual. O texto fica em `src/content/termos.js`. A mensagem abre com o título Termos de Uso - Atlas e termina com a data da publicação. O link de suporte da seção de atendimento sai de `/configurar suporte`.
+
 ## O que o cliente vê
 
 **Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.

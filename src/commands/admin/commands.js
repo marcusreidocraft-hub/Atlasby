@@ -7,6 +7,7 @@ export function adminCommands() {
   return [
     guild(new SlashCommandBuilder().setName("painel-publicar").setDescription("Publica o painel da Atlas Cloud PC neste canal.")),
     guild(new SlashCommandBuilder().setName("atendimento-publicar").setDescription("Publica a central de atendimento neste canal.")),
+    guild(new SlashCommandBuilder().setName("termos").setDescription("Publica os Termos de Uso da Atlas Cloud PC.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio publica neste canal.").addChannelTypes(ChannelType.GuildText).setRequired(false))),
     guild(new SlashCommandBuilder().setName("adicionar-cliente").setDescription("Cadastra a máquina de um membro.")),
     guild(new SlashCommandBuilder().setName("editar-cliente").setDescription("Edita a máquina de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
