@@ -7,6 +7,7 @@ import { createInfrastructure } from "./services/provider.js";
 import { routeStoreComponent, editStorePanel } from "./loja/router.js";
 import { routeTicket } from "./tickets/router.js";
 import { routeAnnounceComponent } from "./announce/router.js";
+import { routeInviteComponent } from "./invites/router.js";
 import { renderOrder } from "./loja/panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { V2 } from "./panels/ui.js";
@@ -33,6 +34,7 @@ export async function routeInteraction(interaction, app) {
       await routeCommand(interaction, app);
       return;
     }
+    if (await routeInviteComponent(interaction, app)) return;
     if (await routeAnnounceComponent(interaction, app)) return;
     if (await routeTicket(interaction, app)) return;
     if (await routeClient(interaction, app)) return;
@@ -76,11 +78,19 @@ async function fulfill(client, app, orderId) {
   }
 }
 
-export async function startBot({ config, repo, client = new Client({ intents: [GatewayIntentBits.Guilds] }) }) {
+export async function startBot({ config, repo, client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildInvites] }) }) {
   const infra = createInfrastructure(config);
   const bridge = { send: async () => false };
   const app = createApp({ config, repo, infra, deliverLog: (channelId, payload) => bridge.send(channelId, payload) });
   bridge.send = (channelId, payload) => deliver(client, channelId, payload);
+  client.on(Events.InviteCreate, (invite) => app.invites.noteInvite(invite));
+  client.on(Events.InviteDelete, (invite) => app.invites.forgetInvite(invite));
+  client.on(Events.GuildMemberAdd, (member) => {
+    app.invites.onJoin(member).catch((error) => console.warn(`Convites: falha ao registrar entrada. ${error?.code || "erro"}`));
+  });
+  client.on(Events.GuildMemberRemove, (member) => {
+    app.invites.onLeave(member).catch((error) => console.warn(`Convites: falha ao registrar saída. ${error?.code || "erro"}`));
+  });
   client.on(Events.InteractionCreate, (interaction) => {
     routeInteraction(interaction, app).catch((error) => {
       logInteractionError(error);
@@ -90,6 +100,8 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     console.log(`Atlas Cloud PC conectado como ${ready.user.tag}.`);
     await registerCommands(config);
     await app.emojis.refresh(ready);
+    await app.invites.warm(ready);
+    await app.invites.sweep(ready);
   });
   await client.login(config.token);
   if (config.serverPort) {
@@ -118,6 +130,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   const pulse = setInterval(() => {
     phase += 1;
     editStorePanel(client, app, phase).catch(() => {});
+    app.invites.sweep(client).catch((error) => console.warn(`Convites: falha na verificação das 24 horas. ${error?.code || "erro"}`));
   }, 45_000);
   pulse.unref?.();
   client.storePulse = pulse;

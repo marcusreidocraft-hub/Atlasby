@@ -94,6 +94,16 @@ Um administrador publica os Termos de Uso com `/termos`. O canal é opcional e, 
 
 Um administrador publica com `/anuncio publicar`. O canal é opcional. O comando abre um formulário com título, texto, rodapé, URL da imagem e botão no formato `texto|https://`. Antes de enviar, aparece uma prévia com Publicar, Editar e Cancelar. A imagem anexada em `imagem` vale mais que a URL. `miniatura` ou `url_miniatura` fica ao lado do título. `cor` aceita hexadecimal e, vazia, usa a cor do painel. `mencionar` aceita um cargo, `@everyone` ou `@here`. `emoji` troca o megafone do título; `nenhum` o omite. `/anuncio editar mensagem:` reabre um anúncio que este bot publicou. O canal de logs recebe o registro.
 
+## Convites
+
+Um administrador publica o painel com `/convites painel`. O canal é opcional. `/convites canal` define onde o bot cria o link pessoal, sem prazo e sem limite de usos. O membro aperta **Criar convite** e recebe o link, a contagem válida, os pendentes, a próxima meta e a lista de convidados. **Atualizar** relê os dados.
+
+O convite fica pendente por 24 horas. Só depois disso entra na conta. Se a pessoa sair antes ou depois, o status vira saiu e, se já contava, volta um convite. O indicador recebe um privado. Se o privado estiver fechado, o bot só registra o aviso. A mesma pessoa não conta duas vezes.
+
+As metas padrão são 10 convites = 6 horas, 20 = 12 horas, 30 = 24 horas, 40 = 3 dias e 55 = 1 semana. Cada meta gera uma bonificação uma única vez. O canal de logs recebe **Entregar** e **Recusar**. Entregar estende o plano ativo; sem plano ativo, fica marcado para a equipe aplicar na mão. A contagem pode cair depois da entrega, e a bonificação não é desfeita.
+
+`/convites ver`, `/convites ajustar`, `/convites resetar` e `/convites ranking` são de administrador. O bot precisa dos intents **Guild Members** e **Guild Invites**, e das permissões **Gerenciar Servidor** e **Criar Convite**. Sem o intent de membros ele não recebe quem entra ou sai. Sem Gerenciar Servidor ele avisa no log e não lê os links.
+
 ## O que o cliente vê
 
 **Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.

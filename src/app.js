@@ -7,6 +7,8 @@ import { createWyviClient } from "./loja/payments.js";
 import { createAzureProvisioner } from "./loja/azure.js";
 import { createSealer } from "./services/crypto.js";
 import { createEmojiBook } from "./services/emojis.js";
+import { createInviteBook } from "./invites/book.js";
+import { createInviteTracker } from "./invites/tracker.js";
 
 export function createApp({ config, repo, infra, now = () => Date.now(), deliverLog = null, sunshine = null }) {
   const sealer = createSealer(config.credentialsKey);
@@ -24,5 +26,6 @@ export function createApp({ config, repo, infra, now = () => Date.now(), deliver
   };
   const wyvi = createWyviClient({ apiKey: config.wyvi?.apiKey || "", baseUrl: config.wyvi?.baseUrl });
   const store = createStore({ repo, config, audit, now, wyvi, sunshine: agent, provisioner, infra });
-  return { config, repo, infra, emojis, clients, admin, sealer, store, wyvi, audit };
+  const invites = createInviteTracker({ book: createInviteBook({ repo, now }), repo, config });
+  return { config, repo, infra, emojis, clients, admin, sealer, store, wyvi, audit, invites };
 }

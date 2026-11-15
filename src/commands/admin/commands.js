@@ -31,6 +31,15 @@ export function adminCommands() {
         .addStringOption((option) => option.setName("cor").setDescription("Nova cor hexadecimal.").setRequired(false).setMaxLength(7))
         .addStringOption((option) => option.setName("mencionar").setDescription("Cargo, @everyone ou @here.").setRequired(false).setMaxLength(32))
         .addStringOption((option) => option.setName("emoji").setDescription("Emoji do título, ou nenhum.").setRequired(false).setMaxLength(64)))),
+    guild(new SlashCommandBuilder()
+      .setName("convites")
+      .setDescription("Painel e gestão dos convites com bonificação.")
+      .addSubcommand((sub) => sub.setName("painel").setDescription("Publica o painel de convites.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio usa este canal.").addChannelTypes(ChannelType.GuildText).setRequired(false)))
+      .addSubcommand((sub) => sub.setName("canal").setDescription("Define o canal onde os convites pessoais são criados.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto").addChannelTypes(ChannelType.GuildText).setRequired(true)))
+      .addSubcommand((sub) => sub.setName("ver").setDescription("Mostra a contagem, os convidados e as bonificações.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true)))
+      .addSubcommand((sub) => sub.setName("ajustar").setDescription("Soma ou tira convites válidos na mão.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true)).addIntegerOption((option) => option.setName("quantidade").setDescription("Número positivo ou negativo.").setRequired(true).setMinValue(-500).setMaxValue(500)))
+      .addSubcommand((sub) => sub.setName("resetar").setDescription("Zera a contagem. Bonificações já registradas continuam.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true)))
+      .addSubcommand((sub) => sub.setName("ranking").setDescription("Lista quem mais convidou."))),
     guild(new SlashCommandBuilder().setName("adicionar-cliente").setDescription("Cadastra a máquina de um membro.")),
     guild(new SlashCommandBuilder().setName("editar-cliente").setDescription("Edita a máquina de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
