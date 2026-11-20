@@ -7,7 +7,7 @@ import { createMachine } from "./create.js";
 import { autoThroughput, validateDataDisk } from "./limits.js";
 import { defaultMachineName, sizeById, validMachineName } from "./payload.js";
 import { atlasNsgRules, chooseNsgs, samePlace } from "./nsg.js";
-import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderImageStep, renderIopsStep, renderMemberStep, renderNameStep, renderNsgStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "./panel.js";
+import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderHold, renderImageStep, renderIopsStep, renderMemberStep, renderNameStep, renderNsgStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep, WIZARD_DEFAULTS } from "./panel.js";
 
 const DRAFT_MS = 30 * 60 * 1000;
 
@@ -26,6 +26,7 @@ async function show(interaction, view) {
   const body = { components: view.components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } };
   if (interaction.deferred || interaction.replied) await interaction.editReply(body);
   else await interaction.reply(body);
+  return true;
 }
 
 function imageLabel(config) {
@@ -56,14 +57,15 @@ export async function routeMachineComponent(interaction, app) {
   const id = interaction.customId ?? "";
   const modal = /^atlas:modal:maquina:([0-9a-f-]{36})$/.exec(id);
   const step = /^atlas:maquina:(user|size|spot|disk|gb|iops|flow|zone|nsg|image|auto|name|go|no):([0-9a-f-]{36})$/.exec(id);
-  if (!modal && !step) return false;
+  const move = /^atlas:maquina:(ok|back):([a-z]+):([0-9a-f-]{36})$/.exec(id);
+  if (!modal && !step && !move) return false;
   const actor = actorFrom(interaction);
   if (!isAdmin(actor, app.config)) {
     if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ flags: V2_EPHEMERAL });
     await present(interaction, notice("Só um administrador do servidor, ou um cargo de ADMIN_ROLE_IDS, pode fazer isso.", app.config.panelColor));
     return true;
   }
-  const draftId = modal?.[1] || step?.[2];
+  const draftId = modal?.[1] || step?.[2] || move?.[3];
   const draft = load(app.repo, draftId, interaction.guildId, actor.id, Date.now());
   if (!draft) {
     if (step?.[1] === "name") {
@@ -81,21 +83,58 @@ export async function routeMachineComponent(interaction, app) {
   if (modal) return submitName(interaction, app, draft);
   if (!interaction.deferred && !interaction.replied) await interaction.deferUpdate();
   draft.expiresAt = Date.now() + DRAFT_MS;
+  if (move?.[1] === "ok") return goOn(interaction, app, draft, move[2]);
+  if (move?.[1] === "back") return goBack(interaction, app, draft, move[2]);
   const kind = step[1];
   if (kind === "user") return pickUser(interaction, app, draft);
-  if (kind === "size") return pickSize(interaction, app, draft);
-  if (kind === "spot") return pickSpot(interaction, app, draft);
-  if (kind === "disk") return pickDisk(interaction, app, draft);
-  if (kind === "gb") return pickGb(interaction, app, draft);
-  if (kind === "iops") return pickIops(interaction, app, draft);
-  if (kind === "flow") return pickFlow(interaction, app, draft);
-  if (kind === "zone") return pickZone(interaction, app, draft);
-  if (kind === "nsg") return pickNsg(interaction, app, draft);
-  if (kind === "image") return pickImage(interaction, app, draft);
+  if (kind === "size") return applySize(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "spot") return applySpot(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "disk") return applyDisk(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "gb") return applyGb(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "iops") return applyIops(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "flow") return applyFlow(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "zone") return applyZone(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "nsg") return applyNsg(interaction, app, draft, interaction.values?.[0]);
+  if (kind === "image") return applyImage(interaction, app, draft, interaction.values?.[0], false);
   if (kind === "auto") return useSuggested(interaction, app, draft);
   if (kind === "no") return cancel(interaction, app, draft);
   if (kind === "go") return launch(interaction, app, actor, draft);
   return true;
+}
+
+function suggestedZone(app) {
+  return ["1", "2", "3"].includes(app.config.azure.zone) ? app.config.azure.zone : "1";
+}
+
+function goOn(interaction, app, draft, from) {
+  if (from === "size") return applySize(interaction, app, draft, WIZARD_DEFAULTS.size);
+  if (from === "spot") return applySpot(interaction, app, draft, WIZARD_DEFAULTS.spot);
+  if (from === "disk") return applyDisk(interaction, app, draft, WIZARD_DEFAULTS.disk);
+  if (from === "gb") return applyGb(interaction, app, draft, WIZARD_DEFAULTS.gb);
+  if (from === "iops") return applyIops(interaction, app, draft, WIZARD_DEFAULTS.iops);
+  if (from === "flow") return applyFlow(interaction, app, draft, WIZARD_DEFAULTS.flow);
+  if (from === "zone") return applyZone(interaction, app, draft, suggestedZone(app));
+  if (from === "nsg") return applyNsg(interaction, app, draft, WIZARD_DEFAULTS.nsg);
+  if (from === "image") return applyImage(interaction, app, draft, draft.payload.imagePreferred, false);
+  return show(interaction, notice("Esta etapa não tem sugestão. Escolha uma opção.", app.config.panelColor));
+}
+
+function goBack(interaction, app, draft, from) {
+  const accent = app.config.panelColor;
+  const payload = draft.payload;
+  if (from === "size") return show(interaction, renderMemberStep(draft.id, accent));
+  if (from === "spot") return show(interaction, renderSizeStep(payload, accent));
+  if (from === "disk") return show(interaction, renderSpotStep(payload, accent));
+  if (from === "gb") return show(interaction, renderDiskStep(payload, accent));
+  if (from === "iops") return show(interaction, renderGbStep(payload, accent));
+  if (from === "flow") return show(interaction, renderIopsStep(payload, accent));
+  if (from === "zone") return show(interaction, renderThroughputStep(payload, accent));
+  if (from === "nsg") return payload.diskMode === "v2" ? show(interaction, renderZoneStep(payload, accent, app.config.azure.zone)) : show(interaction, renderDiskStep(payload, accent));
+  if (from === "image") return openNsg(interaction, app, draft);
+  if (from === "name") return showImage(interaction, app, draft);
+  if (from === "review") return askName(interaction, app, draft);
+  if (from === "fail") return openReview(interaction, app, draft, payload.machineName);
+  return show(interaction, notice("Não há etapa anterior.", app.config.panelColor));
 }
 
 function pickUser(interaction, app, draft) {
@@ -110,62 +149,58 @@ function pickUser(interaction, app, draft) {
   return show(interaction, renderSizeStep(draft.payload, app.config.panelColor));
 }
 
-function pickSize(interaction, app, draft) {
-  const chosen = sizeById(interaction.values?.[0]);
-  if (!chosen) return show(interaction, notice("Escolha um tamanho T4.", app.config.panelColor));
+function applySize(interaction, app, draft, sizeId) {
+  const chosen = sizeById(sizeId);
+  if (!chosen) return show(interaction, renderSizeStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, sizeId: chosen.id, sizeLabel: `${chosen.label} · ${chosen.size}` };
   keep(app.repo, draft);
   return show(interaction, renderSpotStep(draft.payload, app.config.panelColor));
 }
 
-function pickSpot(interaction, app, draft) {
-  const value = interaction.values?.[0];
-  if (value !== "spot" && value !== "normal") return show(interaction, notice("Escolha Spot ou Normal.", app.config.panelColor));
+function applySpot(interaction, app, draft, value) {
+  if (value !== "spot" && value !== "normal") return show(interaction, renderSpotStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, spot: value === "spot" };
   keep(app.repo, draft);
   return show(interaction, renderDiskStep(draft.payload, app.config.panelColor));
 }
 
-function pickDisk(interaction, app, draft) {
-  const value = interaction.values?.[0];
-  if (value !== "premium" && value !== "v2") return show(interaction, notice("Escolha o tipo de disco.", app.config.panelColor));
+function applyDisk(interaction, app, draft, value) {
+  if (value !== "premium" && value !== "v2") return show(interaction, renderDiskStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, diskMode: value };
   keep(app.repo, draft);
   if (value === "premium") return openNsg(interaction, app, draft);
   return show(interaction, renderGbStep(draft.payload, app.config.panelColor));
 }
 
-function pickGb(interaction, app, draft) {
-  const gb = Number(interaction.values?.[0]);
+function applyGb(interaction, app, draft, raw) {
+  const gb = Number(raw);
   const check = validateDataDisk({ gb, iops: 3000, throughput: 125 });
-  if (!check.ok) return show(interaction, notice(check.error, app.config.panelColor));
+  if (!check.ok) return show(interaction, renderGbStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, dataGb: gb };
   keep(app.repo, draft);
   return show(interaction, renderIopsStep(draft.payload, app.config.panelColor));
 }
 
-function pickIops(interaction, app, draft) {
-  const iops = Number(interaction.values?.[0]);
+function applyIops(interaction, app, draft, raw) {
+  const iops = Number(raw);
   const check = validateDataDisk({ gb: draft.payload.dataGb, iops, throughput: 125 });
-  if (!check.ok) return show(interaction, notice(check.error, app.config.panelColor));
+  if (!check.ok) return show(interaction, renderIopsStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, iops };
   keep(app.repo, draft);
   return show(interaction, renderThroughputStep(draft.payload, app.config.panelColor));
 }
 
-function pickFlow(interaction, app, draft) {
-  const mode = interaction.values?.[0];
-  const throughput = mode === "auto" ? autoThroughput(draft.payload.iops) : 125;
+function applyFlow(interaction, app, draft, mode) {
+  const throughput = mode === "auto" ? autoThroughput(draft.payload.iops) : mode === "base" ? 125 : 0;
   const check = validateDataDisk({ gb: draft.payload.dataGb, iops: draft.payload.iops, throughput });
-  if (!check.ok) return show(interaction, notice(check.error, app.config.panelColor));
+  if (!check.ok) return show(interaction, renderThroughputStep(draft.payload, app.config.panelColor));
   draft.payload = { ...draft.payload, throughput, throughputAuto: mode === "auto" };
   keep(app.repo, draft);
   return show(interaction, renderZoneStep(draft.payload, app.config.panelColor, app.config.azure.zone));
 }
 
-function pickZone(interaction, app, draft) {
-  const zone = interaction.values?.[0];
-  if (!["1", "2", "3"].includes(zone)) return show(interaction, notice("Escolha a zona 1, 2 ou 3.", app.config.panelColor));
+function applyZone(interaction, app, draft, zone) {
+  if (!["1", "2", "3"].includes(zone)) return show(interaction, renderZoneStep(draft.payload, app.config.panelColor, app.config.azure.zone));
   draft.payload = { ...draft.payload, zone };
   keep(app.repo, draft);
   return openNsg(interaction, app, draft);
@@ -184,13 +219,12 @@ async function openNsg(interaction, app, draft) {
   return show(interaction, renderNsgStep(draft.payload, nsgs, { defaultName: app.config.azure.nsg, accent: app.config.panelColor }));
 }
 
-function pickNsg(interaction, app, draft) {
-  const value = interaction.values?.[0];
+function applyNsg(interaction, app, draft, value) {
   const location = app.config.azure.location;
   if (value === "padrao") {
     const found = (draft.payload.nsgs || []).find((item) => item.name === app.config.azure.nsg);
     if (found && !samePlace(found.location, location)) {
-      return show(interaction, notice("O NSG padrão está em outra região. Escolha um grupo da mesma região da VM.", app.config.panelColor));
+      return show(interaction, renderNsgStep(draft.payload, draft.payload.nsgs, { defaultName: app.config.azure.nsg, accent: app.config.panelColor }));
     }
     draft.payload = { ...draft.payload, nsgMode: "padrao", nsgId: found?.id || "", nsgName: app.config.azure.nsg, nsgLabel: `${app.config.azure.nsg} · padrão` };
   } else if (value === "criar") {
@@ -199,7 +233,7 @@ function pickNsg(interaction, app, draft) {
     const index = Number(String(value || "").slice(2));
     const chosen = draft.payload.nsgs?.[index];
     if (!chosen || !samePlace(chosen.location, location)) {
-      return show(interaction, notice("Esse NSG não está na mesma região da VM.", app.config.panelColor));
+      return show(interaction, renderNsgStep(draft.payload, draft.payload.nsgs, { defaultName: app.config.azure.nsg, accent: app.config.panelColor }));
     }
     draft.payload = { ...draft.payload, nsgMode: "existente", nsgId: chosen.id, nsgName: chosen.name, nsgLabel: `${chosen.name} · ${chosen.group}` };
   }
@@ -209,16 +243,36 @@ function pickNsg(interaction, app, draft) {
 
 async function openImage(interaction, app, draft) {
   const listed = await app.provisioner.listImageVersions(app.config.azure.imageId);
-  if (!listed.ok) return show(interaction, notice(listed.error, app.config.panelColor));
-  draft.payload = { ...draft.payload, imageVersions: listed.versions };
+  if (!listed.ok) return show(interaction, renderHold(listed.error, app.config.panelColor, draft.id));
+  const versions = listed.versions || [];
+  if (!versions.length) return show(interaction, renderHold("Nenhuma versão pronta dessa imagem.", app.config.panelColor, draft.id));
+  const preferred = versions.includes(listed.preferred) ? listed.preferred : versions[0];
+  if (versions.length === 1) return applyImage(interaction, app, draft, versions[0], true, versions);
+  draft.payload = { ...draft.payload, imageVersions: versions, imagePreferred: preferred, imageSkipped: false };
   keep(app.repo, draft);
-  return show(interaction, renderImageStep(draft.payload, listed.versions, listed.preferred, app.config.panelColor));
+  return show(interaction, renderImageStep(draft.payload, versions, preferred, app.config.panelColor));
 }
 
-function pickImage(interaction, app, draft) {
-  const version = interaction.values?.[0];
-  if (!draft.payload.imageVersions?.includes(version)) return show(interaction, notice("Escolha uma versão pronta da imagem.", app.config.panelColor));
-  draft.payload = { ...draft.payload, imageVersion: version, imageId: withGalleryVersion(app.config.azure.imageId, version) };
+function showImage(interaction, app, draft) {
+  const versions = draft.payload.imageVersions || [];
+  if (versions.length <= 1) return openNsg(interaction, app, draft);
+  return show(interaction, renderImageStep(draft.payload, versions, draft.payload.imagePreferred, app.config.panelColor));
+}
+
+function applyImage(interaction, app, draft, version, skipped, versions = draft.payload.imageVersions) {
+  const list = versions || [];
+  if (!list.includes(version)) {
+    if (list.length > 1) return show(interaction, renderImageStep(draft.payload, list, draft.payload.imagePreferred, app.config.panelColor));
+    return openImage(interaction, app, draft);
+  }
+  draft.payload = {
+    ...draft.payload,
+    imageVersions: list,
+    imagePreferred: skipped ? version : (draft.payload.imagePreferred || version),
+    imageVersion: version,
+    imageId: withGalleryVersion(app.config.azure.imageId, version),
+    imageSkipped: Boolean(skipped),
+  };
   keep(app.repo, draft);
   return askName(interaction, app, draft);
 }
@@ -273,8 +327,11 @@ async function cancel(interaction, app, draft) {
 
 async function launch(interaction, app, actor, draft) {
   const confirmation = app.repo.getConfirmation(draft.payload.confirmationId);
-  if (!confirmation || confirmation.action !== "criar-maquina" || confirmation.guildId !== interaction.guildId || confirmation.userId !== actor.id || confirmation.usedAt || confirmation.expiresAt <= Date.now()) {
-    return show(interaction, notice("A confirmação expirou. Abra a revisão de novo.", app.config.panelColor));
+  if (confirmation?.usedAt) {
+    return show(interaction, notice("A confirmação já foi usada.", app.config.panelColor));
+  }
+  if (!confirmation || confirmation.action !== "criar-maquina" || confirmation.guildId !== interaction.guildId || confirmation.userId !== actor.id || confirmation.expiresAt <= Date.now()) {
+    return openReview(interaction, app, draft, draft.payload.machineName);
   }
   if (!app.repo.consumeConfirmation(confirmation.id, Date.now())) {
     return show(interaction, notice("A confirmação expirou ou já foi usada.", app.config.panelColor));
@@ -315,7 +372,7 @@ async function launch(interaction, app, actor, draft) {
     if (problems.length) {
       const error = problems.join("\n");
       console.error(`Criar máquina [pré-checagem]: ${error}`);
-      await show(interaction, renderFailure(error, app.config.panelColor, null));
+      await show(interaction, renderFailure(error, app.config.panelColor, null, draft.id));
       await app.audit?.record?.({ guildId: interaction.guildId, actorId: actor.id, action: "criar_maquina", targetUserId: draft.payload.userId, machineName: draft.payload.machineName, detail: error });
       return true;
     }
@@ -328,7 +385,7 @@ async function launch(interaction, app, actor, draft) {
   });
   if (!result.ok) {
     console.error(`Criar máquina [${result.step || "falha"}] ${result.code || ""}: ${result.message || result.error}`);
-    await show(interaction, renderFailure(result.error, app.config.panelColor, result.cleanupFailed));
+    await show(interaction, renderFailure(result.error, app.config.panelColor, result.cleanupFailed, draft.id));
     await app.audit?.record?.({ guildId: interaction.guildId, actorId: actor.id, action: "criar_maquina", targetUserId: draft.payload.userId, machineName: draft.payload.machineName, detail: `${result.step || "falha"} ${result.code || ""} ${result.error}`.slice(0, 500) });
     return true;
   }
@@ -348,7 +405,7 @@ async function launch(interaction, app, actor, draft) {
     }));
   } catch {
     await app.provisioner.cleanup?.({ ...result.state, vmCreated: true }).catch(() => {});
-    await show(interaction, renderFailure("Este membro já tem máquina. A VM criada foi removida.", app.config.panelColor, []));
+    await show(interaction, renderFailure("Este membro já tem máquina. A VM criada foi removida.", app.config.panelColor, [], draft.id));
     return true;
   }
   app.repo.deleteDraft(draft.id);

@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { createApp } from "../src/app.js";
+import { readConfig } from "../src/config.js";
+import { openDatabase } from "../src/db/database.js";
 import { createAzureProvisioner } from "../src/loja/azure.js";
 import { DEFAULT_GALLERY_IMAGE, preferVersion, withGalleryVersion } from "../src/loja/image.js";
 import { createMachine } from "../src/maquina/create.js";
 import { atlasNsgRules, chooseNsgs, nsgOptions } from "../src/maquina/nsg.js";
 import { autoThroughput, maxIopsForSize, maxThroughputForIops, validateDataDisk, azureErrorText } from "../src/maquina/limits.js";
 import { buildMachinePayload, defaultMachineName, sizeById, validMachineName } from "../src/maquina/payload.js";
+import { routeMachineComponent } from "../src/maquina/router.js";
 import { inspectModal } from "../src/panels/admin.js";
-import { nameModal } from "../src/maquina/panel.js";
+import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderImageStep, renderIopsStep, renderNameStep, renderNsgStep, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "../src/maquina/panel.js";
 
 test("disco v2 respeita IOPS, taxa e tamanho", () => {
   assert.equal(maxIopsForSize(4), 3000);
@@ -173,4 +180,112 @@ test("a lista de NSG fica na região e as regras padrão abrem o Moonlight", asy
     compute: { galleryImageVersions: { async get() { return { provisioningState: "Succeeded" }; } } },
   }).preflight({ group: "Ignix", vnet: "vnet", subnet: "snet", nsgMode: "padrao", nsg: "", location: "brazilsouth", imageId: DEFAULT_GALLERY_IMAGE });
   assert.match(checked.join(" "), /grupo de recursos não existe/);
+});
+
+test("continuar aceita a sugestão e a única imagem não trava o menu", async () => {
+  const draftId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const views = [
+    renderSizeStep({ id: draftId, userId: "1" }, 1),
+    renderSpotStep({ id: draftId, sizeLabel: "T4" }, 1),
+    renderDiskStep({ id: draftId }, 1),
+    renderGbStep({ id: draftId }, 1),
+    renderIopsStep({ id: draftId }, 1),
+    renderThroughputStep({ id: draftId, iops: 3000 }, 1),
+    renderZoneStep({ id: draftId }, 1, "2"),
+    renderNsgStep({ id: draftId }, [], { defaultName: "Ignix-nsg", accent: 1 }),
+    renderImageStep({ id: draftId }, ["2.0.0"], "2.0.0", 1),
+    renderImageStep({ id: draftId }, ["1.0.0", "2.0.0"], "2.0.0", 1),
+  ];
+  for (const view of views) {
+    const raw = JSON.stringify(view);
+    assert.equal(raw.includes('"default":true'), false);
+    assert.match(raw, /Continuar/);
+    assert.match(raw, /Voltar/);
+  }
+  assert.match(JSON.stringify(renderNameStep({ id: draftId, suggestedName: "ignix-ana-ab" }, 1)), /Usar sugestão/);
+  assert.match(JSON.stringify(renderReview({ id: draftId, userId: "1", sizeLabel: "T4", spot: true, diskMode: "premium", nsgLabel: "Ignix-nsg", machineName: "ignix-ana-ab" }, 1, { location: "brazilsouth", image: "Atlas2.0/2.0.0", version: "2.0.0", expires: 1 })), /Versão: 2\.0\.0/);
+  assert.match(JSON.stringify(renderFailure("falhou", 1, [], draftId)), /Revisar/);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlas-maquina-"));
+  const repo = openDatabase(dir);
+  const config = readConfig({
+    DISCORD_TOKEN: "token",
+    DISCORD_CLIENT_ID: "100000000000000003",
+    ALLOWED_GUILD_IDS: "100000000000000001",
+    CREDENTIALS_KEY: "chave-de-teste-atlas",
+    AZURE_TENANT_ID: "tenant",
+    AZURE_CLIENT_ID: "client",
+    AZURE_CLIENT_SECRET: "secret",
+    AZURE_SUBSCRIPTION_ID: "02daccdd-f01a-4b29-adad-3322cba43a21",
+    AZURE_RESOURCE_GROUP: "Ignix",
+    AZURE_VIRTUAL_NETWORK: "vnet",
+    AZURE_SUBNET: "snet",
+    AZURE_NSG: "Ignix-nsg",
+    AZURE_ZONE: "2",
+    AZURE_IMAGE_ID: DEFAULT_GALLERY_IMAGE,
+  });
+  const app = createApp({ config, repo, infra: { configured: true, async listVms() { return []; } } });
+  let versions = ["2.0.0"];
+  app.provisioner.listNsgs = async () => [];
+  app.provisioner.listImageVersions = async () => ({ ok: true, versions, preferred: versions.includes("2.0.0") ? "2.0.0" : versions[0] });
+  const guildId = "100000000000000001";
+  const actorId = "100000000000000002";
+  const save = (id, payload) => repo.saveDraft({ id, guildId, actorId, kind: "maquina", expiresAt: Date.now() + 30 * 60 * 1000, payload });
+  const press = async (customId, values = []) => {
+    const interaction = {
+      customId,
+      guildId,
+      user: { id: actorId },
+      member: { permissions: { bitfield: 8n }, roles: { cache: new Map() } },
+      guild: { ownerId: actorId },
+      deferred: false,
+      replied: false,
+      values,
+      async deferUpdate() { this.deferred = true; },
+      async deferReply() { this.deferred = true; },
+      async editReply(body) { this.last = body; },
+      async reply(body) { this.replied = true; this.last = body; },
+      async showModal() {},
+    };
+    assert.equal(await routeMachineComponent(interaction, app), true);
+    return JSON.stringify(interaction.last);
+  };
+
+  save(draftId, { id: draftId, userId: "100000000000000009", username: "ana" });
+  assert.match(await press(`atlas:maquina:ok:size:${draftId}`), /Capacidade/);
+  assert.match(await press(`atlas:maquina:back:spot:${draftId}`), /Tamanho/);
+  assert.match(await press(`atlas:maquina:ok:size:${draftId}`), /Sugestão: Spot/);
+  assert.match(await press(`atlas:maquina:ok:spot:${draftId}`), /SSD Premium/);
+  assert.match(await press(`atlas:maquina:ok:disk:${draftId}`), /Firewall/);
+  const named = await press(`atlas:maquina:ok:nsg:${draftId}`);
+  assert.match(named, /Nome/);
+  assert.equal(named.includes("atlas:maquina:image:"), false);
+  assert.equal(repo.getDraft(draftId).payload.imageVersion, "2.0.0");
+  assert.match(repo.getDraft(draftId).payload.imageId, /\/versions\/2\.0\.0$/);
+  assert.match(await press(`atlas:maquina:auto:${draftId}`), /Versão: 2\.0\.0/);
+
+  const dataId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  save(dataId, { id: dataId, userId: "100000000000000009", username: "ana", diskMode: "v2", sizeId: "t4-4", sizeLabel: "T4 4 vCPUs" });
+  assert.match(await press(`atlas:maquina:ok:gb:${dataId}`), /3000/);
+  assert.match(await press(`atlas:maquina:ok:iops:${dataId}`), /125 MB\/s/);
+  assert.match(await press(`atlas:maquina:ok:flow:${dataId}`), /zona 2/);
+  assert.match(await press(`atlas:maquina:ok:zone:${dataId}`), /Firewall/);
+  await press(`atlas:maquina:ok:nsg:${dataId}`);
+  const data = repo.getDraft(dataId).payload;
+  assert.equal(data.dataGb, 128);
+  assert.equal(data.iops, 3000);
+  assert.equal(data.throughput, 125);
+  assert.equal(data.zone, "2");
+  assert.equal(data.imageSkipped, true);
+
+  versions = ["1.0.0", "2.0.0"];
+  const imageId = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  save(imageId, { id: imageId, userId: "100000000000000009", username: "ana", diskMode: "premium", nsgMode: "padrao", nsgs: [] });
+  const imageStep = await press(`atlas:maquina:ok:nsg:${imageId}`);
+  assert.match(imageStep, /Sugestão: 2\.0\.0/);
+  assert.equal(imageStep.includes('"default":true'), false);
+  assert.match(imageStep, /atlas:maquina:ok:image:/);
+  assert.match(await press(`atlas:maquina:ok:image:${imageId}`), /Nome/);
+  assert.equal(repo.getDraft(imageId).payload.imageVersion, "2.0.0");
+  repo.close();
 });
