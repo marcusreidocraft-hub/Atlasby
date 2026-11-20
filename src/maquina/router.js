@@ -6,7 +6,8 @@ import { isAdmin } from "../services/admin.js";
 import { createMachine } from "./create.js";
 import { autoThroughput, validateDataDisk } from "./limits.js";
 import { defaultMachineName, sizeById, validMachineName } from "./payload.js";
-import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderIopsStep, renderMemberStep, renderNameStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "./panel.js";
+import { atlasNsgRules, chooseNsgs, samePlace } from "./nsg.js";
+import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderIopsStep, renderMemberStep, renderNameStep, renderNsgStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "./panel.js";
 
 const DRAFT_MS = 30 * 60 * 1000;
 
@@ -54,7 +55,7 @@ export async function routeMachineCommand(interaction, app, actor) {
 export async function routeMachineComponent(interaction, app) {
   const id = interaction.customId ?? "";
   const modal = /^atlas:modal:maquina:([0-9a-f-]{36})$/.exec(id);
-  const step = /^atlas:maquina:(user|size|spot|disk|gb|iops|flow|zone|auto|name|go|no):([0-9a-f-]{36})$/.exec(id);
+  const step = /^atlas:maquina:(user|size|spot|disk|gb|iops|flow|zone|nsg|auto|name|go|no):([0-9a-f-]{36})$/.exec(id);
   if (!modal && !step) return false;
   const actor = actorFrom(interaction);
   if (!isAdmin(actor, app.config)) {
@@ -89,6 +90,7 @@ export async function routeMachineComponent(interaction, app) {
   if (kind === "iops") return pickIops(interaction, app, draft);
   if (kind === "flow") return pickFlow(interaction, app, draft);
   if (kind === "zone") return pickZone(interaction, app, draft);
+  if (kind === "nsg") return pickNsg(interaction, app, draft);
   if (kind === "auto") return useSuggested(interaction, app, draft);
   if (kind === "no") return cancel(interaction, app, draft);
   if (kind === "go") return launch(interaction, app, actor, draft);
@@ -128,7 +130,7 @@ function pickDisk(interaction, app, draft) {
   if (value !== "premium" && value !== "v2") return show(interaction, notice("Escolha o tipo de disco.", app.config.panelColor));
   draft.payload = { ...draft.payload, diskMode: value };
   keep(app.repo, draft);
-  if (value === "premium") return askName(interaction, app, draft);
+  if (value === "premium") return openNsg(interaction, app, draft);
   return show(interaction, renderGbStep(draft.payload, app.config.panelColor));
 }
 
@@ -164,6 +166,42 @@ function pickZone(interaction, app, draft) {
   const zone = interaction.values?.[0];
   if (!["1", "2", "3"].includes(zone)) return show(interaction, notice("Escolha a zona 1, 2 ou 3.", app.config.panelColor));
   draft.payload = { ...draft.payload, zone };
+  keep(app.repo, draft);
+  return openNsg(interaction, app, draft);
+}
+
+async function openNsg(interaction, app, draft) {
+  let listed = [];
+  try {
+    listed = await app.provisioner.listNsgs();
+  } catch {
+    listed = [];
+  }
+  const nsgs = chooseNsgs(listed, { location: app.config.azure.location, resourceGroup: app.config.azure.resourceGroup });
+  draft.payload = { ...draft.payload, nsgs };
+  keep(app.repo, draft);
+  return show(interaction, renderNsgStep(draft.payload, nsgs, { defaultName: app.config.azure.nsg, accent: app.config.panelColor }));
+}
+
+function pickNsg(interaction, app, draft) {
+  const value = interaction.values?.[0];
+  const location = app.config.azure.location;
+  if (value === "padrao") {
+    const found = (draft.payload.nsgs || []).find((item) => item.name === app.config.azure.nsg);
+    if (found && !samePlace(found.location, location)) {
+      return show(interaction, notice("O NSG padrão está em outra região. Escolha um grupo da mesma região da VM.", app.config.panelColor));
+    }
+    draft.payload = { ...draft.payload, nsgMode: "padrao", nsgId: found?.id || "", nsgName: app.config.azure.nsg, nsgLabel: `${app.config.azure.nsg} · padrão` };
+  } else if (value === "criar") {
+    draft.payload = { ...draft.payload, nsgMode: "criar", nsgId: "", nsgName: "", nsgLabel: "Criar NSG Atlas" };
+  } else {
+    const index = Number(String(value || "").slice(2));
+    const chosen = draft.payload.nsgs?.[index];
+    if (!chosen || !samePlace(chosen.location, location)) {
+      return show(interaction, notice("Esse NSG não está na mesma região da VM.", app.config.panelColor));
+    }
+    draft.payload = { ...draft.payload, nsgMode: "existente", nsgId: chosen.id, nsgName: chosen.name, nsgLabel: `${chosen.name} · ${chosen.group}` };
+  }
   keep(app.repo, draft);
   return askName(interaction, app, draft);
 }
@@ -247,7 +285,10 @@ async function launch(interaction, app, actor, draft) {
     group: azure.resourceGroup,
     vnet: azure.virtualNetwork,
     subnet: azure.subnet,
-    nsg: azure.nsg,
+    nsg: draft.payload.nsgName || azure.nsg,
+    nsgId: draft.payload.nsgId || "",
+    nsgMode: draft.payload.nsgMode || "padrao",
+    nsgRules: atlasNsgRules(app.config.agentPort),
     imageId: image.id,
     osGb: Math.min(512, azure.maxOsDiskGb),
   }, app.provisioner, {

@@ -30,6 +30,10 @@ export async function createMachine(spec, provisioner, hooks = {}) {
     await report("rede");
     state.ipId = await provisioner.ip(state);
     touched.ipId = state.ipId;
+    if (spec.nsgMode === "criar") {
+      state.nsgId = await provisioner.nsg(state);
+      touched.nsgCreated = true;
+    }
     await report("nic");
     state.nicId = await provisioner.nic(state);
     touched.nicId = state.nicId;

@@ -25,7 +25,7 @@ export function validMachineName(value) {
 export function machineNames(seed, machineName) {
   const names = resourceNames(seed);
   const short = names.vm.replace(/^atlas/, "").slice(0, 6) || "vm";
-  return { ...names, vm: machineName, data: `atlas-dd-${short}`.slice(0, 20) };
+  return { ...names, vm: machineName, data: `atlas-dd-${short}`.slice(0, 20), nsg: `atlas-nsg-${short}`.slice(0, 24) };
 }
 
 export function buildMachinePayload(input) {

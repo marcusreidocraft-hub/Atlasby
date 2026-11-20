@@ -52,7 +52,7 @@ export function createAzureProvisioner(config, deps = {}) {
     async nic(state) {
       const client = await network();
       const subnet = idOf(config.azure.subscriptionId, state.group, "Microsoft.Network", `virtualNetworks/${state.vnet}`, `subnets/${state.subnet}`);
-      const nsg = idOf(config.azure.subscriptionId, state.group, "Microsoft.Network", `networkSecurityGroups/${state.nsg}`);
+      const nsg = state.nsgId || idOf(config.azure.subscriptionId, state.group, "Microsoft.Network", `networkSecurityGroups/${state.nsg}`);
       const created = await client.networkInterfaces.beginCreateOrUpdateAndWait(state.group, state.names.nic, {
         location: state.location,
         ipConfigurations: [{ name: "ipconfig1", subnet: { id: subnet }, publicIPAddress: { id: state.ipId } }],
@@ -84,6 +84,30 @@ export function createAzureProvisioner(config, deps = {}) {
       const created = await client.virtualMachines.beginCreateOrUpdateAndWait(state.group, state.names.vm, parameters);
       return created.id;
     },
+    async listNsgs() {
+      const client = await network();
+      const rows = [];
+      let page = client.networkSecurityGroups.listAll();
+      if (page && typeof page.then === "function") page = await page;
+      for await (const nsg of page) {
+        const id = nsg.id || "";
+        rows.push({
+          id,
+          name: nsg.name || "",
+          group: /resourceGroups\/([^/]+)/i.exec(id)?.[1] || "",
+          location: nsg.location || "",
+        });
+      }
+      return rows;
+    },
+    async nsg(state) {
+      const client = await network();
+      const created = await client.networkSecurityGroups.beginCreateOrUpdateAndWait(state.group, state.names.nsg, {
+        location: state.location,
+        securityRules: state.nsgRules,
+      });
+      return created.id;
+    },
     async disk(state) {
       const client = await compute();
       const created = await client.disks.beginCreateOrUpdateAndWait(state.group, state.names.data, buildDataDisk({
@@ -107,6 +131,7 @@ export function createAzureProvisioner(config, deps = {}) {
       if (state.dataDiskId) jobs.push(() => computeClient.disks.beginDeleteAndWait(state.group, state.names.data));
       if (state.nicId) jobs.push(() => networkClient.networkInterfaces.beginDeleteAndWait(state.group, state.names.nic));
       if (state.ipId) jobs.push(() => networkClient.publicIPAddresses.beginDeleteAndWait(state.group, state.names.ip));
+      if (state.nsgCreated) jobs.push(() => networkClient.networkSecurityGroups.beginDeleteAndWait(state.group, state.names.nsg));
       const failed = [];
       for (const job of jobs) {
         try { await job(); } catch { failed.push("recurso"); }

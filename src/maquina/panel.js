@@ -1,6 +1,7 @@
 import { ActionRowBuilder, ButtonStyle, ContainerBuilder, LabelBuilder, ModalBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle, UserSelectMenuBuilder } from "discord.js";
 import { press, separator, text, V2_EPHEMERAL } from "../panels/ui.js";
 import { DATA_SIZES, IOPS_CHOICES, autoThroughput } from "./limits.js";
+import { nsgOptions } from "./nsg.js";
 import { MACHINE_SIZES } from "./payload.js";
 import { progressMark } from "./create.js";
 
@@ -94,6 +95,15 @@ export function renderThroughputStep(draft, accent) {
   ]);
 }
 
+export function renderNsgStep(draft, nsgs, { defaultName, accent }) {
+  return shell(accent, [
+    "## Firewall",
+    "Escolha o grupo de segurança da placa de rede. A lista é da mesma região da VM.",
+  ], [
+    select(`atlas:maquina:nsg:${draft.id}`, "Grupo de segurança", nsgOptions({ nsgs, defaultName })),
+  ]);
+}
+
 export function renderZoneStep(draft, accent, hostZone) {
   return shell(accent, [
     "## Zona",
@@ -139,6 +149,7 @@ export function renderReview(draft, accent, extra) {
     `Tamanho: ${draft.sizeLabel}`,
     `Capacidade: ${draft.spot ? "Spot" : "Normal"}`,
     `Disco: ${disk}`,
+    `NSG: ${draft.nsgLabel || "não escolhido"}`,
     `Nome: \`${draft.machineName}\``,
     `Região: ${extra.location}`,
     `Imagem: ${extra.image}`,

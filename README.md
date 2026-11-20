@@ -110,7 +110,7 @@ As metas padrão são 10 convites = 6 horas, 20 = 12 horas, 30 = 24 horas, 40 = 
 
 ## Criar máquina
 
-Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4, Spot ou Normal, o disco e, no SSD v2, tamanho, IOPS, taxa e zona. A revisão expira no mesmo prazo das outras confirmações. A criação mostra o andamento e, no fim, cadastra o cliente com plano mensal. Se a Azure recusar, o bot apaga o que chegou a criar. O aplicativo precisa da função Contributor no grupo de recursos ou na assinatura.
+Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4, Spot ou Normal, o disco, o NSG da mesma região e, no SSD v2, tamanho, IOPS, taxa e zona. Dá para usar o NSG do ambiente, escolher um existente ou criar o NSG da Atlas com Moonlight, RDP e o agente de PIN. A revisão expira no mesmo prazo das outras confirmações. A criação mostra o andamento e, no fim, cadastra o cliente com plano mensal. Se a Azure recusar, o bot apaga o que chegou a criar. O aplicativo precisa da função Contributor no grupo de recursos ou na assinatura.
 
 ## O que o cliente vê
 

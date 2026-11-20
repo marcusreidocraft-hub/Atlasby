@@ -3,6 +3,7 @@ import test from "node:test";
 import { createAzureProvisioner } from "../src/loja/azure.js";
 import { DEFAULT_GALLERY_IMAGE } from "../src/loja/image.js";
 import { createMachine } from "../src/maquina/create.js";
+import { atlasNsgRules, chooseNsgs, nsgOptions } from "../src/maquina/nsg.js";
 import { autoThroughput, maxIopsForSize, maxThroughputForIops, validateDataDisk, azureErrorText } from "../src/maquina/limits.js";
 import { buildMachinePayload, defaultMachineName, sizeById, validMachineName } from "../src/maquina/payload.js";
 import { inspectModal } from "../src/panels/admin.js";
@@ -111,4 +112,55 @@ test("o payload da VM usa a galeria, zona e disco v2", async () => {
   assert.equal(seen[3][2].priority, "Spot");
   assert.equal(seen[3][2].storageProfile.imageReference.id, DEFAULT_GALLERY_IMAGE);
   assert.deepEqual(deleted, ["atlas-ana-01", "atlas-dd-pedido", "atlas-nic-pedido1", "atlas-ip-pedido1"]);
+});
+
+test("a lista de NSG fica na região e as regras padrão abrem o Moonlight", async () => {
+  const rules = atlasNsgRules(7474);
+  assert.deepEqual(rules.find((rule) => rule.name === "moonlight-tcp").destinationPortRanges, ["47984", "47989", "48010"]);
+  assert.deepEqual(rules.find((rule) => rule.name === "moonlight-udp").destinationPortRanges, ["47998-48000", "48002", "48010"]);
+  assert.equal(rules.find((rule) => rule.name === "rdp").destinationPortRange, "3389");
+  assert.equal(rules.find((rule) => rule.name === "agente-pin").destinationPortRange, "7474");
+  const many = [
+    { name: "leste", group: "outro", location: "eastus", id: "/subscriptions/s/resourceGroups/outro/providers/Microsoft.Network/networkSecurityGroups/leste" },
+    ...Array.from({ length: 30 }, (_, index) => ({ name: `fora-${index}`, group: "outro", location: "brazilsouth", id: `/subscriptions/s/resourceGroups/outro/providers/Microsoft.Network/networkSecurityGroups/fora-${index}` })),
+    { name: "Atlas-nsg", group: "REIDO7", location: "Brazil South", id: "/subscriptions/s/resourceGroups/REIDO7/providers/Microsoft.Network/networkSecurityGroups/Atlas-nsg" },
+  ];
+  const chosen = chooseNsgs(many, { location: "brazilsouth", resourceGroup: "REIDO7", limit: 23 });
+  assert.equal(chosen.every((item) => item.group === "REIDO7"), true);
+  assert.equal(chosen.some((item) => item.location === "eastus"), false);
+  const options = nsgOptions({ nsgs: chosen, defaultName: "Atlas-nsg" });
+  assert.equal(options[0].label, "Padrão");
+  assert.equal(options[1].label, "Criar NSG Atlas");
+  assert.ok(options.length <= 25);
+  const recorded = [];
+  const provisioner = createAzureProvisioner({ azure: { subscriptionId: "sub" } }, {
+    network: {
+      networkInterfaces: {
+        async beginCreateOrUpdateAndWait(_group, _name, body) {
+          recorded.push(body.networkSecurityGroup.id);
+          return { id: "/nic/1" };
+        },
+      },
+      networkSecurityGroups: {
+        async listAll() {
+          return [{
+            name: "Atlas-nsg",
+            location: "brazilsouth",
+            id: "/subscriptions/sub/resourceGroups/REIDO7/providers/Microsoft.Network/networkSecurityGroups/Atlas-nsg",
+          }];
+        },
+        async beginCreateOrUpdateAndWait(_group, name, body) {
+          recorded.push([name, body.securityRules.length]);
+          return { id: "/nsg/novo" };
+        },
+      },
+    },
+  });
+  const listed = await provisioner.listNsgs();
+  assert.equal(listed[0].group, "REIDO7");
+  await provisioner.nic({ group: "REIDO7", location: "brazilsouth", names: { nic: "nic" }, vnet: "vnet", subnet: "snet", nsgId: listed[0].id, ipId: "/ip" });
+  assert.equal(recorded[0], listed[0].id);
+  const created = await provisioner.nsg({ group: "REIDO7", location: "brazilsouth", names: { nsg: "atlas-nsg-1" }, nsgRules: rules });
+  assert.equal(created, "/nsg/novo");
+  assert.equal(recorded[1][1], 4);
 });
