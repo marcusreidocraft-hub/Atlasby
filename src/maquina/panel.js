@@ -117,6 +117,19 @@ export function renderZoneStep(draft, accent, hostZone) {
   ]);
 }
 
+export function renderImageStep(draft, versions, preferred, accent) {
+  return shell(accent, [
+    "## Imagem",
+    preferred ? `Sugestão: ${preferred}` : "Escolha a versão pronta da galeria.",
+  ], [
+    select(`atlas:maquina:image:${draft.id}`, "Versão", versions.map((version) => {
+      const row = { label: version, value: version, description: version === "2.0.0" ? "Versão pedida" : "Pronta" };
+      if (version === preferred) row.default = true;
+      return row;
+    })),
+  ]);
+}
+
 export function renderNameStep(draft, accent) {
   return shell(accent, [
     "## Nome",
@@ -153,8 +166,9 @@ export function renderReview(draft, accent, extra) {
     `Nome: \`${draft.machineName}\``,
     `Região: ${extra.location}`,
     `Imagem: ${extra.image}`,
+    extra.version ? `Versão: ${extra.version}` : "",
     `A confirmação expira <t:${extra.expires}:R>.`,
-  ].join("\n")));
+  ].filter(Boolean).join("\n")));
   root.addSeparatorComponents(separator());
   root.addActionRowComponents(new ActionRowBuilder().addComponents(
     press(`atlas:maquina:go:${draft.id}`, "Criar", ButtonStyle.Success),

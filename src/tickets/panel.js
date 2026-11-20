@@ -19,7 +19,7 @@ export function renderTicketDesk(settings) {
       .setCustomId(`atlas:ticket:open:${category.id}`)
       .setLabel("Abrir")
       .setStyle(ButtonStyle.Secondary)
-      .setEmoji(ticketEmojiObject(mark(settings, "abrir")));
+      .setEmoji(ticketEmojiObject(mark(settings, "abrir")) || "🎫");
     root.addSectionComponents(
       new SectionBuilder()
         .addTextDisplayComponents(text(`${mark(settings, category.id)} **${category.title}**\n${category.description}`))
@@ -71,12 +71,12 @@ export function renderTicketWelcome(ticket, settings, supportRoleId) {
 }
 
 export function adminSelect(ticketId, settings) {
-  const option = (value, label, description, slot) => ({
-    label,
-    value,
-    description,
-    emoji: ticketEmojiObject(mark(settings, slot)),
-  });
+  const option = (value, label, description, slot) => {
+    const row = { label, value, description };
+    const emoji = ticketEmojiObject(mark(settings, slot));
+    if (emoji) row.emoji = emoji;
+    return row;
+  };
   return new StringSelectMenuBuilder()
     .setCustomId(`atlas:ticket:menu:${ticketId}`)
     .setPlaceholder("Ações administrativas")

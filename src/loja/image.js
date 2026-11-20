@@ -6,6 +6,31 @@ export function isGalleryImage(value) {
   return GALLERY.test(String(value ?? "").trim());
 }
 
+export function parseGalleryImage(value) {
+  const match = /^\/subscriptions\/([^/]+)\/resourceGroups\/([^/]+)\/providers\/Microsoft\.Compute\/galleries\/([^/]+)\/images\/([^/]+)(?:\/versions\/([^/]+))?$/i.exec(String(value ?? "").trim());
+  if (!match) return null;
+  return { subscription: match[1], group: match[2], gallery: match[3], image: match[4], version: match[5] || "" };
+}
+
+export function withGalleryVersion(id, version) {
+  return `${String(id).replace(/\/versions\/[^/]+$/i, "")}/versions/${version}`;
+}
+
+export function preferVersion(versions) {
+  const list = [...(versions || [])].filter(Boolean);
+  if (list.includes("2.0.0")) return "2.0.0";
+  return list.sort((left, right) => {
+    const a = String(left).split(".").map(Number);
+    const b = String(right).split(".").map(Number);
+    const size = Math.max(a.length, b.length);
+    for (let index = 0; index < size; index += 1) {
+      const diff = (a[index] || 0) - (b[index] || 0);
+      if (diff) return diff;
+    }
+    return 0;
+  }).at(-1) || "";
+}
+
 export function resolveGalleryImage({ storedId = "", storedKind = "", envId = "" } = {}) {
   if (storedKind === "snapshot" && storedId) return { kind: "snapshot", id: storedId };
   const chosen = [storedId, envId, DEFAULT_GALLERY_IMAGE].map((item) => String(item ?? "").trim()).find((item) => isGalleryImage(item));

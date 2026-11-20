@@ -28,12 +28,20 @@ export function withTimeout(work, ms) {
   });
 }
 
-function failureCode(error) {
+export function classifyAzure(error) {
+  const blob = `${error?.code || ""} ${error?.statusCode || ""} ${error?.message || ""}`;
+  if (/ResourceGroupNotFound|ResourceNotFound/i.test(blob)) return "missing";
+  if (/AuthorizationFailed/i.test(blob) || error?.statusCode === 403) return "forbidden";
   if (error?.code === "timeout") return "timeout";
-  const status = error?.statusCode ?? error?.status;
-  if (status === 403 || error?.code === "AuthorizationFailed") return "forbidden";
   return "failed";
 }
+
+function failureCode(error) {
+  return classifyAzure(error);
+}
+
+export const MISSING_VM = "A máquina deste cliente não foi encontrada na assinatura atual. Use /editar-cliente para atualizar.";
+const MISSING_WAIT = 15 * 60 * 1000;
 
 function powerFromView(view) {
   const code = (view?.statuses ?? []).find((status) => String(status.code ?? "").startsWith("PowerState/"))?.code ?? "";
@@ -91,6 +99,22 @@ export function createInfrastructure(config, deps = {}) {
   let networkClient;
   let vmCache = null;
   const machineCache = new Map();
+  const missingUntil = new Map();
+  const missingLogged = new Set();
+
+  function remembered(infraId) {
+    const until = missingUntil.get(infraId);
+    if (until && clock() < until) return { mode: "missing", reason: "missing" };
+    return null;
+  }
+
+  function rememberMissing(infraId, error) {
+    missingUntil.set(infraId, clock() + MISSING_WAIT);
+    if (missingLogged.has(infraId)) return;
+    missingLogged.add(infraId);
+    const code = error?.code || classifyAzure(error);
+    console.warn(`Azure: ${code} em ${infraId}. Nova consulta só depois do intervalo.`);
+  }
 
   async function tokenCredential() {
     if (deps.credential) return deps.credential;
@@ -143,7 +167,13 @@ export function createInfrastructure(config, deps = {}) {
       const client = await compute();
       return await withTimeout(() => work(client, target), ms);
     } catch (error) {
-      throw Object.assign(new Error("azure"), { code: failureCode(error) });
+      const code = failureCode(error);
+      if (code === "missing" || code === "forbidden") {
+        rememberMissing(infraId, error);
+        return { mode: "missing", reason: code };
+      }
+      console.error(`Azure: ${code} em ${infraId}. ${String(error?.message || "erro").split("\n")[0].slice(0, 240)}`);
+      throw Object.assign(new Error("azure"), { code });
     }
   }
 
@@ -169,17 +199,29 @@ export function createInfrastructure(config, deps = {}) {
         vmCache = { at: clock(), vms };
         return vms;
       } catch (error) {
-        throw Object.assign(error instanceof Error ? error : new Error("azure"), { code: failureCode(error) });
+        const code = failureCode(error);
+        console.warn(`Lista de VMs: ${code}. ${String(error?.message || "").split("\n")[0].slice(0, 180)}`);
+        throw Object.assign(new Error(code === "missing" ? MISSING_VM : "azure"), { code });
       }
     },
     async readMachine(infraId) {
       if (!config.azure.configured) return null;
       const target = parseVmResourceId(infraId);
       if (!target) return null;
+      if (remembered(infraId)) return { missing: true };
       const cached = machineCache.get(infraId);
       if (cached && clock() - cached.at < cacheMs) return cached.value;
       const client = await compute();
-      const vm = await withTimeout(() => client.virtualMachines.get(target.resourceGroup, target.name), readMs);
+      let vm;
+      try {
+        vm = await withTimeout(() => client.virtualMachines.get(target.resourceGroup, target.name), readMs);
+      } catch (error) {
+        if (classifyAzure(error) === "missing" || classifyAzure(error) === "forbidden") {
+          rememberMissing(infraId, error);
+          return { missing: true };
+        }
+        throw error;
+      }
       let power = null;
       try {
         const view = await withTimeout(() => client.virtualMachines.instanceView(target.resourceGroup, target.name), readMs);
@@ -199,6 +241,8 @@ export function createInfrastructure(config, deps = {}) {
       return value;
     },
     async readPower(infraId) {
+      const skipped = remembered(infraId);
+      if (skipped) return skipped;
       const result = await azureCall(infraId, readMs, async (client, target) => {
         const view = await client.virtualMachines.instanceView(target.resourceGroup, target.name);
         return { mode: "azure", status: powerFromView(view) };
@@ -206,6 +250,8 @@ export function createInfrastructure(config, deps = {}) {
       return result;
     },
     async setPower(infraId, desired) {
+      const skipped = remembered(infraId);
+      if (skipped) return skipped;
       return azureCall(infraId, writeMs, async (client, target) => {
         if (desired === "ligada") await client.virtualMachines.beginStartAndWait(target.resourceGroup, target.name);
         else await client.virtualMachines.beginDeallocateAndWait(target.resourceGroup, target.name);
@@ -213,6 +259,8 @@ export function createInfrastructure(config, deps = {}) {
       });
     },
     async format(infraId, image = null) {
+      const skipped = remembered(infraId);
+      if (skipped) return skipped;
       if (!config.azure.configured) return manual("unconfigured");
       const chosen = image?.kind === "snapshot" && image.id
         ? image
@@ -272,6 +320,7 @@ export function createInfrastructure(config, deps = {}) {
 }
 
 export function providerNotice(result, action) {
+  if (result.mode === "missing" || result.reason === "missing") return MISSING_VM;
   if (result.mode === "azure") {
     if (action === "format") return "O disco do sistema foi recriado a partir da imagem. A VM ficou desligada.";
     return result.status === "ligada" ? "A VM está ligada." : "A VM está desligada.";
@@ -282,6 +331,7 @@ export function providerNotice(result, action) {
 }
 
 export function providerError(error) {
+  if (error?.code === "missing") return MISSING_VM;
   if (error?.code === "timeout") return "A Azure não respondeu a tempo. Nada foi concluído. Use Atualizar para consultar de novo.";
   if (error?.code === "forbidden") return "O aplicativo não tem permissão para operar esta VM. Nada foi concluído.";
   return "A Azure recusou a operação. Nada foi concluído.";

@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { actorFrom, present } from "../components/reply.js";
-import { resolveGalleryImage } from "../loja/image.js";
+import { resolveGalleryImage, withGalleryVersion } from "../loja/image.js";
 import { notice, V2_EPHEMERAL } from "../panels/ui.js";
 import { isAdmin } from "../services/admin.js";
 import { createMachine } from "./create.js";
 import { autoThroughput, validateDataDisk } from "./limits.js";
 import { defaultMachineName, sizeById, validMachineName } from "./payload.js";
 import { atlasNsgRules, chooseNsgs, samePlace } from "./nsg.js";
-import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderIopsStep, renderMemberStep, renderNameStep, renderNsgStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "./panel.js";
+import { nameModal, renderDiskStep, renderFailure, renderGbStep, renderImageStep, renderIopsStep, renderMemberStep, renderNameStep, renderNsgStep, renderProgress, renderReady, renderReview, renderSizeStep, renderSpotStep, renderThroughputStep, renderZoneStep } from "./panel.js";
 
 const DRAFT_MS = 30 * 60 * 1000;
 
@@ -55,7 +55,7 @@ export async function routeMachineCommand(interaction, app, actor) {
 export async function routeMachineComponent(interaction, app) {
   const id = interaction.customId ?? "";
   const modal = /^atlas:modal:maquina:([0-9a-f-]{36})$/.exec(id);
-  const step = /^atlas:maquina:(user|size|spot|disk|gb|iops|flow|zone|nsg|auto|name|go|no):([0-9a-f-]{36})$/.exec(id);
+  const step = /^atlas:maquina:(user|size|spot|disk|gb|iops|flow|zone|nsg|image|auto|name|go|no):([0-9a-f-]{36})$/.exec(id);
   if (!modal && !step) return false;
   const actor = actorFrom(interaction);
   if (!isAdmin(actor, app.config)) {
@@ -91,6 +91,7 @@ export async function routeMachineComponent(interaction, app) {
   if (kind === "flow") return pickFlow(interaction, app, draft);
   if (kind === "zone") return pickZone(interaction, app, draft);
   if (kind === "nsg") return pickNsg(interaction, app, draft);
+  if (kind === "image") return pickImage(interaction, app, draft);
   if (kind === "auto") return useSuggested(interaction, app, draft);
   if (kind === "no") return cancel(interaction, app, draft);
   if (kind === "go") return launch(interaction, app, actor, draft);
@@ -203,6 +204,22 @@ function pickNsg(interaction, app, draft) {
     draft.payload = { ...draft.payload, nsgMode: "existente", nsgId: chosen.id, nsgName: chosen.name, nsgLabel: `${chosen.name} · ${chosen.group}` };
   }
   keep(app.repo, draft);
+  return openImage(interaction, app, draft);
+}
+
+async function openImage(interaction, app, draft) {
+  const listed = await app.provisioner.listImageVersions(app.config.azure.imageId);
+  if (!listed.ok) return show(interaction, notice(listed.error, app.config.panelColor));
+  draft.payload = { ...draft.payload, imageVersions: listed.versions };
+  keep(app.repo, draft);
+  return show(interaction, renderImageStep(draft.payload, listed.versions, listed.preferred, app.config.panelColor));
+}
+
+function pickImage(interaction, app, draft) {
+  const version = interaction.values?.[0];
+  if (!draft.payload.imageVersions?.includes(version)) return show(interaction, notice("Escolha uma versão pronta da imagem.", app.config.panelColor));
+  draft.payload = { ...draft.payload, imageVersion: version, imageId: withGalleryVersion(app.config.azure.imageId, version) };
+  keep(app.repo, draft);
   return askName(interaction, app, draft);
 }
 
@@ -242,7 +259,8 @@ function openReview(interaction, app, draft, machineName) {
   const image = resolveGalleryImage({ envId: app.config.azure.imageId });
   return show(interaction, renderReview(draft.payload, app.config.panelColor, {
     location: app.config.azure.location,
-    image: image.id.split("/").filter(Boolean).slice(-2).join("/"),
+    image: (draft.payload.imageId || image.id).split("/").filter(Boolean).slice(-2).join("/"),
+    version: draft.payload.imageVersion || "",
     expires: Math.floor(confirmation.expiresAt / 1000),
   }));
 }
@@ -265,11 +283,10 @@ async function launch(interaction, app, actor, draft) {
     return show(interaction, notice("Este membro já tem máquina. Nada foi criado.", app.config.panelColor));
   }
   const azure = app.config.azure;
-  const image = resolveGalleryImage({ envId: azure.imageId });
+  const image = resolveGalleryImage({ envId: draft.payload.imageId || azure.imageId });
   const chosen = sizeById(draft.payload.sizeId);
-  await show(interaction, renderProgress("rede", app.config.panelColor));
   if (!chosen) return show(interaction, notice("Escolha o tamanho de novo.", app.config.panelColor));
-  const result = await createMachine({
+  const spec = {
     seed: draft.id,
     machineName: draft.payload.machineName,
     sizeId: draft.payload.sizeId,
@@ -291,14 +308,28 @@ async function launch(interaction, app, actor, draft) {
     nsgRules: atlasNsgRules(app.config.agentPort),
     imageId: image.id,
     osGb: Math.min(512, azure.maxOsDiskGb),
-  }, app.provisioner, {
+    nsgGroup: /resourceGroups\/([^/]+)/i.exec(draft.payload.nsgId || "")?.[1] || azure.resourceGroup,
+  };
+  if (app.provisioner.preflight) {
+    const problems = await app.provisioner.preflight(spec);
+    if (problems.length) {
+      const error = problems.join("\n");
+      console.error(`Criar máquina [pré-checagem]: ${error}`);
+      await show(interaction, renderFailure(error, app.config.panelColor, null));
+      await app.audit?.record?.({ guildId: interaction.guildId, actorId: actor.id, action: "criar_maquina", targetUserId: draft.payload.userId, machineName: draft.payload.machineName, detail: error });
+      return true;
+    }
+  }
+  await show(interaction, renderProgress("rede", app.config.panelColor));
+  const result = await createMachine(spec, app.provisioner, {
     progress: async (step) => {
       await interaction.editReply({ components: renderProgress(step, app.config.panelColor).components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } }).catch(() => {});
     },
   });
   if (!result.ok) {
+    console.error(`Criar máquina [${result.step || "falha"}] ${result.code || ""}: ${result.message || result.error}`);
     await show(interaction, renderFailure(result.error, app.config.panelColor, result.cleanupFailed));
-    await app.audit?.record?.({ guildId: interaction.guildId, actorId: actor.id, action: "criar_maquina", targetUserId: draft.payload.userId, machineName: draft.payload.machineName, detail: result.error });
+    await app.audit?.record?.({ guildId: interaction.guildId, actorId: actor.id, action: "criar_maquina", targetUserId: draft.payload.userId, machineName: draft.payload.machineName, detail: `${result.step || "falha"} ${result.code || ""} ${result.error}`.slice(0, 500) });
     return true;
   }
   const { clientRow } = await import("./create.js");

@@ -48,7 +48,7 @@ export const EXTRAS = Object.freeze({
   gavel: "<:gavel:1568512706519109734>",
 });
 
-const CUSTOM = /^<(a)?:([A-Za-z0-9_]+):(\d+)>$/;
+const CUSTOM = /^<(a)?:([A-Za-z0-9_]{2,32}):(\d+)>$/;
 
 export function customEmojiId(token) {
   return CUSTOM.exec(String(token ?? ""))?.[3] ?? null;
@@ -80,10 +80,19 @@ export function resolveExtra(key, availableIds) {
   return usable(EXTRAS[key], availableIds);
 }
 
-export function buttonEmoji(token) {
-  const custom = CUSTOM.exec(String(token ?? ""));
-  if (!custom) return token || UNICODE.controle;
-  return { animated: Boolean(custom[1]), name: custom[2], id: custom[3] };
+export function isUnicodeEmoji(value) {
+  const text = String(value ?? "").trim();
+  if (!text || text.length > 16 || /[<:`]/.test(text)) return false;
+  return /\p{Extended_Pictographic}/u.test(text);
+}
+
+export function buttonEmoji(token, fallback) {
+  const raw = String(token ?? "").trim();
+  const custom = CUSTOM.exec(raw);
+  if (custom) return { animated: Boolean(custom[1]), name: custom[2], id: custom[3] };
+  if (isUnicodeEmoji(raw)) return raw;
+  if (fallback && isUnicodeEmoji(fallback)) return fallback;
+  return undefined;
 }
 
 export function createEmojiBook(config, repo) {

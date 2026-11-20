@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAzureProvisioner } from "../src/loja/azure.js";
-import { DEFAULT_GALLERY_IMAGE } from "../src/loja/image.js";
+import { DEFAULT_GALLERY_IMAGE, preferVersion, withGalleryVersion } from "../src/loja/image.js";
 import { createMachine } from "../src/maquina/create.js";
 import { atlasNsgRules, chooseNsgs, nsgOptions } from "../src/maquina/nsg.js";
 import { autoThroughput, maxIopsForSize, maxThroughputForIops, validateDataDisk, azureErrorText } from "../src/maquina/limits.js";
@@ -163,4 +163,14 @@ test("a lista de NSG fica na região e as regras padrão abrem o Moonlight", asy
   const created = await provisioner.nsg({ group: "REIDO7", location: "brazilsouth", names: { nsg: "atlas-nsg-1" }, nsgRules: rules });
   assert.equal(created, "/nsg/novo");
   assert.equal(recorded[1][1], 4);
+  assert.equal(preferVersion(["1.0.0", "2.0.0", "1.5.0"]), "2.0.0");
+  assert.equal(preferVersion(["1.0.0", "1.5.0"]), "1.5.0");
+  assert.match(withGalleryVersion(DEFAULT_GALLERY_IMAGE, "2.0.0"), /\/versions\/2\.0\.0$/);
+  const checked = await createAzureProvisioner({ azure: { subscriptionId: "02daccdd-f01a-4b29-adad-3322cba43a21" } }, {
+    network: {
+      virtualNetworks: { async get() { const error = new Error("Resource group missing"); error.code = "ResourceGroupNotFound"; throw error; } },
+    },
+    compute: { galleryImageVersions: { async get() { return { provisioningState: "Succeeded" }; } } },
+  }).preflight({ group: "Ignix", vnet: "vnet", subnet: "snet", nsgMode: "padrao", nsg: "", location: "brazilsouth", imageId: DEFAULT_GALLERY_IMAGE });
+  assert.match(checked.join(" "), /grupo de recursos não existe/);
 });

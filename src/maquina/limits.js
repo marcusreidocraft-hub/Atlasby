@@ -40,16 +40,19 @@ export function validateDataDisk({ gb, iops, throughput }) {
 export function azureErrorText(error) {
   const message = String(error?.message || error || "");
   const code = String(error?.code || "");
+  let lead = "Não foi possível criar a máquina.";
   if (/AuthorizationFailed|does not have authorization|AuthorizationPermissionMismatch/i.test(`${code} ${message}`)) {
-    return "O aplicativo não tem permissão para criar recursos nesta assinatura. Peça Contributor no grupo de recursos ou na assinatura.";
+    lead = "O aplicativo não tem permissão para criar recursos nesta assinatura. Peça Contributor no grupo de recursos ou na assinatura.";
+  } else if (/ResourceGroupNotFound/i.test(`${code} ${message}`)) {
+    lead = "O grupo de recursos não existe nesta assinatura.";
+  } else if (/ResourceNotFound/i.test(`${code} ${message}`)) {
+    lead = "Um recurso necessário não foi encontrado nesta assinatura.";
+  } else if (/QuotaExceeded|quota/i.test(`${code} ${message}`)) lead = "A cota desta família acabou.";
+  else if (/PremiumV2|does not support.*zone|AvailabilityZone/i.test(message)) lead = "Esta região ou zona não aceita disco Premium SSD v2.";
+  else if (/spot/i.test(message) && /capacity|unavailable|SkuNotAvailable|Overconstrained/i.test(message)) {
+    lead = "Não há capacidade Spot para este tamanho agora. Tente de novo ou escolha Normal.";
+  } else if (/SkuNotAvailable|ZonalAllocationFailed|OverconstrainedAllocation|Capacity/i.test(`${code} ${message}`)) {
+    lead = "Não há capacidade deste tamanho nesta região ou zona.";
   }
-  if (/QuotaExceeded|quota/i.test(`${code} ${message}`)) return "A cota desta família acabou.";
-  if (/PremiumV2|does not support.*zone|AvailabilityZone/i.test(message)) return "Esta região ou zona não aceita disco Premium SSD v2.";
-  if (/spot/i.test(message) && /capacity|unavailable|SkuNotAvailable|Overconstrained/i.test(message)) {
-    return "Não há capacidade Spot para este tamanho agora. Tente de novo ou escolha Normal.";
-  }
-  if (/SkuNotAvailable|ZonalAllocationFailed|OverconstrainedAllocation|Capacity/i.test(`${code} ${message}`)) {
-    return "Não há capacidade deste tamanho nesta região ou zona.";
-  }
-  return "Não foi possível criar a máquina.";
+  return message ? `${lead}\n${code}: ${message}` : lead;
 }

@@ -5,7 +5,7 @@ import { publicIpv4 } from "./sunshine.js";
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { phraseMatches } from "./fields.js";
-import { providerError, providerNotice } from "./provider.js";
+import { MISSING_VM, providerError, providerNotice } from "./provider.js";
 import { resolveGalleryImage } from "../loja/image.js";
 import { renderVmCardPng } from "./vm-card.js";
 
@@ -88,6 +88,7 @@ export function createClients({ config, repo, infra, audit, sealer, emojis, now,
       try {
         if (client.infraId && infra.readMachine) {
           const machine = await infra.readMachine(client.infraId);
+          if (machine?.missing) return viewOf(client, themeNow, MISSING_VM);
           const fresh = machine ? applyMachine(client, machine) : client;
           repo.updateClient({ ...fresh, now: now() });
           if (fresh.powerStatus === "ligada" || fresh.powerStatus === "desligada") repo.updatePower(client.id, fresh.powerStatus, now());

@@ -1,4 +1,4 @@
-import { buildDataDisk, buildSpecializedVm } from "./image.js";
+import { buildDataDisk, buildSpecializedVm, parseGalleryImage, preferVersion } from "./image.js";
 
 function idOf(subscription, group, provider, ...parts) {
   return `/subscriptions/${subscription}/resourceGroups/${group}/providers/${provider}/${parts.join("/")}`;
@@ -83,6 +83,70 @@ export function createAzureProvisioner(config, deps = {}) {
         });
       const created = await client.virtualMachines.beginCreateOrUpdateAndWait(state.group, state.names.vm, parameters);
       return created.id;
+    },
+    async listImageVersions(imageId) {
+      const parsed = parseGalleryImage(imageId);
+      if (!parsed) return { ok: false, error: "AZURE_IMAGE_ID não é um ID de galeria." };
+      if (parsed.subscription !== config.azure.subscriptionId) return { ok: false, error: "A galeria está em outra assinatura. Ajuste AZURE_IMAGE_ID." };
+      try {
+        const client = await compute();
+        const versions = [];
+        let page = client.galleryImageVersions.listByGalleryImage(parsed.group, parsed.gallery, parsed.image);
+        if (page && typeof page.then === "function") page = await page;
+        for await (const version of page) {
+          if (!version.provisioningState || version.provisioningState === "Succeeded") versions.push(version.name);
+        }
+        if (!versions.length) return { ok: false, error: "Nenhuma versão pronta dessa imagem." };
+        return { ok: true, versions, preferred: preferVersion(versions) };
+      } catch (error) {
+        const blob = `${error?.code || ""} ${error?.message || ""}`;
+        if (/ResourceGroupNotFound|ResourceNotFound/i.test(blob)) return { ok: false, error: "A imagem não foi encontrada nesta assinatura. Confira AZURE_IMAGE_ID." };
+        return { ok: false, error: `Não foi possível listar as versões da imagem. ${error?.code || "erro"}` };
+      }
+    },
+    async preflight(state) {
+      const problems = [];
+      const net = await network();
+      const comp = await compute();
+      const textOf = (error, fallback) => {
+        const blob = `${error?.code || ""} ${error?.message || ""}`;
+        if (/ResourceGroupNotFound/i.test(blob)) return "O grupo de recursos não existe nesta assinatura.";
+        if (/ResourceNotFound/i.test(blob)) return fallback;
+        return fallback;
+      };
+      try {
+        await net.virtualNetworks.get(state.group, state.vnet);
+      } catch (error) {
+        const text = textOf(error, "A rede virtual não existe no grupo de recursos.");
+        problems.push(text);
+        if (text.startsWith("O grupo de recursos")) return problems;
+      }
+      try {
+        await net.subnets.get(state.group, state.vnet, state.subnet);
+      } catch (error) {
+        problems.push(textOf(error, "A sub-rede não existe."));
+      }
+      if (state.nsgMode !== "criar" && state.nsg) {
+        try {
+          const nsg = await net.networkSecurityGroups.get(state.nsgGroup || state.group, state.nsg);
+          const place = (value) => String(value || "").toLowerCase().replace(/\s+/g, "");
+          if (nsg.location && place(nsg.location) !== place(state.location)) problems.push("O NSG está em outra região.");
+        } catch (error) {
+          problems.push(textOf(error, "O NSG não existe nesse grupo de recursos."));
+        }
+      }
+      const image = parseGalleryImage(state.imageId);
+      if (!image) problems.push("A imagem configurada não é um ID de galeria.");
+      else if (image.subscription !== config.azure.subscriptionId) problems.push("A imagem está em outra assinatura.");
+      else if (image.version) {
+        try {
+          const version = await comp.galleryImageVersions.get(image.group, image.gallery, image.image, image.version);
+          if (version.provisioningState && version.provisioningState !== "Succeeded") problems.push("A versão da imagem ainda não está pronta.");
+        } catch (error) {
+          problems.push(textOf(error, "A versão da imagem não foi encontrada."));
+        }
+      }
+      return problems;
     },
     async listNsgs() {
       const client = await network();

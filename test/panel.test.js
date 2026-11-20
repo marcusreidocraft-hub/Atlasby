@@ -11,7 +11,10 @@ import { formatModal, inspectModal, specsModal, step1Modal, step2Modal, step3Mod
 import { renderControl } from "../src/panels/control.js";
 import { renderPublicPanel } from "../src/panels/public.js";
 import { createSealer } from "../src/services/crypto.js";
-import { createEmojiBook, DEFAULTS, UNICODE } from "../src/services/emojis.js";
+import { ButtonStyle } from "discord.js";
+import { press } from "../src/panels/ui.js";
+import { buttonEmoji, createEmojiBook, DEFAULTS, UNICODE } from "../src/services/emojis.js";
+import { MISSING_VM, providerError } from "../src/services/provider.js";
 import { isAdmin } from "../src/services/admin.js";
 import { expiryFrom, formatDate, parseDate, planStatus, remainingLabel } from "../src/services/plans.js";
 import { validateSchedule } from "../src/services/fields.js";
@@ -390,6 +393,38 @@ test("emoji padrão exige o cache e a variável fica na frente", () => {
   assert.equal(replaced.pack(GUILD).controle, "<:outro:999>");
   const typed = createEmojiBook({ emoji: { controle: "🎮" }, allowedGuildIds: [] }, repo);
   assert.equal(typed.pack(GUILD).controle, "🎮");
+});
+
+test("emoji inválido não entra no botão", () => {
+  assert.equal(buttonEmoji("⏻"), undefined);
+  assert.equal(buttonEmoji("<:bad name:12>"), undefined);
+  assert.deepEqual(buttonEmoji("<:desligar:1570370496673873952>"), { animated: false, name: "desligar", id: "1570370496673873952" });
+  assert.equal(press("atlas:vm:power", "Ligar VM", ButtonStyle.Success, "⏻").toJSON().emoji, undefined);
+  assert.equal(press("atlas:vm:power", "Ligar VM", ButtonStyle.Success, "🟢").toJSON().emoji.name, "🟢");
+});
+
+test("VM ausente na assinatura não é consultada de novo na hora", async () => {
+  let reads = 0;
+  const compute = {
+    virtualMachines: {
+      async get() {
+        reads += 1;
+        const error = new Error("Resource group 'ATLAS_GROUP' could not be found");
+        error.code = "ResourceGroupNotFound";
+        throw error;
+      },
+    },
+  };
+  const infra = createInfrastructure(readConfig({
+    AZURE_TENANT_ID: "tenant", AZURE_CLIENT_ID: "client", AZURE_CLIENT_SECRET: "secret", AZURE_SUBSCRIPTION_ID: "sub",
+  }), { compute, readTimeoutMs: 1_000 });
+  const id = azureVm("velha", "ATLAS_GROUP").id;
+  const first = await infra.readMachine(id);
+  const second = await infra.readMachine(id);
+  assert.equal(first.missing, true);
+  assert.equal(second.missing, true);
+  assert.equal(reads, 1);
+  assert.match(providerError({ code: "missing" }), new RegExp(MISSING_VM));
 });
 
 test("permissão de admin usa o bit ou o cargo", () => {

@@ -295,9 +295,13 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       const expired = [];
       for (const row of repo.expiredClients(now())) {
         try {
-          if (row.infra_id && infra?.setPower) await infra.setPower(row.infra_id, "desligada");
+          if (row.infra_id && infra?.setPower) {
+            const result = await infra.setPower(row.infra_id, "desligada");
+            if (result?.mode === "missing") console.warn(`Vencimento ${row.id}: máquina ausente na assinatura atual.`);
+          }
         } catch (error) {
-          console.error(`Vencimento ${row.id}: ${error instanceof Error ? error.message : "erro"}`);
+          const code = error?.code || "erro";
+          console.warn(`Vencimento ${row.id}: ${code}. ${String(error?.message || "").split("\n")[0].slice(0, 180)}`);
         }
         repo.updatePower(row.id, "desligada", now());
         repo.markExpiryHandled(row.id);

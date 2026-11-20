@@ -217,8 +217,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
         const safePage = Math.min(Math.max(0, page), pages - 1);
         return renderAzureVmList({ accent: config.panelColor, rows: rows.slice(safePage * size, safePage * size + size), page: safePage, pages });
       } catch (error) {
-        logInteractionError(error);
-        return notice("Não foi possível listar as VMs na Azure.", config.panelColor);
+        if (error?.code !== "missing") logInteractionError(error);
+        return notice(error?.code === "missing" ? error.message : "Não foi possível listar as VMs na Azure.", config.panelColor);
       }
     },
     applyStep3({ guildId, actor, draftId, fields }) {

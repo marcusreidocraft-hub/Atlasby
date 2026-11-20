@@ -1,3 +1,5 @@
+import { buttonEmoji } from "../services/emojis.js";
+
 export const TICKET_CATEGORIES = Object.freeze({
   suporte: {
     id: "suporte",
@@ -66,9 +68,8 @@ export function ticketMark(slot, overrides = {}) {
 }
 
 export function ticketEmojiObject(token) {
-  const match = /^<(a)?:([\w]+):(\d+)>$/.exec(String(token ?? ""));
-  if (!match) return undefined;
-  return { animated: Boolean(match[1]), name: match[2], id: match[3] };
+  const parsed = buttonEmoji(token);
+  return parsed && typeof parsed === "object" ? parsed : undefined;
 }
 
 export function ticketChannelName(category, username, number) {

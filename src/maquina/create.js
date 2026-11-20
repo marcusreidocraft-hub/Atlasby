@@ -23,7 +23,11 @@ export async function createMachine(spec, provisioner, hooks = {}) {
     imageKind: "gallery",
   };
   const touched = { group: state.group, names, zone: state.zone };
-  const report = async (step) => { await hooks.progress?.(step, progressMark(step)); };
+  let step = "inicio";
+  const report = async (name) => {
+    step = name;
+    await hooks.progress?.(name, progressMark(name));
+  };
   try {
     const quota = await provisioner.quota(state);
     if (!quota?.ok) return { ok: false, error: quota?.error || "A cota desta família acabou.", cleanupFailed: null };
@@ -51,8 +55,11 @@ export async function createMachine(spec, provisioner, hooks = {}) {
     await report("pronto");
     return { ok: true, state };
   } catch (error) {
+    const code = error?.code || "erro";
+    const message = String(error?.message || error || "").split("\n")[0].slice(0, 240);
+    console.error(`Criar máquina [${step}] ${code}: ${message}`);
     const cleanupFailed = provisioner.cleanup ? await provisioner.cleanup(touched).catch(() => ["limpeza"]) : [];
-    return { ok: false, error: azureErrorText(error), cleanupFailed };
+    return { ok: false, error: azureErrorText(error), cleanupFailed, step, code, message };
   }
 }
 

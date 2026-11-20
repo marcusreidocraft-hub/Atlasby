@@ -36,7 +36,8 @@ export function heading(emojis, key, title) {
 
 export function press(customId, label, style, emoji) {
   const button = new ButtonBuilder().setCustomId(customId).setLabel(String(label).slice(0, 80)).setStyle(style);
-  if (emoji) button.setEmoji(buttonEmoji(emoji));
+  const parsed = buttonEmoji(emoji);
+  if (parsed) button.setEmoji(parsed);
   return button;
 }
 

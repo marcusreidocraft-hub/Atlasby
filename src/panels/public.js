@@ -18,7 +18,9 @@ export function renderPublicPanel({ accent, emojis, supportUrl, bannerUrl }) {
     press("atlas:panel:plan", "Consultar plano", ButtonStyle.Secondary, emojis.calendario),
   ));
   if (supportUrl) {
-    const link = new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(supportUrl).setLabel("Suporte / Tickets").setEmoji(buttonEmoji(emojis.ticket));
+    const link = new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(supportUrl).setLabel("Suporte / Tickets");
+    const ticketEmoji = buttonEmoji(emojis.ticket);
+    if (ticketEmoji) link.setEmoji(ticketEmoji);
     root.addActionRowComponents(new ActionRowBuilder().addComponents(link));
   }
   return { components: [root], flags: V2 };
