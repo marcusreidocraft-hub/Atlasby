@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { ComputeManagementClient } from "@azure/arm-compute";
+import { NetworkManagementClient } from "@azure/arm-network";
 import { createApp } from "../src/app.js";
 import { readConfig } from "../src/config.js";
 import { openDatabase } from "../src/db/database.js";
@@ -37,6 +39,9 @@ test("disco v2 respeita IOPS, taxa e tamanho", () => {
   assert.match(azureErrorText({ code: "AuthorizationFailed" }), /O aplicativo não tem permissão/);
   assert.match(azureErrorText(new Error("SkuNotAvailable for spot")), /capacidade Spot/);
   assert.match(azureErrorText(new Error("PremiumV2 is not supported in this region")), /SSD v2/);
+  const plain = azureErrorText(new Error("Cannot read properties of undefined (reading 'list')"));
+  assert.equal(plain.includes(": Cannot"), false);
+  assert.match(plain, /Cannot read properties/);
 });
 
 test("o payload da VM usa a galeria, zona e disco v2", async () => {
@@ -204,7 +209,7 @@ test("continuar aceita a sugestão e a única imagem não trava o menu", async (
   }
   assert.match(JSON.stringify(renderNameStep({ id: draftId, suggestedName: "ignix-ana-ab" }, 1)), /Usar sugestão/);
   assert.match(JSON.stringify(renderReview({ id: draftId, userId: "1", sizeLabel: "T4", spot: true, diskMode: "premium", nsgLabel: "Ignix-nsg", machineName: "ignix-ana-ab" }, 1, { location: "brazilsouth", image: "Atlas2.0/2.0.0", version: "2.0.0", expires: 1 })), /Versão: 2\.0\.0/);
-  assert.match(JSON.stringify(renderFailure("falhou", 1, [], draftId)), /Revisar/);
+  assert.match(JSON.stringify(renderFailure("falhou", 1, [], draftId)), /Tentar de novo/);
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlas-maquina-"));
   const repo = openDatabase(dir);
@@ -288,4 +293,63 @@ test("continuar aceita a sugestão e a única imagem não trava o menu", async (
   assert.match(await press(`atlas:maquina:ok:image:${imageId}`), /Nome/);
   assert.equal(repo.getDraft(imageId).payload.imageVersion, "2.0.0");
   repo.close();
+});
+
+test("cota Spot olha lowPriorityCores e uma consulta quebrada não bloqueia", async () => {
+  const usage = [
+    { name: { value: "standardNCADSv3Family" }, limit: 0, currentValue: 0 },
+    { name: { value: "cores" }, limit: 4, currentValue: 2 },
+    { name: { value: "lowPriorityCores" }, limit: 8, currentValue: 0 },
+  ];
+  const client = {
+    resourceSkus: {
+      async *list() {
+        yield { name: "Standard_NC4as_T4_v3", family: "standardNCADSv3Family", capabilities: [{ name: "vCPUs", value: "4" }] };
+      },
+    },
+    usageOperations: { async *list() { yield* usage; } },
+  };
+  const provisioner = createAzureProvisioner({ azure: {} }, { compute: client });
+  const spot = await provisioner.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: true });
+  assert.equal(spot.ok, true);
+  usage[2].currentValue = 6;
+  const tightSpot = await provisioner.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: true });
+  assert.match(tightSpot.error, /Spot/);
+  const tightCores = await provisioner.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: false });
+  assert.match(tightCores.error, /família/);
+  usage[0].limit = 16;
+  const tightRegional = await provisioner.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: false });
+  assert.match(tightRegional.error, /regional de vCPU acabou/);
+  usage[1].limit = 20;
+  assert.equal((await provisioner.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: false })).ok, true);
+  const broken = createAzureProvisioner({ azure: {} }, {
+    compute: {
+      resourceSkus: { list() { throw new Error("Cannot read properties of undefined (reading 'list')"); } },
+    },
+  });
+  assert.equal((await broken.quota({ location: "brazilsouth", size: "Standard_NC4as_T4_v3", vcpus: 4, spot: true })).ok, true);
+});
+
+test("cada operação Azure usada existe no SDK instalado", () => {
+  const credential = { getToken: async () => ({ token: "x", expiresOnTimestamp: Date.now() + 60_000 }) };
+  const compute = new ComputeManagementClient(credential, "00000000-0000-0000-0000-000000000000");
+  const network = new NetworkManagementClient(credential, "00000000-0000-0000-0000-000000000000");
+  const files = [
+    ...fs.readdirSync("src/maquina").map((name) => path.join("src/maquina", name)),
+    "src/loja/azure.js",
+    "src/services/provider.js",
+  ];
+  const call = /(?:(?<![\w.])(?:computeClient|networkClient|client|comp|net)|\))\.([A-Za-z][A-Za-z0-9]*)\.([A-Za-z][A-Za-z0-9]*)\s*\(/g;
+  const seen = [];
+  for (const file of files) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const match of source.matchAll(call)) seen.push([file, match[1], match[2]]);
+  }
+  assert.ok(seen.some((item) => item[1] === "usageOperations" && item[2] === "list"));
+  assert.equal(seen.some((item) => item[1] === "usage"), false);
+  for (const [file, group, method] of seen) {
+    const owner = group in compute ? compute : group in network ? network : null;
+    assert.ok(owner, `${file} usa ${group}.${method}, ausente no SDK`);
+    assert.equal(typeof owner[group][method], "function", `${file} usa ${group}.${method}`);
+  }
 });

@@ -238,7 +238,7 @@ export function renderReady({ machineName, publicIp, accent }) {
 export function renderFailure(message, accent, cleaned, draftId = "") {
   const tail = cleaned == null ? "" : cleaned.length ? "Não consegui apagar todos os recursos parciais. Confira o grupo de recursos." : "Os recursos parciais foram apagados.";
   const rows = draftId ? [new ActionRowBuilder().addComponents(
-    press(`atlas:maquina:back:fail:${draftId}`, "Revisar", ButtonStyle.Primary),
+    press(`atlas:maquina:back:fail:${draftId}`, "Tentar de novo", ButtonStyle.Primary),
     press(`atlas:maquina:no:${draftId}`, "Cancelar", ButtonStyle.Secondary),
   )] : [];
   return shell(accent, ["## Não foi criada", message, tail].filter(Boolean), rows);

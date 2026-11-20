@@ -20,23 +20,47 @@ export function createAzureProvisioner(config, deps = {}) {
     return new arm.NetworkManagementClient(credential, config.azure.subscriptionId);
   }
   return {
-    async quota({ location, size, vcpus }) {
+    async quota({ location, size, vcpus, spot }) {
       const client = await compute();
-      let family = "";
-      let needed = vcpus;
-      for await (const sku of client.resourceSkus.list({ filter: `location eq '${location}'` })) {
-        if (sku.name !== size) continue;
-        family = sku.family || "";
-        const found = sku.capabilities?.find((item) => item.name === "vCPUs")?.value;
-        if (found) needed = Number(found);
-        break;
+      try {
+        let family = "";
+        let needed = Number(vcpus) || 0;
+        for await (const sku of client.resourceSkus.list({ filter: `location eq '${location}'` })) {
+          if (sku.name !== size) continue;
+          family = sku.family || "";
+          const found = sku.capabilities?.find((item) => item.name === "vCPUs")?.value;
+          if (found) needed = Number(found);
+          break;
+        }
+        const usage = [];
+        for await (const row of client.usageOperations.list(location)) usage.push(row);
+        const left = (name) => {
+          const row = usage.find((item) => (item.name?.value || "") === name);
+          if (!row || !Number.isFinite(row.limit) || !Number.isFinite(row.currentValue)) return null;
+          return row.limit - row.currentValue;
+        };
+        if (spot) {
+          const low = left("lowPriorityCores");
+          if (low == null) {
+            console.warn(`Cota Spot não consultada em ${location}. A criação segue.`);
+            return { ok: true };
+          }
+          return low >= needed ? { ok: true } : { ok: false, error: "A cota regional de vCPU Spot acabou." };
+        }
+        const familyLeft = family ? left(family) : null;
+        const coresLeft = left("cores");
+        if (familyLeft == null || coresLeft == null) {
+          console.warn(`Cota não consultada em ${location}. A criação segue.`);
+          return { ok: true };
+        }
+        if (familyLeft < needed) return { ok: false, error: "A cota desta família acabou." };
+        if (coresLeft < needed) return { ok: false, error: "A cota regional de vCPU acabou." };
+        return { ok: true };
+      } catch (error) {
+        const message = String(error?.message || error).split("\n")[0].slice(0, 240);
+        console.warn(`Cota não consultada em ${location}: ${message}`);
+        return { ok: true };
       }
-      if (!family) return { ok: false, error: "O tamanho não existe nesta região." };
-      for await (const row of client.usage.list(location)) {
-        if ((row.name?.value || "") !== family) continue;
-        return row.limit - row.currentValue >= needed ? { ok: true } : { ok: false, error: "A cota desta família acabou." };
-      }
-      return { ok: false, error: "A cota não foi consultada." };
     },
     async ip(state) {
       const client = await network();

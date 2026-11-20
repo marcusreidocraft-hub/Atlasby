@@ -54,5 +54,7 @@ export function azureErrorText(error) {
   } else if (/SkuNotAvailable|ZonalAllocationFailed|OverconstrainedAllocation|Capacity/i.test(`${code} ${message}`)) {
     lead = "Não há capacidade deste tamanho nesta região ou zona.";
   }
-  return message ? `${lead}\n${code}: ${message}` : lead;
+  const detail = message.split("\n")[0].slice(0, 300);
+  if (!detail) return lead;
+  return code ? `${lead}\n${code}: ${detail}` : `${lead}\n${detail}`;
 }
