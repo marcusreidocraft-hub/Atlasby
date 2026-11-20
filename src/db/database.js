@@ -161,6 +161,7 @@ export function openDatabase(dataDir) {
     useConfirm: db.prepare("UPDATE confirmations SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > ?"),
     panel: db.prepare(`INSERT INTO panels (guild_id, channel_id, message_id, created_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(guild_id, channel_id, message_id) DO NOTHING`),
+    panelLatest: db.prepare("SELECT channel_id FROM panels WHERE guild_id = ? ORDER BY created_at DESC LIMIT 1"),
   };
 
   const store = attachStore(db);
@@ -278,6 +279,9 @@ export function openDatabase(dataDir) {
     },
     rememberPanel(row) {
       statements.panel.run(row.guildId, row.channelId, row.messageId, row.now);
+    },
+    latestPanel(guildId) {
+      return statements.panelLatest.get(guildId)?.channel_id || "";
     },
   };
 }

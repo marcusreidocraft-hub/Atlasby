@@ -11,7 +11,10 @@ import { routeInviteComponent } from "./invites/router.js";
 import { routeMachineComponent } from "./maquina/router.js";
 import { renderOrder } from "./loja/panel.js";
 import { createStoreHttp } from "./loja/http.js";
+import { machineLinks, renderMachineNotice, sendMachineNotice } from "./panels/machine-dm.js";
 import { V2 } from "./panels/ui.js";
+import { formatDate, PLAN_LABEL } from "./services/plans.js";
+import { PLAN_NAMES } from "./loja/products.js";
 import { attendanceOf } from "./loja/attendance.js";
 
 async function deliver(client, channelId, payload) {
@@ -65,7 +68,23 @@ async function fulfill(client, app, orderId) {
     })).catch(() => {});
   }
   if (result.delivered?.ok) {
-    client.users.fetch(order.userId).then((user) => user.send(app.store.readyText(product, order.plan, result.state.publicIp))).catch(() => {});
+    const owner = app.repo.getByOwner(order.guildId, order.userId);
+    const ready = renderMachineNotice({
+      kind: "pronta",
+      accent: app.config.panelColor,
+      bannerUrl: app.config.bannerUrl,
+      machineName: owner?.machineName || product?.name,
+      gpu: owner?.gpu || product?.gpu,
+      vcpus: owner?.vcpus || product?.vcpus,
+      ram: owner?.ram || product?.ram,
+      diskGb: product?.diskGb,
+      ip: result.state.publicIp,
+      planLabel: PLAN_NAMES[order.plan] || PLAN_LABEL[order.plan] || order.plan,
+      startedAt: owner?.startedAt ? formatDate(owner.startedAt) : "",
+      expiresAt: owner?.expiresAt ? formatDate(owner.expiresAt) : "",
+      ...machineLinks(app.repo, app.config, order.guildId),
+    });
+    client.users.fetch(order.userId).then((user) => sendMachineNotice(user, ready)).catch(() => {});
     if (result.delivered.roleId) {
       client.guilds.fetch(order.guildId).then((guild) => guild.members.fetch(order.userId)).then((member) => member.roles.add(result.delivered.roleId)).catch(() => {});
     }
@@ -125,7 +144,21 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   app.store.expireReservations();
   const expired = await app.store.expireClients();
   for (const row of expired) {
-    client.users.fetch(row.userId).then((user) => user.send(`Seu plano da Ignix Cloud PC em ${row.machine} venceu. A máquina foi desligada e não foi apagada.`)).catch(() => {});
+    const expiredNotice = renderMachineNotice({
+      kind: "venceu",
+      accent: app.config.panelColor,
+      bannerUrl: app.config.bannerUrl,
+      machineName: row.machine,
+      gpu: row.gpu,
+      vcpus: row.vcpus,
+      ram: row.ram,
+      ip: row.ip,
+      planLabel: PLAN_LABEL[row.plan] || row.plan,
+      startedAt: row.startedAt ? formatDate(row.startedAt) : "",
+      expiresAt: row.expiresAt ? formatDate(row.expiresAt) : "",
+      ...machineLinks(app.repo, config, row.guildId),
+    });
+    client.users.fetch(row.userId).then((user) => sendMachineNotice(user, expiredNotice)).catch(() => {});
   }
   for (const order of app.repo.resumeOrders()) fulfill(client, app, order.id);
   let phase = 0;

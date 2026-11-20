@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { actorFrom, present } from "../components/reply.js";
 import { resolveGalleryImage, withGalleryVersion } from "../loja/image.js";
+import { diskLabel, machineLinks, renderMachineNotice, sendMachineNotice } from "../panels/machine-dm.js";
 import { notice, V2_EPHEMERAL } from "../panels/ui.js";
+import { formatDate, PLAN_LABEL } from "../services/plans.js";
 import { isAdmin } from "../services/admin.js";
 import { createMachine } from "./create.js";
 import { autoThroughput, validateDataDisk } from "./limits.js";
@@ -392,17 +394,18 @@ async function launch(interaction, app, actor, draft) {
   const { clientRow } = await import("./create.js");
   const { specsFromSize } = await import("../services/vm-size.js");
   const specs = specsFromSize(chosen.size);
+  const row = clientRow({
+    guildId: interaction.guildId,
+    userId: draft.payload.userId,
+    clientName: draft.payload.username,
+    machineName: draft.payload.machineName,
+    specs,
+    publicIp: result.state.publicIp,
+    infraId: result.state.vmId,
+    now: Date.now(),
+  });
   try {
-    app.repo.insertClient(clientRow({
-      guildId: interaction.guildId,
-      userId: draft.payload.userId,
-      clientName: draft.payload.username,
-      machineName: draft.payload.machineName,
-      specs,
-      publicIp: result.state.publicIp,
-      infraId: result.state.vmId,
-      now: Date.now(),
-    }));
+    app.repo.insertClient(row);
   } catch {
     await app.provisioner.cleanup?.({ ...result.state, vmCreated: true }).catch(() => {});
     await show(interaction, renderFailure("Este membro já tem máquina. A VM criada foi removida.", app.config.panelColor, [], draft.id));
@@ -418,7 +421,25 @@ async function launch(interaction, app, actor, draft) {
     machineName: draft.payload.machineName,
     detail: `VM criada. IP ${result.state.publicIp || "pendente"}.`,
   });
-  interaction.client.users.fetch(draft.payload.userId).then((user) => user.send(`Sua máquina da Ignix Cloud PC está pronta: ${draft.payload.machineName}. IP: ${result.state.publicIp || "ainda não publicado"}.`)).catch(() => {
+  const noticeView = renderMachineNotice({
+    kind: "pronta",
+    accent: app.config.panelColor,
+    bannerUrl: app.config.bannerUrl,
+    machineName: row.machineName,
+    gpu: row.gpu,
+    vcpus: row.vcpus,
+    ram: row.ram,
+    disk: diskLabel(draft.payload),
+    ip: row.publicIp,
+    planLabel: PLAN_LABEL[row.planType] || row.planType,
+    startedAt: formatDate(row.startedAt),
+    expiresAt: formatDate(row.expiresAt),
+    ...machineLinks(app.repo, app.config, interaction.guildId),
+  });
+  interaction.client.users.fetch(draft.payload.userId).then(async (user) => {
+    const sent = await sendMachineNotice(user, noticeView);
+    if (!sent) console.warn(`Máquina: privado fechado para ${draft.payload.userId}.`);
+  }).catch(() => {
     console.warn(`Máquina: privado fechado para ${draft.payload.userId}.`);
   });
   return true;

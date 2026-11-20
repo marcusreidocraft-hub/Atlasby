@@ -305,7 +305,18 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
         }
         repo.updatePower(row.id, "desligada", now());
         repo.markExpiryHandled(row.id);
-        expired.push({ userId: row.user_id, machine: row.machine_name });
+        expired.push({
+          guildId: row.guild_id,
+          userId: row.user_id,
+          machine: row.machine_name,
+          gpu: row.gpu,
+          vcpus: row.vcpus,
+          ram: row.ram,
+          ip: row.public_ip,
+          plan: row.plan_type,
+          startedAt: row.started_at,
+          expiresAt: row.expires_at,
+        });
       }
       return expired;
     },
