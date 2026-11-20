@@ -45,7 +45,11 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SUBSCRIPTION_ID` | vazios | ligam o provedor Azure |
 | `AZURE_IMAGE_ID` | a versão Atlas2.0 1.0.0 | imagem da galeria usada para criar e formatar |
 | `AZURE_SNAPSHOT_ID` | vazio | legado; só vale se a imagem configurada for um snapshot |
-| `AZURE_LOCATION`, `AZURE_DEFAULT_VM_SIZE`, `AZURE_OS_TYPE`, `AZURE_VIRTUAL_NETWORK`, `AZURE_SUBNET`, `AZURE_MAX_OS_DISK_GB` | os do exemplo | lidas para o host; o painel não cria VM |
+| `AZURE_LOCATION`, `AZURE_DEFAULT_VM_SIZE`, `AZURE_OS_TYPE`, `AZURE_VIRTUAL_NETWORK`, `AZURE_SUBNET`, `AZURE_MAX_OS_DISK_GB` | os do exemplo | região, tamanho padrão, rede e teto do disco |
+| `AZURE_RESOURCE_GROUP` | vazio | grupo onde `/criar-maquina` cria a VM. Vazio bloqueia o assistente |
+| `AZURE_NSG` | `Atlas-nsg` | grupo de segurança da placa de rede |
+| `AZURE_ZONE` | vazio | zona 1, 2 ou 3. O SSD v2 usa a mesma zona da VM |
+| `AZURE_DATA_IOPS` | `3000` | IOPS base sugerido do disco de dados |
 | `EMOJI_CONTROLE`, `EMOJI_CALENDARIO`, `EMOJI_TICKET`, `EMOJI_MOONLIGHT`, `EMOJI_RDP`, `EMOJI_ALERTA`, `EMOJI_ENGRENAGEM`, `EMOJI_POWER` | vazios | opcionais; só preencha para trocar o emoji padrão |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_API_KEY`, `AI_ASSISTANT_ENABLED` | o exemplo, `false` | reservadas; o bot não chama o Ollama |
 
@@ -103,6 +107,10 @@ O convite fica pendente por 24 horas. Só depois disso entra na conta. Se a pess
 As metas padrão são 10 convites = 6 horas, 20 = 12 horas, 30 = 24 horas, 40 = 3 dias e 55 = 1 semana. Cada meta gera uma bonificação uma única vez. O canal de logs recebe **Entregar** e **Recusar**. Entregar estende o plano ativo; sem plano ativo, fica marcado para a equipe aplicar na mão. A contagem pode cair depois da entrega, e a bonificação não é desfeita.
 
 `/convites ver`, `/convites ajustar`, `/convites resetar` e `/convites ranking` são de administrador. O bot precisa dos intents **Guild Members** e **Guild Invites**, e das permissões **Gerenciar Servidor** e **Criar Convite**. Sem o intent de membros ele não recebe quem entra ou sai. Sem Gerenciar Servidor ele avisa no log e não lê os links.
+
+## Criar máquina
+
+Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4, Spot ou Normal, o disco e, no SSD v2, tamanho, IOPS, taxa e zona. A revisão expira no mesmo prazo das outras confirmações. A criação mostra o andamento e, no fim, cadastra o cliente com plano mensal. Se a Azure recusar, o bot apaga o que chegou a criar. O aplicativo precisa da função Contributor no grupo de recursos ou na assinatura.
 
 ## O que o cliente vê
 

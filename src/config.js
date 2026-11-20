@@ -48,6 +48,13 @@ export function parsePanelColor(value) {
   return Number.parseInt(clean, 16);
 }
 
+function parseIops(value) {
+  if (!text(value)) return 3000;
+  const number = Number(text(value));
+  if (!Number.isInteger(number) || number < 3000 || number > 80000) return 3000;
+  return number;
+}
+
 function parseMaxDisk(value) {
   const number = Number(text(value));
   if (!Number.isInteger(number) || number < 1 || number > 65536) return DEFAULT_MAX_DISK;
@@ -130,6 +137,10 @@ export function readConfig(env = {}) {
       osType: os === "linux" ? "Linux" : os === "windows" ? "Windows" : DEFAULT_OS,
       virtualNetwork: NETWORK_NAME.test(text(env.AZURE_VIRTUAL_NETWORK)) ? text(env.AZURE_VIRTUAL_NETWORK) : "",
       subnet: NETWORK_NAME.test(text(env.AZURE_SUBNET)) ? text(env.AZURE_SUBNET) : "",
+      resourceGroup: NETWORK_NAME.test(text(env.AZURE_RESOURCE_GROUP)) ? text(env.AZURE_RESOURCE_GROUP) : "",
+      nsg: NETWORK_NAME.test(text(env.AZURE_NSG)) ? text(env.AZURE_NSG) : "Atlas-nsg",
+      zone: ["1", "2", "3"].includes(text(env.AZURE_ZONE)) ? text(env.AZURE_ZONE) : "",
+      dataIops: parseIops(env.AZURE_DATA_IOPS),
       maxOsDiskGb: parseMaxDisk(env.AZURE_MAX_OS_DISK_GB),
       configured: Boolean(text(env.AZURE_TENANT_ID) && text(env.AZURE_CLIENT_ID) && text(env.AZURE_CLIENT_SECRET) && text(env.AZURE_SUBSCRIPTION_ID)),
     },

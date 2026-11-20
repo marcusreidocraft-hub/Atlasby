@@ -8,6 +8,7 @@ import { routeStoreComponent, editStorePanel } from "./loja/router.js";
 import { routeTicket } from "./tickets/router.js";
 import { routeAnnounceComponent } from "./announce/router.js";
 import { routeInviteComponent } from "./invites/router.js";
+import { routeMachineComponent } from "./maquina/router.js";
 import { renderOrder } from "./loja/panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { V2 } from "./panels/ui.js";
@@ -34,6 +35,7 @@ export async function routeInteraction(interaction, app) {
       await routeCommand(interaction, app);
       return;
     }
+    if (await routeMachineComponent(interaction, app)) return;
     if (await routeInviteComponent(interaction, app)) return;
     if (await routeAnnounceComponent(interaction, app)) return;
     if (await routeTicket(interaction, app)) return;

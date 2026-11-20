@@ -12,7 +12,20 @@ export function resolveGalleryImage({ storedId = "", storedKind = "", envId = ""
   return { kind: "gallery", id: chosen || DEFAULT_GALLERY_IMAGE };
 }
 
-export function buildSpecializedVm({ location, size, nicId, imageId, diskGb = 512, diskType = "PremiumV2_LRS", spot = false, diskName = "" }) {
+export function buildDataDisk({ location, zone = "", gb, iops, throughput }) {
+  const disk = {
+    location,
+    sku: { name: "PremiumV2_LRS" },
+    creationData: { createOption: "Empty" },
+    diskSizeGB: gb,
+    diskIOPSReadWrite: iops,
+    diskMBpsReadWrite: throughput,
+  };
+  if (zone) disk.zones = [String(zone)];
+  return disk;
+}
+
+export function buildSpecializedVm({ location, size, nicId, imageId, diskGb = 512, diskType = "PremiumV2_LRS", spot = false, diskName = "", zone = "", dataDisks = [] }) {
   const parameters = {
     location,
     hardwareProfile: { vmSize: size },
@@ -33,6 +46,8 @@ export function buildSpecializedVm({ location, size, nicId, imageId, diskGb = 51
     networkProfile: { networkInterfaces: [{ id: nicId, primary: true }] },
   };
   if (diskName) parameters.storageProfile.osDisk.name = diskName;
+  if (zone) parameters.zones = [String(zone)];
+  if (dataDisks.length) parameters.storageProfile.dataDisks = dataDisks;
   if (spot) {
     parameters.priority = "Spot";
     parameters.evictionPolicy = "Deallocate";

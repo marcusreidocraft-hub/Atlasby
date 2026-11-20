@@ -40,6 +40,7 @@ export function adminCommands() {
       .addSubcommand((sub) => sub.setName("ajustar").setDescription("Soma ou tira convites válidos na mão.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true)).addIntegerOption((option) => option.setName("quantidade").setDescription("Número positivo ou negativo.").setRequired(true).setMinValue(-500).setMaxValue(500)))
       .addSubcommand((sub) => sub.setName("resetar").setDescription("Zera a contagem. Bonificações já registradas continuam.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true)))
       .addSubcommand((sub) => sub.setName("ranking").setDescription("Lista quem mais convidou."))),
+    guild(new SlashCommandBuilder().setName("criar-maquina").setDescription("Abre o assistente para criar uma VM e vincular a um cliente.")),
     guild(new SlashCommandBuilder().setName("adicionar-cliente").setDescription("Cadastra a máquina de um membro.")),
     guild(new SlashCommandBuilder().setName("editar-cliente").setDescription("Edita a máquina de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),
     guild(new SlashCommandBuilder().setName("remover-cliente").setDescription("Remove o cadastro de um membro.").addUserOption((option) => option.setName("usuario").setDescription("Membro").setRequired(true))),

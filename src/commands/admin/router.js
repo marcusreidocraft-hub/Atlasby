@@ -4,6 +4,7 @@ import { renderTicketDesk } from "../../tickets/panel.js";
 import { renderTermsMessages } from "../../panels/termos.js";
 import { routeAnnounceCommand } from "../../announce/router.js";
 import { routeInviteCommand } from "../../invites/router.js";
+import { routeMachineCommand } from "../../maquina/router.js";
 import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
@@ -63,6 +64,10 @@ export async function routeCommand(interaction, app) {
   }
   await ack(interaction, false);
   if (await handleStoreCommand(interaction, app, actor)) return;
+  if (name === "criar-maquina") {
+    await routeMachineCommand(interaction, app, actor);
+    return;
+  }
   if (name === "convites") {
     await routeInviteCommand(interaction, app, actor);
     return;

@@ -1,4 +1,4 @@
-import { buildSpecializedVm } from "./image.js";
+import { buildDataDisk, buildSpecializedVm } from "./image.js";
 
 function idOf(subscription, group, provider, ...parts) {
   return `/subscriptions/${subscription}/resourceGroups/${group}/providers/${provider}/${parts.join("/")}`;
@@ -40,11 +40,13 @@ export function createAzureProvisioner(config, deps = {}) {
     },
     async ip(state) {
       const client = await network();
-      const created = await client.publicIPAddresses.beginCreateOrUpdateAndWait(state.group, state.names.ip, {
+      const address = {
         location: state.location,
         sku: { name: "Standard" },
         publicIPAllocationMethod: "Static",
-      });
+      };
+      if (state.zone) address.zones = [String(state.zone)];
+      const created = await client.publicIPAddresses.beginCreateOrUpdateAndWait(state.group, state.names.ip, address);
       return created.id;
     },
     async nic(state) {
@@ -76,9 +78,40 @@ export function createAzureProvisioner(config, deps = {}) {
           diskType: state.disk || "PremiumV2_LRS",
           spot: state.spot !== false,
           diskName: state.names?.disk,
+          zone: state.zone || "",
+          dataDisks: state.dataDiskId ? [{ lun: 0, name: state.names.data, createOption: "Attach", managedDisk: { id: state.dataDiskId, storageAccountType: "PremiumV2_LRS" } }] : [],
         });
       const created = await client.virtualMachines.beginCreateOrUpdateAndWait(state.group, state.names.vm, parameters);
       return created.id;
+    },
+    async disk(state) {
+      const client = await compute();
+      const created = await client.disks.beginCreateOrUpdateAndWait(state.group, state.names.data, buildDataDisk({
+        location: state.location,
+        zone: state.zone,
+        gb: state.dataGb,
+        iops: state.iops,
+        throughput: state.throughput,
+      }));
+      return created.id;
+    },
+    async start(state) {
+      const client = await compute();
+      await client.virtualMachines.beginStartAndWait(state.group, state.names.vm);
+    },
+    async cleanup(state) {
+      const computeClient = await compute();
+      const networkClient = await network();
+      const jobs = [];
+      if (state.vmCreated) jobs.push(() => computeClient.virtualMachines.beginDeleteAndWait(state.group, state.names.vm));
+      if (state.dataDiskId) jobs.push(() => computeClient.disks.beginDeleteAndWait(state.group, state.names.data));
+      if (state.nicId) jobs.push(() => networkClient.networkInterfaces.beginDeleteAndWait(state.group, state.names.nic));
+      if (state.ipId) jobs.push(() => networkClient.publicIPAddresses.beginDeleteAndWait(state.group, state.names.ip));
+      const failed = [];
+      for (const job of jobs) {
+        try { await job(); } catch { failed.push("recurso"); }
+      }
+      return failed;
     },
     async readIp(state) {
       const client = await network();
