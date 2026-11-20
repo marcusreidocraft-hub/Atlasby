@@ -1,14 +1,7 @@
-import { loadConfig } from "./config.js";
-import { openDatabase } from "./storage.js";
+import { readConfig } from "./config.js";
+import { openDatabase } from "./db/database.js";
 
-let config;
-try {
-  config = loadConfig(process.env, { requireDiscord: false });
-} catch (error) {
-  console.error(error instanceof Error ? error.message : "Configuração inválida.");
-  process.exit(1);
-}
-
-const store = openDatabase(config.dataDir);
-console.log(`Migração aplicada. Banco: ${store.path}`);
-store.close();
+const config = readConfig(process.env);
+const repo = openDatabase(config.dataDir);
+repo.close();
+console.log(`Banco pronto em ${config.dataDir}.`);

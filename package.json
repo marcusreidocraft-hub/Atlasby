@@ -2,7 +2,7 @@
   "name": "atlasby",
   "version": "1.0.0",
   "private": true,
-  "description": "Bot de moderação do Discord para servidores autorizados.",
+  "description": "Painel da Atlas Cloud PC no Discord.",
   "type": "module",
   "engines": {
     "node": ">=22.13.0"
@@ -14,6 +14,11 @@
     "test": "node --disable-warning=ExperimentalWarning --test"
   },
   "dependencies": {
-    "discord.js": "14.28.1"
+    "@azure/arm-compute": "^23.1.0",
+    "@azure/arm-network": "^39.1.0",
+    "@azure/identity": "^4.13.0",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "discord.js": "14.28.1",
+    "qrcode": "^1.5.4"
   }
 }
