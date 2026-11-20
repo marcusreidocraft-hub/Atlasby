@@ -64,7 +64,7 @@ function machineSelect(product, priced) {
 
 export function renderStorePanel({ settings, products, offers, now }) {
   const root = new ContainerBuilder();
-  const title = String(settings.title || "Atlas Cloud PC").replace(/^🎮\s*/, "").replace(/^<:[^>]+>\s*/, "");
+  const title = String(settings.title || "Ignix Cloud PC").replace(/^🎮\s*/, "").replace(/^<:[^>]+>\s*/, "");
   root.addTextDisplayComponents(
     text(`${emojiText("gaming")} **${title}**`),
     text(settings.description),
@@ -95,7 +95,7 @@ export function renderOrder(order, product, { accent = 0x0a0a0a, supportRoleId =
   const root = new ContainerBuilder().setAccentColor(accent);
   const paid = order.status === "pago" || order.status === "entregue";
   root.addTextDisplayComponents(text([
-    `## ${emojiText("ticket")} Pedido Atlas Cloud PC`,
+    `## ${emojiText("ticket")} Pedido Ignix Cloud PC`,
     `${emojiText("arrow")} Cliente: <@${order.userId}>`,
     `${emojiText("gaming")} Produto: ${product?.headline || order.sku}`,
     `${emojiText("timer")} Plano: ${PLAN_NAMES[order.plan] || order.plan}`,

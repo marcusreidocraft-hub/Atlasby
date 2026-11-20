@@ -63,7 +63,7 @@ export function atlasNsgRules(agentPort = 7474) {
 export function nsgOptions({ nsgs = [], defaultName = "" } = {}) {
   const options = [];
   if (defaultName) options.push({ label: "Padrão", value: "padrao", description: defaultName.slice(0, 100) });
-  options.push({ label: "Criar NSG Atlas", value: "criar", description: "Moonlight, RDP e o agente de PIN" });
+  options.push({ label: "Criar NSG Ignix", value: "criar", description: "Moonlight, RDP e o agente de PIN" });
   for (const [index, nsg] of nsgs.entries()) {
     options.push({
       label: String(nsg.name || "NSG").slice(0, 100),

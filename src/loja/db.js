@@ -156,7 +156,7 @@ function mapSettings(row) {
   if (!row) return null;
   return {
     guildId: row.guild_id,
-    title: row.title || "🎮 Atlas Cloud PC",
+    title: row.title || "🎮 Ignix Cloud PC",
     description: row.description || "Tenha seu próprio computador na nuvem! Jogue, trabalhe e utilize seus programas favoritos com desempenho e praticidade.",
     bannerUrl: row.banner_url || "",
     accent: row.accent ?? 0x0a0a0a,

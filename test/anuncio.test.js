@@ -57,7 +57,7 @@ test("o anúncio cabe no container e rejeita dados inválidos", () => {
   assert.match(raw, /https:\/\/cdn\.example\/anexo\.png/);
   assert.match(raw, /https:\/\/cdn\.example\/mini\.png/);
   assert.match(raw, /-# Volta às 22h/);
-  assert.match(raw, /-# Atlas Cloud PC • 15\/11\/2026/);
+  assert.match(raw, /-# Ignix Cloud PC • 15\/11\/2026/);
   assert.match(raw, /Saiba mais/);
   assert.equal(raw.toLowerCase().includes(OTHER), false);
   const preview = renderAnnouncePreview(composed.value, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");

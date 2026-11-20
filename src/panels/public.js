@@ -10,7 +10,7 @@ export function renderPublicPanel({ accent, emojis, supportUrl, bannerUrl }) {
   root.addTextDisplayComponents(
     text(`## ${emojis.controle} Sua Máquina`),
     text("Clique abaixo para consultar seu plano e acessar os controles da sua máquina. Precisa de ajuda? Acesse o canal de suporte para abrir um ticket."),
-    text(`-# As informações do seu plano e da sua máquina aparecem somente para você.\n-# Atlas Cloud PC`),
+    text(`-# As informações do seu plano e da sua máquina aparecem somente para você.\n-# Ignix Cloud PC`),
   );
   root.addSeparatorComponents(separator());
   root.addActionRowComponents(new ActionRowBuilder().addComponents(

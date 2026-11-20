@@ -99,7 +99,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     });
   });
   client.once(Events.ClientReady, async (ready) => {
-    console.log(`Atlas Cloud PC conectado como ${ready.user.tag}.`);
+    console.log(`Ignix Cloud PC conectado como ${ready.user.tag}.`);
     await registerCommands(config);
     await app.emojis.refresh(ready);
     await app.invites.warm(ready);
@@ -125,7 +125,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   app.store.expireReservations();
   const expired = await app.store.expireClients();
   for (const row of expired) {
-    client.users.fetch(row.userId).then((user) => user.send(`Seu plano da Atlas Cloud PC em ${row.machine} venceu. A máquina foi desligada e não foi apagada.`)).catch(() => {});
+    client.users.fetch(row.userId).then((user) => user.send(`Seu plano da Ignix Cloud PC em ${row.machine} venceu. A máquina foi desligada e não foi apagada.`)).catch(() => {});
   }
   for (const order of app.repo.resumeOrders()) fulfill(client, app, order.id);
   let phase = 0;

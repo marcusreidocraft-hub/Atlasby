@@ -30,7 +30,7 @@ function messageText(payload) {
   return { text: parts.join("\n"), components };
 }
 
-test("os termos cabem no Discord e usam a marca Atlas", () => {
+test("os termos cabem no Discord e usam a marca Ignix", () => {
   assert.equal(TERMS_SECTIONS.length, 24);
   assert.deepEqual(TERMS_SECTIONS.map((section) => section.number), Array.from({ length: 24 }, (_, index) => index + 1));
   const publishedAt = zonedToUtc(2026, 11, 15, 12, 0, 0);
@@ -51,9 +51,9 @@ test("os termos cabem no Discord e usam a marca Atlas", () => {
   assert.equal(raw.includes("art. 49"), false);
   assert.equal(raw.includes("CDC"), false);
   assert.equal(raw.includes("discord.gg"), false);
-  assert.match(all[0], new RegExp(`Termos de Uso - Atlas`));
+  assert.match(all[0], new RegExp(`Termos de Uso - Ignix`));
   assert.match(all[0], /7232rules:1568512643961061386/);
-  assert.match(all[0], /\*\*Ao contratar, acessar ou utilizar os serviços da Atlas Cloud PC/);
+  assert.match(all[0], /\*\*Ao contratar, acessar ou utilizar os serviços da Ignix Cloud PC/);
   assert.match(all[0], /## 1\. Sobre o serviço/);
   assert.equal(all.slice(1).some((text) => text.includes(TERMS_TITLE)), false);
   assert.match(all.at(-1), /Última atualização: 15\/11\/2026/);
@@ -63,7 +63,7 @@ test("os termos cabem no Discord e usam a marca Atlas", () => {
   assert.match(raw, /a compra é final/);
   assert.match(raw, /Não há reembolso nessas situações/);
   assert.match(raw, new RegExp(`Suporte: ${LINK.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
-  assert.match(raw, /Responsável pelo serviço: Atlas Cloud PC/);
+  assert.match(raw, /Responsável pelo serviço: Ignix Cloud PC/);
   const withoutLink = renderTermsMessages({ supportUrl: "", publishedAt }).map((payload) => messageText(payload).text).join("\n");
   assert.match(withoutLink, /link ainda não configurado neste servidor/);
   assert.equal(withoutLink.includes("discord.gg"), false);

@@ -33,7 +33,7 @@ export function renderInvitePanel(tiers) {
   const root = new ContainerBuilder();
   root.addTextDisplayComponents(line([
     `## ${INVITE_EMOJI.gift} Convites com bonificação`,
-    "Convide pessoas para a Atlas Cloud PC. O convite começa pendente e só fica válido depois de 24 horas no servidor. Se a pessoa sair, o convite volta e deixa de contar.",
+    "Convide pessoas para a Ignix Cloud PC. O convite começa pendente e só fica válido depois de 24 horas no servidor. Se a pessoa sair, o convite volta e deixa de contar.",
   ].join("\n")));
   root.addSeparatorComponents(separator());
   root.addTextDisplayComponents(line(["### Metas", ...tiers.map(tierLine)].join("\n")));
@@ -78,7 +78,7 @@ export function renderValidated(summary, memberId) {
   const root = new ContainerBuilder();
   root.addTextDisplayComponents(line([
     `## ${INVITE_EMOJI.verified} Convite válido`,
-    `<@${memberId}> completou 24 horas na Atlas Cloud PC.`,
+    `<@${memberId}> completou 24 horas na Ignix Cloud PC.`,
     `Convites válidos: **${summary.valid}**`,
     progressLine(summary),
   ].join("\n")));
@@ -102,7 +102,7 @@ export function renderCongrats(rewards) {
   const root = new ContainerBuilder();
   root.addTextDisplayComponents(line([
     `## ${INVITE_EMOJI.gift} Bonificação alcançada`,
-    "Você chegou a uma nova meta na Atlas Cloud PC.",
+    "Você chegou a uma nova meta na Ignix Cloud PC.",
     ...rewards.map((reward) => `${INVITE_EMOJI.star} **${reward.invites} convites** · ${reward.label}`),
     "A equipe confirma a entrega. O tempo entra no plano ativo quando houver máquina vinculada.",
   ].join("\n")));

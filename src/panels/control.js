@@ -22,7 +22,7 @@ function fallbackLines(client, now, emojis) {
   const card = cardFacts(client, now);
   const status = client.powerStatus === "ligada" ? mark(emojis, "ligada", card.status) : card.status;
   return [
-    "**Atlas**",
+    "**Ignix**",
     "Seu poder em nuvem",
     `Status: **${status}**`,
     `**${card.headline}**`,

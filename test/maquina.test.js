@@ -130,7 +130,7 @@ test("a lista de NSG fica na região e as regras padrão abrem o Moonlight", asy
   assert.equal(chosen.some((item) => item.location === "eastus"), false);
   const options = nsgOptions({ nsgs: chosen, defaultName: "Atlas-nsg" });
   assert.equal(options[0].label, "Padrão");
-  assert.equal(options[1].label, "Criar NSG Atlas");
+  assert.equal(options[1].label, "Criar NSG Ignix");
   assert.ok(options.length <= 25);
   const recorded = [];
   const provisioner = createAzureProvisioner({ azure: { subscriptionId: "sub" } }, {

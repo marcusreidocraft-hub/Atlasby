@@ -88,7 +88,7 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
     { sku: "t4-16", visible: true, stock: 1, purchasesEnabled: true, gpu: "Tesla T4", vcpus: 16, ramGib: 110, diskGb: 512, prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
   ];
   const view = renderStorePanel({
-    settings: { title: "🎮 Atlas Cloud PC", description: "Tenha seu próprio computador na nuvem.", accent: 0x0a0a0a, hoursEnabled: true },
+    settings: { title: "🎮 Ignix Cloud PC", description: "Tenha seu próprio computador na nuvem.", accent: 0x0a0a0a, hoursEnabled: true },
     products,
     offers: [],
     now: 0,
@@ -119,7 +119,7 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
   assert.deepEqual(sixteen.options.map((item) => item.value), ["t4-16:semanal", "t4-16:quinzenal", "t4-16:mensal"]);
   assert.doesNotMatch(raw, /atlas:store:pick"/);
   const hourlyOff = renderStorePanel({
-    settings: { title: "Atlas Cloud PC", description: "Loja", accent: 0x0a0a0a, hoursEnabled: false },
+    settings: { title: "Ignix Cloud PC", description: "Loja", accent: 0x0a0a0a, hoursEnabled: false },
     products,
     offers: [],
     now: 0,
@@ -203,7 +203,7 @@ test("estoque não fica negativo e o painel esconde hora desligada", async () =>
     assert.equal(second.ok, false);
     assert.equal(env.repo.storeProduct(GUILD, "t4-4").stock, 0);
     const shown = JSON.stringify(env.store.panel(GUILD));
-    assert.match(shown, /Atlas Cloud PC/);
+    assert.match(shown, /Ignix Cloud PC/);
     assert.match(shown, /Escolher seu plano/);
     assert.doesNotMatch(shown, /Sem estoque no momento/);
     assert.match(shown, /R\$ 49,90/);

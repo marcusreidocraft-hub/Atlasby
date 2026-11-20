@@ -108,7 +108,7 @@ export function createInviteTracker({ book, repo, config }) {
         if (found) return { ok: true, code: found.code, url: `https://discord.gg/${found.code}` };
       }
       try {
-        const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: "Convite pessoal da Atlas Cloud PC" });
+        const invite = await channel.createInvite({ maxAge: 0, maxUses: 0, unique: true, reason: "Convite pessoal da Ignix Cloud PC" });
         repo.saveInviteLink({ guildId: guild.id, userId: user.id, code: invite.code, channelId: channel.id, createdAt: Date.now() });
         noteInvite(invite);
         return { ok: true, code: invite.code, url: `https://discord.gg/${invite.code}` };

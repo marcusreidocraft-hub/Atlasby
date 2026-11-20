@@ -81,7 +81,7 @@ export function announcementFooter(footer, publishedAt) {
   const lines = [];
   const note = String(footer ?? "").trim();
   if (note) lines.push(`-# ${note.replace(/\n+/g, "\n-# ")}`);
-  lines.push(`-# Atlas Cloud PC • ${formatDate(publishedAt)}`);
+  lines.push(`-# Ignix Cloud PC • ${formatDate(publishedAt)}`);
   return lines.join("\n");
 }
 
@@ -115,7 +115,7 @@ export function announcementFromComponents(components) {
       title = heading.title;
       emoji = heading.emoji;
     } else if (child.type === 10 && String(child.content || "").startsWith("-#")) {
-      footer = String(child.content).split("\n").map((line) => line.replace(/^-#\s?/, "")).filter((line) => line && !line.startsWith("Atlas Cloud PC • ")).join("\n");
+      footer = String(child.content).split("\n").map((line) => line.replace(/^-#\s?/, "")).filter((line) => line && !line.startsWith("Ignix Cloud PC • ") && !line.startsWith("Atlas Cloud PC • ")).join("\n");
     } else if (child.type === 10 && !text) {
       text = child.content || "";
     } else if (child.type === 12) {

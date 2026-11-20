@@ -1,6 +1,6 @@
-# Atlas Cloud PC
+# Ignix Cloud PC
 
-Painel de clientes da Atlas Cloud PC no Discord. O membro consulta o próprio plano e controla a própria máquina. A equipe cadastra os clientes por comandos separados. A interface usa Discord Components V2.
+Painel de clientes da Ignix Cloud PC no Discord. O membro consulta o próprio plano e controla a própria máquina. A equipe cadastra os clientes por comandos separados. A interface usa Discord Components V2.
 
 O entry point é `index.js`. O host em Node 24 faz pull ao reiniciar. Este repositório não reinicia a hospedagem.
 
@@ -92,7 +92,7 @@ Um administrador publica a central com `/atendimento-publicar` no canal desejado
 
 ## Termos
 
-Um administrador publica os Termos de Uso com `/termos`. O canal é opcional e, se ficar vazio, a publicação sai no canal atual. O texto fica em `src/content/termos.js`. A mensagem abre com o título Termos de Uso - Atlas e termina com a data da publicação. O link de suporte da seção de atendimento sai de `/configurar suporte`.
+Um administrador publica os Termos de Uso com `/termos`. O canal é opcional e, se ficar vazio, a publicação sai no canal atual. O texto fica em `src/content/termos.js`. A mensagem abre com o título Termos de Uso - Ignix e termina com a data da publicação. O link de suporte da seção de atendimento sai de `/configurar suporte`.
 
 ## Anúncio
 
@@ -110,11 +110,11 @@ As metas padrão são 10 convites = 6 horas, 20 = 12 horas, 30 = 24 horas, 40 = 
 
 ## Criar máquina
 
-Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4, Spot ou Normal, o disco, o NSG da mesma região e, no SSD v2, tamanho, IOPS, taxa e zona. Dá para usar o NSG do ambiente, escolher um existente ou criar o NSG da Atlas com Moonlight, RDP e o agente de PIN. A revisão expira no mesmo prazo das outras confirmações. A criação mostra o andamento e, no fim, cadastra o cliente com plano mensal. Se a Azure recusar, o bot apaga o que chegou a criar. O aplicativo precisa da função Contributor no grupo de recursos ou na assinatura.
+Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4, Spot ou Normal, o disco, o NSG da mesma região e, no SSD v2, tamanho, IOPS, taxa e zona. Dá para usar o NSG do ambiente, escolher um existente ou criar o NSG da Ignix com Moonlight, RDP e o agente de PIN. A revisão expira no mesmo prazo das outras confirmações. A criação mostra o andamento e, no fim, cadastra o cliente com plano mensal. Se a Azure recusar, o bot apaga o que chegou a criar. O aplicativo precisa da função Contributor no grupo de recursos ou na assinatura.
 
 ## O que o cliente vê
 
-**Controlar VM** abre um cartão privado em imagem: Atlas, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
+**Controlar VM** abre um cartão privado em imagem: Ignix, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
 
 **Consultar plano** mostra plano, início, vencimento, tempo restante e status.
 
@@ -161,7 +161,7 @@ Todas as máquinas usam o mesmo `AGENT_SECRET`. Ele entra no bot e no `agent.con
 2. Copie a pasta `agent` para a VM.
 3. Preencha `agent/agent.config.json`: `AgentSecret` com o mesmo valor de `AGENT_SECRET`, `SunshineUser` e `SunshinePassword` com o painel do Sunshine. `AgentPort` fica `7474` se você não mudar `AGENT_PORT`.
 4. Abra o PowerShell como Administrador nessa pasta e execute `.\install.ps1`.
-5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\`, libera a porta TCP no firewall do Windows e registra a tarefa **Atlas Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, reinicia após falha e não tem limite de tempo.
+5. O instalador copia os arquivos para `C:\ProgramData\AtlasCloudPC\`, libera a porta TCP no firewall do Windows e registra a tarefa **Ignix Cloud PC Agent**. Ela sobe com o Windows, como SYSTEM, reinicia após falha e não tem limite de tempo.
 6. No grupo de segurança da Azure, libere entrada TCP `7474` para o endereço de saída do bot. O bot chama `http://<IP público da VM>:7474`.
 7. Confira o agente e capture a imagem. As próximas VMs saem com o agente e o mesmo segredo.
 

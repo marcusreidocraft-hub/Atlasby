@@ -15,7 +15,7 @@ export function sizeById(id) {
 
 export function defaultMachineName(username) {
   const user = String(username ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 4) || "user";
-  return `atlas-${user}-${randomBytes(2).toString("hex")}`.slice(0, 15);
+  return `ignix-${user}-${randomBytes(2).toString("hex")}`.slice(0, 15);
 }
 
 export function validMachineName(value) {

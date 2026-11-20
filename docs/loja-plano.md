@@ -1,8 +1,8 @@
-# Plano da loja Atlas Cloud PC
+# Plano da loja Ignix Cloud PC
 
 O painel do cliente, o agente do PIN, os comandos de administração e o banco `atlas.sqlite` permanecem. Não há módulos antigos de catálogo ou ticket neste repositório; a loja entra em `src/loja/` e grava tabelas novas no mesmo arquivo.
 
-A imagem de referência é só o arranjo comercial. A identidade publicada é Atlas Cloud PC.
+A imagem de referência é só o arranjo comercial. A identidade publicada é Ignix Cloud PC.
 
 ## Etapas
 

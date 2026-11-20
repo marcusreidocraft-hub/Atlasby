@@ -17,7 +17,7 @@ const plan = (option) => option.setName("plano").setDescription("Duração").set
 export function storeCommands() {
   return [
     new SlashCommandBuilder().setName("configurar-atendimento").setDescription("Define cargo, categoria e logs dos tickets.").setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
-    new SlashCommandBuilder().setName("configurar-loja").setDescription("Ajusta a loja da Atlas Cloud PC.")
+    new SlashCommandBuilder().setName("configurar-loja").setDescription("Ajusta a loja da Ignix Cloud PC.")
       .addSubcommand((sub) => sub.setName("publicar").setDescription("Publica ou atualiza o painel no canal atual."))
       .addSubcommand((sub) => sub.setName("banner").setDescription("Define a imagem do painel.").addStringOption((option) => option.setName("url").setDescription("URL https").setRequired(true)))
       .addSubcommand((sub) => sub.setName("texto").setDescription("Define título e descrição.").addStringOption((option) => option.setName("titulo").setDescription("Título").setRequired(true).setMaxLength(80)).addStringOption((option) => option.setName("descricao").setDescription("Descrição").setRequired(true).setMaxLength(300)))

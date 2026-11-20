@@ -5,12 +5,12 @@ const guild = (builder) => builder.setContexts(InteractionContextType.Guild);
 
 export function adminCommands() {
   return [
-    guild(new SlashCommandBuilder().setName("painel-publicar").setDescription("Publica o painel da Atlas Cloud PC neste canal.")),
+    guild(new SlashCommandBuilder().setName("painel-publicar").setDescription("Publica o painel da Ignix Cloud PC neste canal.")),
     guild(new SlashCommandBuilder().setName("atendimento-publicar").setDescription("Publica a central de atendimento neste canal.")),
-    guild(new SlashCommandBuilder().setName("termos").setDescription("Publica os Termos de Uso da Atlas Cloud PC.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio publica neste canal.").addChannelTypes(ChannelType.GuildText).setRequired(false))),
+    guild(new SlashCommandBuilder().setName("termos").setDescription("Publica os Termos de Uso da Ignix Cloud PC.").addChannelOption((option) => option.setName("canal").setDescription("Canal de texto. Vazio publica neste canal.").addChannelTypes(ChannelType.GuildText).setRequired(false))),
     guild(new SlashCommandBuilder()
       .setName("anuncio")
-      .setDescription("Publica ou edita um anúncio da Atlas Cloud PC.")
+      .setDescription("Publica ou edita um anúncio da Ignix Cloud PC.")
       .addSubcommand((sub) => sub
         .setName("publicar")
         .setDescription("Abre o anúncio para revisão antes de publicar.")

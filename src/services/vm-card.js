@@ -38,7 +38,7 @@ export function vmCardSvg(card) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="560" viewBox="0 0 920 560">
   <rect width="920" height="560" rx="28" fill="#0a0a0a"/>
-  <text x="48" y="78" fill="#f5f5f5" font-family="Inter" font-size="40" font-weight="600">Atlas</text>
+  <text x="48" y="78" fill="#f5f5f5" font-family="Inter" font-size="40" font-weight="600">Ignix</text>
   <text x="48" y="112" fill="#8a8a8a" font-family="Inter" font-size="18">Seu poder em nuvem</text>
   <text x="872" y="86" fill="${statusColor}" font-family="Inter" font-size="20" font-weight="600" text-anchor="end">${status}</text>
   <text x="48" y="196" fill="#f5f5f5" font-family="Inter" font-size="34" font-weight="600">${headline}</text>

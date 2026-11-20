@@ -12,7 +12,7 @@ export function renderAnnouncement(data) {
   if (data.thumbnailUrl) {
     root.addSectionComponents(new SectionBuilder()
       .addTextDisplayComponents(display(heading))
-      .setThumbnailAccessory(new ThumbnailBuilder().setURL(data.thumbnailUrl).setDescription("Atlas Cloud PC")));
+      .setThumbnailAccessory(new ThumbnailBuilder().setURL(data.thumbnailUrl).setDescription("Ignix Cloud PC")));
   } else {
     root.addTextDisplayComponents(display(heading));
   }

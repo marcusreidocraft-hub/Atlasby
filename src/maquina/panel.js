@@ -30,7 +30,7 @@ function select(customId, placeholder, options) {
 export function renderMemberStep(draftId, accent) {
   return shell(accent, [
     "## Criar máquina",
-    "Escolha quem vai receber a VM da Atlas Cloud PC.",
+    "Escolha quem vai receber a VM da Ignix Cloud PC.",
   ], [
     new ActionRowBuilder().addComponents(
       new UserSelectMenuBuilder().setCustomId(`atlas:maquina:user:${draftId}`).setPlaceholder("Membro").setMinValues(1).setMaxValues(1),
@@ -42,7 +42,7 @@ export function renderSizeStep(draft, accent) {
   return shell(accent, [
     "## Tamanho",
     `Membro: <@${draft.userId}>`,
-    "Tesla T4 nas famílias já usadas pela Atlas.",
+    "Tesla T4 nas famílias já usadas pela Ignix.",
   ], [
     select(`atlas:maquina:size:${draft.id}`, "Tamanho", MACHINE_SIZES.map((item) => ({ label: item.label, value: item.id, description: item.size }))),
   ]);
@@ -131,7 +131,7 @@ export function renderNameStep(draft, accent) {
 }
 
 export function nameModal(draftId) {
-  const field = new TextInputBuilder().setCustomId("nome").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(15).setPlaceholder("atlas-ana-01");
+  const field = new TextInputBuilder().setCustomId("nome").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(1).setMaxLength(15).setPlaceholder("ignix-ana-01");
   return new ModalBuilder()
     .setCustomId(`atlas:modal:maquina:${draftId}`)
     .setTitle("Nome da máquina")

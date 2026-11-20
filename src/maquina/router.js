@@ -193,7 +193,7 @@ function pickNsg(interaction, app, draft) {
     }
     draft.payload = { ...draft.payload, nsgMode: "padrao", nsgId: found?.id || "", nsgName: app.config.azure.nsg, nsgLabel: `${app.config.azure.nsg} · padrão` };
   } else if (value === "criar") {
-    draft.payload = { ...draft.payload, nsgMode: "criar", nsgId: "", nsgName: "", nsgLabel: "Criar NSG Atlas" };
+    draft.payload = { ...draft.payload, nsgMode: "criar", nsgId: "", nsgName: "", nsgLabel: "Criar NSG Ignix" };
   } else {
     const index = Number(String(value || "").slice(2));
     const chosen = draft.payload.nsgs?.[index];
@@ -330,7 +330,7 @@ async function launch(interaction, app, actor, draft) {
     machineName: draft.payload.machineName,
     detail: `VM criada. IP ${result.state.publicIp || "pendente"}.`,
   });
-  interaction.client.users.fetch(draft.payload.userId).then((user) => user.send(`Sua máquina da Atlas Cloud PC está pronta: ${draft.payload.machineName}. IP: ${result.state.publicIp || "ainda não publicado"}.`)).catch(() => {
+  interaction.client.users.fetch(draft.payload.userId).then((user) => user.send(`Sua máquina da Ignix Cloud PC está pronta: ${draft.payload.machineName}. IP: ${result.state.publicIp || "ainda não publicado"}.`)).catch(() => {
     console.warn(`Máquina: privado fechado para ${draft.payload.userId}.`);
   });
   return true;

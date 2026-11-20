@@ -13,7 +13,7 @@ const DEFAULT_DESCRIPTION = "Tenha seu próprio computador na nuvem! Jogue, trab
 export function createStore({ repo, config, audit, now = () => Date.now(), wyvi = null, sunshine = null, provisioner = null, infra = null }) {
   function defaults() {
     return {
-      title: "🎮 Atlas Cloud PC",
+      title: "🎮 Ignix Cloud PC",
       description: DEFAULT_DESCRIPTION,
       accent: 0x0a0a0a,
       location: config.azure?.location || "brazilsouth",
@@ -182,7 +182,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       if (order.pixCode) return { ok: true, order, copiaECola: order.pixCode, qrcode: "" };
       const charge = await wyvi.createCharge({
         cents: order.totalCents,
-        description: `Atlas Cloud PC ${order.sku} ${PLAN_NAMES[order.plan] || order.plan}`,
+        description: `Ignix Cloud PC ${order.sku} ${PLAN_NAMES[order.plan] || order.plan}`,
         reference: order.id,
         idempotencyKey: order.id,
       });

@@ -158,7 +158,7 @@ export async function routeTicket(interaction, app) {
 async function runStaffAction(interaction, app, ticket, action) {
   if (action === "chamar") {
     const channel = await interaction.guild.channels.fetch(ticket.channelId);
-    await interaction.client.users.fetch(ticket.userId).then((user) => user.send("A equipe da Atlas Cloud PC chamou você no atendimento.")).catch(() => {});
+    await interaction.client.users.fetch(ticket.userId).then((user) => user.send("A equipe da Ignix Cloud PC chamou você no atendimento.")).catch(() => {});
     const ping = await channel.send({ content: `<@${ticket.userId}>`, allowedMentions: { users: [ticket.userId] } });
     setTimeout(() => ping.delete().catch(() => {}), 8000);
     await present(interaction, notice("Cliente chamado no privado e no canal.", app.config.panelColor));

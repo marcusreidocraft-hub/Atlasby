@@ -326,7 +326,7 @@ test("o cartão é uma imagem sem senha e o tamanho da VM vira GPU", async () =>
   assert.equal(specsFromSize("Standard_NV6ads_A10_v5").gpu, "NVIDIA A10 1/6");
   assert.equal(specsFromSize("Standard_NC24ads_A100_v4").gpu, "NVIDIA A100");
   const svg = vmCardSvg({ status: "Ligada", headline: "Tesla T4 · 4 vCPU", ip: "191.232.52.39", time: "29d 21h 38min", plan: "Mensal · Ativo", consulted: "06/10/2026, 22:49" });
-  assert.match(svg, /Atlas/);
+  assert.match(svg, /Ignix/);
   assert.match(svg, /Seu poder em nuvem/);
   assert.doesNotMatch(svg, /Senha|PIN/);
   const png = await renderVmCardPng({ status: "Ligada", headline: "Tesla T4 · 4 vCPU", ip: "191.232.52.39", time: "29d 21h 38min", plan: "Mensal · Ativo", consulted: "06/10/2026, 22:49" });

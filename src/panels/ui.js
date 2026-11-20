@@ -47,7 +47,7 @@ export function container(accent, build) {
 }
 
 export function gallery(url) {
-  return new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(url).setDescription("Atlas Cloud PC"));
+  return new MediaGalleryBuilder().addItems(new MediaGalleryItemBuilder().setURL(url).setDescription("Ignix Cloud PC"));
 }
 
 export function attachmentGallery(name) {
@@ -56,7 +56,7 @@ export function attachmentGallery(name) {
 
 export function section(content, { bannerUrl, button }) {
   const block = new SectionBuilder().addTextDisplayComponents(text(content));
-  if (bannerUrl) block.setThumbnailAccessory(new ThumbnailBuilder().setURL(bannerUrl).setDescription("Atlas Cloud PC"));
+  if (bannerUrl) block.setThumbnailAccessory(new ThumbnailBuilder().setURL(bannerUrl).setDescription("Ignix Cloud PC"));
   else block.setButtonAccessory(button);
   return block;
 }

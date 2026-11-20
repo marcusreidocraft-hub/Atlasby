@@ -312,7 +312,7 @@ export async function routeStoreComponent(interaction, app) {
     const order = app.store.order(notify[1]);
     try {
       const user = await interaction.client.users.fetch(order.userId);
-      await user.send(`Há uma atualização no seu pedido da Atlas Cloud PC: https://discord.com/channels/${guildId}/${order.channelId}`);
+      await user.send(`Há uma atualização no seu pedido da Ignix Cloud PC: https://discord.com/channels/${guildId}/${order.channelId}`);
       await present(interaction, notice("Cliente avisado no privado.", app.config.panelColor));
     } catch {
       await present(interaction, notice("Não foi possível enviar a mensagem privada.", app.config.panelColor));
