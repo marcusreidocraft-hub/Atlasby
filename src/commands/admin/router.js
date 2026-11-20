@@ -5,6 +5,7 @@ import { renderTermsMessages } from "../../panels/termos.js";
 import { routeAnnounceCommand } from "../../announce/router.js";
 import { routeInviteCommand } from "../../invites/router.js";
 import { routeMachineCommand } from "../../maquina/router.js";
+import { routeSubscriptionCommand, routeSubscriptionComponent } from "../../assinatura/router.js";
 import { notice, V2 } from "../../panels/ui.js";
 import { parseDate } from "../../services/plans.js";
 import { ack, actorFrom, present } from "../../components/reply.js";
@@ -63,6 +64,10 @@ export async function routeCommand(interaction, app) {
     return;
   }
   await ack(interaction, false);
+  if (name === "assinatura") {
+    await routeSubscriptionCommand(interaction, app);
+    return;
+  }
   if (await handleStoreCommand(interaction, app, actor)) return;
   if (name === "criar-maquina") {
     await routeMachineCommand(interaction, app, actor);
@@ -191,6 +196,7 @@ export async function routeCommand(interaction, app) {
 }
 
 export async function routeAdminComponent(interaction, app) {
+  if (await routeSubscriptionComponent(interaction, app)) return true;
   const id = interaction.customId ?? "";
   if (!id.startsWith("atlas:admin:") && !id.startsWith("atlas:modal:add:") && !id.startsWith("atlas:modal:edit:") && !id.startsWith("atlas:attend:")) return false;
   const actor = actorFrom(interaction);

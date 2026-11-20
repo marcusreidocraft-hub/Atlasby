@@ -336,6 +336,7 @@ test("cada operação Azure usada existe no SDK instalado", () => {
   const network = new NetworkManagementClient(credential, "00000000-0000-0000-0000-000000000000");
   const files = [
     ...fs.readdirSync("src/maquina").map((name) => path.join("src/maquina", name)),
+    ...fs.readdirSync("src/assinatura").filter((name) => name.endsWith(".js")).map((name) => path.join("src/assinatura", name)),
     "src/loja/azure.js",
     "src/services/provider.js",
   ];

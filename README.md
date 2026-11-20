@@ -74,6 +74,7 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
 | `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
+| `/assinatura` | mostra a assinatura, o custo do mês e a cota Spot |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
 | `/configurar logs` | grava o canal de log. O mesmo campo do `/configurar-atendimento` |
@@ -107,6 +108,12 @@ O convite fica pendente por 24 horas. Só depois disso entra na conta. Se a pess
 As metas padrão são 10 convites = 6 horas, 20 = 12 horas, 30 = 24 horas, 40 = 3 dias e 55 = 1 semana. Cada meta gera uma bonificação uma única vez. O canal de logs recebe **Entregar** e **Recusar**. Entregar estende o plano ativo; sem plano ativo, fica marcado para a equipe aplicar na mão. A contagem pode cair depois da entrega, e a bonificação não é desfeita.
 
 `/convites ver`, `/convites ajustar`, `/convites resetar` e `/convites ranking` são de administrador. O bot precisa dos intents **Guild Members** e **Guild Invites**, e das permissões **Gerenciar Servidor** e **Criar Convite**. Sem o intent de membros ele não recebe quem entra ou sai. Sem Gerenciar Servidor ele avisa no log e não lê os links.
+
+## Assinatura
+
+`/assinatura` responde em privado. O painel mostra o nome, o ID abreviado, o estado, a oferta e o tenant. O custo traz o mês atual, o mês anterior, a moeda e os cinco serviços mais caros. A cota de Brazil South lista os vCPU Spot, os vCPU regionais e a família NCASv3_T4, com uma barra de uso. **Atualizar** reaproveita a consulta por 10 minutos. **Forçar** consulta de novo. O seletor troca a região da cota entre Brazil South, East US, East US 2, South Central US e West US 2.
+
+O aplicativo precisa das funções **Leitor** e **Cost Management Reader** na assinatura. Sem elas, o painel avisa e mostra só o que conseguiu ler. O crédito de avaliação ou de Azure for Students aparece quando a API de saldo responde. Contributor continua necessário para criar VM; ele não substitui a leitura de custo.
 
 ## Criar máquina
 
