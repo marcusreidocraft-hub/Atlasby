@@ -370,6 +370,7 @@ async function launch(interaction, app, actor, draft) {
     imageId: image.id,
     osGb: Math.min(512, azure.maxOsDiskGb),
     nsgGroup: /resourceGroups\/([^/]+)/i.exec(draft.payload.nsgId || "")?.[1] || azure.resourceGroup,
+    ownerId: draft.payload.userId,
   };
   if (app.provisioner.preflight) {
     const problems = await app.provisioner.preflight(spec);

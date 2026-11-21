@@ -3,6 +3,7 @@ import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, r
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { vmOptionValue } from "./provider.js";
+import { normalizeVmId, resolveOwner } from "./vm-link.js";
 import { validateAccess, validateIdentity, validateSchedule, validateSpecs } from "./fields.js";
 import { specsFromSize } from "./vm-size.js";
 import { expiryFrom, formatDate, startOfToday } from "./plans.js";
@@ -141,13 +142,12 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       return { payload: renderContinue(config.panelColor, draft.id, 3, "Acesso anotado. O próximo passo lista as VMs da Azure. A senha e o PIN não aparecem nesta tela.", emojis.pack(guildId)) };
     },
     async vmChoices(guildId, targetUserId) {
-      const links = repo.listInfraLinks(guildId);
-      const linked = new Map(links.map((link) => [link.infraId, link]));
+      const clients = repo.listClients(guildId);
       const vms = await infra.listVms();
       return vms.filter((vm) => {
-        const owner = linked.get(vm.id);
+        const owner = resolveOwner(vm, clients);
         return !owner || owner.userId === targetUserId;
-      }).map((vm) => ({ ...vm, own: linked.get(vm.id)?.userId === targetUserId }));
+      }).map((vm) => ({ ...vm, own: resolveOwner(vm, clients)?.userId === targetUserId }));
     },
     async vmPicker(guildId, actor, draftId, page = 0) {
       const blocked = gate(actor);
@@ -192,8 +192,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       }
       const vm = vms.find((item) => vmOptionValue(item.id) === token);
       if (!vm) return notice("Essa VM não está mais na lista. Abra a lista de novo.", config.panelColor);
-      const other = repo.findByInfra(guildId, vm.id);
-      if (other && other.userId !== draft.payload.targetUserId) return notice("Essa VM já está vinculada a outro cliente.", config.panelColor);
+      const other = resolveOwner(vm, repo.listClients(guildId));
+      if (other?.userId && other.userId !== draft.payload.targetUserId) return notice("Essa VM já está vinculada a outro cliente.", config.panelColor);
       const specs = specsFromSize(vm.size);
       draft.payload.infraId = vm.id;
       draft.payload.vmName = vm.name;
@@ -211,8 +211,12 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!infra.configured) return notice("A Azure não está configurada. Nada foi listado.", config.panelColor);
       try {
         const vms = infra.listVms ? await infra.listVms() : [];
-        const links = new Map(repo.listInfraLinks(guildId).map((link) => [link.infraId, link.clientName]));
-        const rows = vms.map((vm) => ({ ...vm, clientName: links.get(vm.id) || "" }));
+        const clients = repo.listClients(guildId);
+        const rows = vms.map((vm) => {
+          const owner = resolveOwner(vm, clients);
+          const clientName = owner?.clientName || (owner?.userId ? `<@${owner.userId}>` : "");
+          return { ...vm, clientName };
+        });
         const pages = Math.max(1, Math.ceil(rows.length / size));
         const safePage = Math.min(Math.max(0, page), pages - 1);
         return renderAzureVmList({ accent: config.panelColor, rows: rows.slice(safePage * size, safePage * size + size), page: safePage, pages });
@@ -228,8 +232,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!draft) return { payload: notice("O rascunho expirou. Comece de novo.", config.panelColor) };
       const schedule = validateSchedule({ ...fields, plan: draft.payload.plan });
       if (!schedule.ok) return { payload: notice(schedule.error, config.panelColor) };
-      const other = repo.findByInfra(guildId, schedule.value.infraId);
-      if (other && other.userId !== draft.payload.targetUserId) return { payload: notice("Este ID já está vinculado a outro cliente.", config.panelColor) };
+      const other = resolveOwner({ id: schedule.value.infraId }, repo.listClients(guildId));
+      if (other?.userId && other.userId !== draft.payload.targetUserId) return { payload: notice("Este ID já está vinculado a outro cliente.", config.panelColor) };
       draft.payload = {
         ...draft.payload,
         ...schedule.value,
@@ -245,8 +249,8 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       const draft = requireDraft(guildId, actor.id, draftId);
       if (!draft || draft.kind === "renew") return notice("O rascunho expirou. Comece de novo.", config.panelColor);
       const data = draft.payload;
-      const other = repo.findByInfra(guildId, data.infraId);
-      if (other && other.userId !== data.targetUserId) return notice("Este ID já está vinculado a outro cliente.", config.panelColor);
+      const other = resolveOwner({ id: data.infraId }, repo.listClients(guildId));
+      if (other?.userId && other.userId !== data.targetUserId) return notice("Este ID já está vinculado a outro cliente.", config.panelColor);
       const row = {
         id: data.existingId || randomUUID(),
         guildId,
@@ -263,12 +267,13 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
         planType: data.plan,
         startedAt: data.startedAt,
         expiresAt: data.expiresAt,
-        infraId: data.infraId || null,
+        infraId: data.infraId ? normalizeVmId(data.infraId) : null,
         powerStatus: "desconhecida",
         now: now(),
       };
       if (data.existingId) repo.updateClient(row);
       else repo.insertClient(row);
+      if (row.infraId && infra.tagOwner) await infra.tagOwner(row.infraId, row.userId).catch(() => {});
       repo.deleteDraft(draft.id);
       await logged(actor, draft.kind === "edit" ? "editar_cliente" : "adicionar_cliente", data.targetUserId, data.machineName, `Cliente salvo: ${data.machineName}.`);
       return notice(`Cliente salvo: ${data.clientName} · ${data.machineName}.`, config.panelColor);

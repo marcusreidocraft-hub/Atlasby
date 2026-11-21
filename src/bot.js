@@ -18,6 +18,7 @@ import { machineLinks, renderMachineNotice, sendMachineNotice } from "./panels/m
 import { formatDate, PLAN_LABEL } from "./services/plans.js";
 import { PLAN_NAMES } from "./loja/products.js";
 import { attendanceOf } from "./loja/attendance.js";
+import { repairVmLinks } from "./services/vm-link.js";
 
 async function deliver(client, channelId, payload) {
   const channel = await client.channels.fetch(channelId);
@@ -146,6 +147,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     await app.invites.sweep(ready);
   });
   await client.login(config.token);
+  await repairVmLinks(repo, infra, Date.now()).catch((error) => console.warn(`Vínculo de VM: ${error?.code || "erro"}`));
   if (config.serverPort) {
     const server = createStoreHttp(async (raw, headers) => {
       const result = await app.store.handleWebhook(raw, headers);

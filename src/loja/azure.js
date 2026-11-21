@@ -117,6 +117,7 @@ export function createAzureProvisioner(config, deps = {}) {
           zone: state.zone || "",
           dataDisks: state.dataDiskId ? [{ lun: 0, name: state.names.data, createOption: "Attach", managedDisk: { id: state.dataDiskId, storageAccountType: "PremiumV2_LRS" } }] : [],
         });
+      if (state.ownerId) parameters.tags = { ...(parameters.tags || {}), "ignix-owner": String(state.ownerId) };
       const created = await client.virtualMachines.beginCreateOrUpdateAndWait(state.group, state.names.vm, parameters);
       return created.id;
     },

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expiryFrom, startOfToday } from "../services/plans.js";
 import { azureErrorText } from "./limits.js";
 import { machineNames } from "./payload.js";
+import { normalizeVmId } from "../services/vm-link.js";
 
 const ORDER = ["rede", "nic", "disco", "vm", "ligando", "pronto"];
 
@@ -81,7 +82,7 @@ export function clientRow({ guildId, userId, clientName, machineName, specs, pub
     planType: "mensal",
     startedAt,
     expiresAt: expiryFrom(startedAt, "mensal"),
-    infraId,
+    infraId: normalizeVmId(infraId),
     powerStatus: "ligada",
     now,
   };

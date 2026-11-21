@@ -6,6 +6,7 @@ import { quotePrice, validateOffer } from "./promotions.js";
 import { fitsPlan } from "./availability.js";
 import { advanceProvision, resourceNames } from "./provision.js";
 import { resolveGalleryImage } from "./image.js";
+import { normalizeVmId } from "../services/vm-link.js";
 import { createWyzeCashClient, paymentAmount, paymentId, verifyWyzeCashSignature, webhookEvent, webhookEventId } from "./payments.js";
 import { renderStorePanel } from "./panel.js";
 
@@ -346,7 +347,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), payme
           id: randomUUID(), guildId: order.guildId, userId: order.userId, clientName: order.clientName || "Cliente",
           machineName: names.vm, gpu: product.gpu, vcpus: product.vcpus, ram: product.ram, publicIp,
           rdpUser: null, rdpPasswordCipher: null, pinCipher: null, planType: order.plan, startedAt: start,
-          expiresAt: durationMs(order.plan, start), infraId: vmId || order.provision?.vmId || "", powerStatus: "ligada", now: start,
+          expiresAt: durationMs(order.plan, start), infraId: normalizeVmId(vmId || order.provision?.vmId || ""), powerStatus: "ligada", now: start,
         });
       } catch (error) {
         repo.patchOrder(orderId, { status: "acompanhamento" }, now());
@@ -372,6 +373,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), payme
       repo.patchOrder(orderId, { status: "provisionando" }, now());
       const state = {
         orderId,
+        ownerId: order.userId,
         step: "start",
         ...(order.provision || {}),
         names: order.provision?.names || resourceNames(orderId),

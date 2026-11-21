@@ -66,6 +66,7 @@ function summarizeVm(vm, power) {
     size: vm.hardwareProfile?.vmSize ?? "",
     id: vm.id,
     power: power ?? null,
+    tags: vm.tags || {},
   };
 }
 
@@ -352,6 +353,15 @@ export function createInfrastructure(config, deps = {}) {
         }
         return { mode: "azure", code: "ok" };
       }, scrub);
+    },
+    async tagOwner(infraId, userId) {
+      if (!userId) return { mode: "manual", reason: "owner" };
+      return azureCall(infraId, writeMs, async (client, target) => {
+        const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
+        const tags = { ...(vm.tags || {}), "ignix-owner": String(userId) };
+        await client.virtualMachines.beginUpdateAndWait(target.resourceGroup, target.name, { tags });
+        return { mode: "azure" };
+      });
     },
   };
 }

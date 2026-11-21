@@ -578,7 +578,8 @@ test("alterar senha confirma, aplica pela extensão e não grava a senha", async
   const compute = {
     virtualMachines: {
       async instanceView() { return { statuses: [{ code: "PowerState/running" }] }; },
-      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" }, tags: { "ignix-owner": CLIENT } }; },
+      async beginUpdateAndWait() {},
     },
     virtualMachineExtensions: {
       async get() {
@@ -636,7 +637,8 @@ test("alterar senha confirma, aplica pela extensão e não grava a senha", async
   const offCompute = {
     virtualMachines: {
       async instanceView() { return { statuses: [{ code: "PowerState/deallocated" }] }; },
-      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" }, tags: { "ignix-owner": CLIENT } }; },
+      async beginUpdateAndWait() {},
     },
     virtualMachineExtensions: { async beginCreateOrUpdateAndWait() { throw new Error("não deveria aplicar"); } },
   };
@@ -651,7 +653,8 @@ test("alterar senha confirma, aplica pela extensão e não grava a senha", async
   const slow = {
     virtualMachines: {
       async instanceView() { return { statuses: [{ code: "PowerState/running" }] }; },
-      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" }, tags: { "ignix-owner": CLIENT } }; },
+      async beginUpdateAndWait() {},
     },
     virtualMachineExtensions: {
       async get() {
@@ -717,6 +720,7 @@ test("Azure formata pelo snapshot e o modo manual não chama a nuvem", async () 
       async beginCreateOrUpdateAndWait(_group, _name, body) {
         calls.push(["update", body]);
       },
+      async beginUpdateAndWait() { calls.push("tag"); },
       async instanceView() { return { statuses: [{ code: "PowerState/deallocated" }] }; },
     },
   };
@@ -725,9 +729,9 @@ test("Azure formata pelo snapshot e o modo manual não chama a nuvem", async () 
   const asked = await env.app.clients.askFormat(GUILD, CLIENT);
   const confirmation = /atlas:vm:format:yes:([0-9a-f-]{36})/.exec(textOf(asked))[1];
   const done = await env.app.clients.confirmFormat(GUILD, CLIENT, confirmation, "Mesa 01");
-  const body = calls[2][1];
+  const body = calls.find((call) => Array.isArray(call))[1];
   assert.match(textOf(done), /disco do sistema foi recriado/);
-  assert.deepEqual(calls.map((call) => Array.isArray(call) ? call[0] : call), ["deallocate", "get", "update"]);
+  assert.deepEqual(calls.map((call) => Array.isArray(call) ? call[0] : call), ["get", "tag", "deallocate", "get", "update"]);
   assert.equal(body.osProfile, undefined);
   assert.equal(body.storageProfile.imageReference.id, env.app.config.azure.imageId);
   assert.equal(body.storageProfile.osDisk.createOption, "FromImage");
