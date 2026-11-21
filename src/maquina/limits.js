@@ -1,4 +1,4 @@
-export const DATA_SIZES = Object.freeze([128, 256, 512, 1024, 2048]);
+export const DATA_SIZES = Object.freeze([128, 256, 512, 1024, 2048, 2560]);
 export const IOPS_CHOICES = Object.freeze([3000, 5000, 8000, 12000, 16000]);
 export const BASE_IOPS = 3000;
 export const BASE_THROUGHPUT = 125;
@@ -25,7 +25,7 @@ export function validateDataDisk({ gb, iops, throughput }) {
   const size = Number(gb);
   const ops = Number(iops);
   const speed = Number(throughput);
-  if (!DATA_SIZES.includes(size)) return { ok: false, error: "Escolha um disco de 128, 256, 512, 1024 ou 2048 GB." };
+  if (!DATA_SIZES.includes(size)) return { ok: false, error: "Escolha um disco de 128, 256, 512, 1024, 2048 ou 2560 GB." };
   const iopsCap = maxIopsForSize(size);
   if (!Number.isInteger(ops) || ops < BASE_IOPS || ops > iopsCap) {
     return { ok: false, error: `O IOPS deste disco fica entre ${BASE_IOPS} e ${iopsCap}.` };

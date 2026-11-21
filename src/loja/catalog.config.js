@@ -10,13 +10,18 @@ export const STORE_DESCRIPTION = "Computador na nuvem com GPU Tesla T4 para joga
 
 const T4 = "NVIDIA Tesla T4 16 GB";
 
-export const T4_16_DATA_GB = 2048;
+export const T4_16_DATA_GB = 2560;
 
 export function suggestedDataGb(vcpus) {
   const cores = Number(vcpus) || 4;
   if (cores >= 16) return T4_16_DATA_GB;
   if (cores >= 8) return 1024;
   return 512;
+}
+
+export function dataDiskLabel(gb) {
+  if (Number(gb) === 2560) return "2,5 TB SSD v2";
+  return `${gb} GB SSD v2`;
 }
 
 export const CATALOG = Object.freeze([
@@ -58,7 +63,7 @@ export const CATALOG = Object.freeze([
     sku: SKUS.t4_16,
     name: "T4 · 16 vCPUs",
     headline: "Tesla T4 • 16 vCPUs",
-    specs: "16 núcleos • 110 GB RAM • 2048 GB SSD v2 • Windows 10/11 • GPU NVIDIA Tesla T4 16 GB",
+    specs: "16 núcleos • 110 GB RAM • 2,5 TB SSD v2 • Windows 10/11 • GPU NVIDIA Tesla T4 16 GB",
     vmSize: "Standard_NC16as_T4_v3",
     gpu: "Tesla T4",
     vcpus: 16,

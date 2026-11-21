@@ -199,7 +199,14 @@ test("preços T4 e desconto saem só do servidor", () => {
   assert.equal(t4.vmSize, "Standard_NC4as_T4_v3");
   assert.equal(t4.diskGb, 512);
   assert.equal(catalogBySku("t4-8").diskGb, 1024);
-  assert.equal(catalogBySku("t4-16").diskGb, 2048);
+  assert.equal(catalogBySku("t4-16").diskGb, 2560);
+  assert.match(JSON.stringify(renderStorePanel({
+    settings: { purchasesEnabled: true },
+    products: [{ sku: "t4-16", visible: true, gpu: "Tesla T4", vcpus: 16, ram: "110 GB", diskGb: 2560, name: "T4 · 16 vCPUs", azure: { spot: true }, prices: { mensal: 8990 } }],
+    offers: [],
+    now: 0,
+    capacity: { ok: true, low: { used: 0, limit: 64 }, cores: { used: 0, limit: 64 }, family: { used: 0, limit: 64 } },
+  })), /2,5 TB SSD v2/);
   assert.equal(catalogBySku("t4-8").ramGib, 56);
   assert.equal(catalogBySku("t4-16").ramGib, 110);
   assert.equal(quotePrice({ product: t4, plan: "mensal", now: 0 }).total, 4990);

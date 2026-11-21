@@ -2,7 +2,7 @@ import { ActionRowBuilder, ButtonStyle, ContainerBuilder, LabelBuilder, ModalBui
 import { press, separator, text, V2_EPHEMERAL } from "../panels/ui.js";
 import { DATA_SIZES, IOPS_CHOICES, autoThroughput } from "./limits.js";
 import { nsgOptions } from "./nsg.js";
-import { suggestedDataGb } from "../loja/catalog.config.js";
+import { dataDiskLabel, suggestedDataGb } from "../loja/catalog.config.js";
 import { MACHINE_SIZES, sizeById } from "./payload.js";
 import { specsFromSize } from "../services/vm-size.js";
 import { progressMark } from "./create.js";
@@ -106,8 +106,13 @@ export function renderDiskStep(draft, accent) {
 
 export function renderGbStep(draft, accent) {
   const suggested = suggestedDataGb(specsFromSize(sizeById(draft.sizeId)?.size).vcpus);
-  return shell(accent, ["## Disco de dados", "Tamanho do Premium SSD v2.", `Sugestão: ${suggested} GB`], [
-    select(`atlas:maquina:gb:${draft.id}`, "Gigabytes", DATA_SIZES.map((gb) => ({ label: `${gb} GB`, value: String(gb) }))),
+  const suggestion = suggested === 2560 ? "2,5 TB" : `${suggested} GB`;
+  return shell(accent, ["## Disco de dados", "Tamanho do Premium SSD v2.", `Sugestão: ${suggestion}`], [
+    select(`atlas:maquina:gb:${draft.id}`, "Gigabytes", DATA_SIZES.map((gb) => ({
+      label: gb === 2560 ? "2,5 TB" : `${gb} GB`,
+      value: String(gb),
+      description: gb === 2560 ? "2560 GiB" : undefined,
+    }))),
     move(draft.id, "gb"),
   ]);
 }
@@ -195,7 +200,7 @@ export function nameModal(draftId) {
 
 export function renderReview(draft, accent, extra) {
   const disk = draft.diskMode === "v2"
-    ? `SSD v2 ${draft.dataGb} GB · ${draft.iops} IOPS · ${draft.throughput} MB/s · zona ${draft.zone}`
+    ? `${dataDiskLabel(draft.dataGb)} · ${draft.iops} IOPS · ${draft.throughput} MB/s · zona ${draft.zone}`
     : "SSD Premium no sistema";
   const root = new ContainerBuilder().setAccentColor(accent);
   root.addTextDisplayComponents(text([

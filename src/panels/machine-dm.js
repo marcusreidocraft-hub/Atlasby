@@ -18,6 +18,7 @@ export function machineLinks(repo, config, guildId) {
 export function diskLabel({ diskMode = "", dataGb = 0, diskGb = 0 } = {}) {
   if (diskMode === "v2" && dataGb) return `SSD Premium · SSD v2 ${dataGb} GB`;
   if (diskMode === "premium") return "SSD Premium";
+  if (Number(diskGb) === 2560) return "2,5 TB SSD v2";
   if (diskGb) return `SSD v2 ${diskGb} GB`;
   return "";
 }

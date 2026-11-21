@@ -1,6 +1,6 @@
 import { CATALOG } from "./catalog.config.js";
 
-export { CATALOG, SKUS, STORE_DESCRIPTION, STORE_NAME, T4_16_DATA_GB, storeBanner, suggestedDataGb } from "./catalog.config.js";
+export { CATALOG, SKUS, STORE_DESCRIPTION, STORE_NAME, T4_16_DATA_GB, dataDiskLabel, storeBanner, suggestedDataGb } from "./catalog.config.js";
 
 export const PLAN_NAMES = Object.freeze({
   "3h": "3 horas",

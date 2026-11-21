@@ -27,7 +27,8 @@ test("disco v2 respeita IOPS, taxa e tamanho", () => {
   assert.equal(maxThroughputForIops(16000), 1200);
   assert.equal(autoThroughput(3000), 750);
   assert.equal(validateDataDisk({ gb: 128, iops: 3000, throughput: 125 }).ok, true);
-  assert.match(validateDataDisk({ gb: 64, iops: 3000, throughput: 125 }).error, /128, 256, 512, 1024 ou 2048/);
+  assert.match(validateDataDisk({ gb: 64, iops: 3000, throughput: 125 }).error, /2560/);
+  assert.equal(validateDataDisk({ gb: 2560, iops: 3000, throughput: 125 }).ok, true);
   assert.match(validateDataDisk({ gb: 128, iops: 70000, throughput: 125 }).error, /64000/);
   assert.match(validateDataDisk({ gb: 512, iops: 3000, throughput: 800 }).error, /750/);
   assert.equal(sizeById("t4-4").size, "Standard_NC4as_T4_v3");

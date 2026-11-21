@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, StringSelectMenuBuilder } from "discord.js";
-import { PLAN_NAMES, STORE_DESCRIPTION, STORE_NAME, formatBrl } from "./products.js";
+import { PLAN_NAMES, STORE_DESCRIPTION, STORE_NAME, dataDiskLabel, formatBrl } from "./products.js";
 import { offerApplies, quotePrice } from "./promotions.js";
 import { fitsPlan } from "./availability.js";
 import { emojiText } from "./emojis.js";
@@ -89,7 +89,7 @@ export function renderStorePanel({ settings = {}, products, offers = [], now, ca
     const from = priced.length ? Math.min(...priced.map((item) => item.quote.total)) : null;
     root.addTextDisplayComponents(text([
       `**${product.name || product.headline}**`,
-      `GPU ${product.gpu || "Tesla T4"} · ${product.vcpus} vCPUs · ${product.ram || `${product.ramGib || ""} GB`} · ${product.diskGb || 512} GB SSD v2`,
+      `GPU ${product.gpu || "Tesla T4"} · ${product.vcpus} vCPUs · ${product.ram || `${product.ramGib || ""} GB`} · ${dataDiskLabel(product.diskGb || 512)}`,
       from != null ? `A partir de **${formatBrl(from)}**` : "",
       priced.map(compactAmount).join("\n"),
       open ? "" : "Indisponível",
