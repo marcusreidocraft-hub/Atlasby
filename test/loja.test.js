@@ -98,7 +98,7 @@ function textLength(node) {
 
 test("o painel da loja é Components V2 e cada máquina tem o próprio seletor", () => {
   const products = [
-    { sku: "t4-4", visible: true, gpu: "Tesla T4", vcpus: 4, ram: "28 GB", ramGib: 28, diskGb: 512, name: "T4 · 4 vCPUs", azure: { spot: true }, prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
+    { sku: "t4-4", visible: true, gpu: "Tesla T4", vcpus: 4, ram: "28 GB", ramGib: 28, diskGb: 512, name: "Tesla T4 · 4 vCPU", azure: { spot: true }, plans: ["semanal", "quinzenal", "mensal"], prices: { semanal: 2490, quinzenal: 3690, mensal: 4990 } },
     { sku: "t4-8", visible: true, gpu: "Tesla T4", vcpus: 8, ram: "56 GB", diskGb: 512, name: "T4 · 8 vCPUs", azure: { spot: true }, prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
     { sku: "t4-16", visible: true, gpu: "Tesla T4", vcpus: 16, ram: "110 GB", diskGb: 512, name: "T4 · 16 vCPUs", azure: { spot: true }, prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
   ];
@@ -121,7 +121,11 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
   assert.match(raw, /IGNIX CLOUD/);
   assert.match(raw, /Ignix Cloud PC/);
   assert.match(raw, /GPU Tesla T4 · 4 vCPUs · 28 GB · 512 GB SSD v2/);
-  assert.match(raw, /A partir de \*\*R\$ 4,59\*\*/);
+  assert.match(raw, /<:8688gaming:1568512664705961985>/);
+  assert.match(raw, /Tenha seu próprio computador na nuvem!/);
+  assert.match(raw, /7d ~~R\$ 24,90~~ \*\*R\$ 19,90\*\*/);
+  assert.match(raw, /15d \*\*R\$ 36,90\*\*/);
+  assert.match(raw, /30d \*\*R\$ 49,90\*\*/);
   assert.match(raw, /~~R\$ 24,90~~ \*\*R\$ 19,90\*\*/);
   assert.match(raw, /<t:3600:R>/);
   assert.ok(componentCount(tree) <= 40);
@@ -130,7 +134,8 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
   assert.equal(selects.length, 3);
   const four = selects.find((item) => item.custom_id === "atlas:store:pick:t4-4");
   const eight = selects.find((item) => item.custom_id === "atlas:store:pick:t4-8");
-  assert.deepEqual(four.options.map((item) => item.value), ["t4-4:3h", "t4-4:6h", "t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+  assert.deepEqual(four.options.map((item) => item.value), ["t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+  assert.equal(four.options.some((item) => item.label === "Indisponível"), false);
   assert.equal(four.disabled, undefined);
   assert.equal(eight.disabled, true);
   assert.equal(eight.placeholder, "Indisponível");
@@ -209,13 +214,20 @@ test("preços T4 e desconto saem só do servidor", () => {
   })), /2,5 TB SSD v2/);
   assert.equal(catalogBySku("t4-8").ramGib, 56);
   assert.equal(catalogBySku("t4-16").ramGib, 110);
+  assert.equal(quotePrice({ product: t4, plan: "semanal", now: 0 }).total, 2490);
+  assert.equal(quotePrice({ product: t4, plan: "quinzenal", now: 0 }).total, 3690);
   assert.equal(quotePrice({ product: t4, plan: "mensal", now: 0 }).total, 4990);
-  assert.equal(quotePrice({ product: t4, plan: "3h", now: 0, hoursEnabled: false }), null);
+  assert.equal(catalogBySku("t4-8").prices.semanal, 3590);
+  assert.equal(catalogBySku("t4-8").prices.mensal, 6990);
+  assert.equal(catalogBySku("t4-16").prices.semanal, 4990);
+  assert.equal(catalogBySku("t4-16").prices.quinzenal, 6990);
+  assert.equal(catalogBySku("t4-16").prices.mensal, 8990);
+  assert.deepEqual(t4.plans, ["semanal", "quinzenal", "mensal"]);
   const offer = { id: "oferta", sku: "t4-4", plan: "mensal", promoCents: 3990, unitsLeft: 2, active: true, startsAt: 0, endsAt: 10 };
   const quote = quotePrice({ product: t4, plan: "mensal", now: 5, offer });
   assert.equal(quote.total, 3990);
   assert.equal(quote.original, 4990);
-  assert.equal(formatBrl(459), "R$ 4,59");
+  assert.equal(formatBrl(2490), "R$ 24,90");
   assert.equal(catalogBySku("a10-1"), null);
 });
 

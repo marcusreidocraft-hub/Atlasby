@@ -6,7 +6,7 @@ export const SKUS = Object.freeze({
 
 export const STORE_NAME = "IGNIX CLOUD";
 
-export const STORE_DESCRIPTION = "Computador na nuvem com GPU Tesla T4 para jogar, trabalhar e usar seus programas. O Pix confirma e a máquina é entregue automaticamente.";
+export const STORE_DESCRIPTION = "Tenha seu próprio computador na nuvem! Jogue, trabalhe e utilize seus programas favoritos com desempenho e praticidade.";
 
 const T4 = "NVIDIA Tesla T4 16 GB";
 
@@ -27,8 +27,8 @@ export function dataDiskLabel(gb) {
 export const CATALOG = Object.freeze([
   {
     sku: SKUS.t4_4,
-    name: "T4 · 4 vCPUs",
-    headline: "Tesla T4 • 4 vCPUs",
+    name: "Tesla T4 · 4 vCPU",
+    headline: "Tesla T4 · 4 vCPU",
     specs: "4 núcleos • 28 GB RAM • 512 GB SSD v2 • Windows 10/11 • GPU NVIDIA Tesla T4 16 GB",
     vmSize: "Standard_NC4as_T4_v3",
     gpu: "Tesla T4",
@@ -38,14 +38,14 @@ export const CATALOG = Object.freeze([
     diskGb: suggestedDataGb(4),
     processor: "AMD EPYC 7V12",
     gpuMemory: T4,
-    prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 },
-    plans: ["3h", "6h", "semanal", "quinzenal", "mensal"],
+    prices: { semanal: 2490, quinzenal: 3690, mensal: 4990 },
+    plans: ["semanal", "quinzenal", "mensal"],
     category: "Cloud PC",
   },
   {
     sku: SKUS.t4_8,
-    name: "T4 · 8 vCPUs",
-    headline: "Tesla T4 • 8 vCPUs",
+    name: "Tesla T4 · 8 vCPU",
+    headline: "Tesla T4 · 8 vCPU",
     specs: "8 núcleos • 56 GB RAM • 1024 GB SSD v2 • Windows 10/11 • GPU NVIDIA Tesla T4 16 GB",
     vmSize: "Standard_NC8as_T4_v3",
     gpu: "Tesla T4",
@@ -61,8 +61,8 @@ export const CATALOG = Object.freeze([
   },
   {
     sku: SKUS.t4_16,
-    name: "T4 · 16 vCPUs",
-    headline: "Tesla T4 • 16 vCPUs",
+    name: "Tesla T4 · 16 vCPU",
+    headline: "Tesla T4 · 16 vCPU",
     specs: "16 núcleos • 110 GB RAM • 2,5 TB SSD v2 • Windows 10/11 • GPU NVIDIA Tesla T4 16 GB",
     vmSize: "Standard_NC16as_T4_v3",
     gpu: "Tesla T4",

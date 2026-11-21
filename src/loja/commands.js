@@ -7,11 +7,9 @@ const sku = (option) => option.setName("produto").setDescription("Produto").setR
   { name: "T4 16 vCPUs", value: SKUS.t4_16 },
 );
 const plan = (option) => option.setName("plano").setDescription("Duração").setRequired(true).addChoices(
-  { name: "3 horas", value: "3h" },
-  { name: "6 horas", value: "6h" },
-  { name: "Semanal", value: "semanal" },
-  { name: "Quinzenal", value: "quinzenal" },
-  { name: "Mensal", value: "mensal" },
+  { name: "7 dias", value: "semanal" },
+  { name: "15 dias", value: "quinzenal" },
+  { name: "30 dias", value: "mensal" },
 );
 
 export function storeCommands() {

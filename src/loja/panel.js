@@ -5,8 +5,9 @@ import { fitsPlan } from "./availability.js";
 import { emojiText } from "./emojis.js";
 import { press, gallery, separator, text, V2 } from "../panels/ui.js";
 
-const PLAN_ORDER = ["3h", "6h", "semanal", "quinzenal", "mensal"];
-const PLAN_SHORT = { "3h": "3h", "6h": "6h", semanal: "7d", quinzenal: "15d", mensal: "30d" };
+const PLAN_ORDER = ["semanal", "quinzenal", "mensal"];
+const PLAN_SHORT = { semanal: "7d", quinzenal: "15d", mensal: "30d" };
+const PLAN_LABEL = { semanal: "7 dias", quinzenal: "15 dias", mensal: "30 dias" };
 
 function priceLine(quote) {
   if (!quote) return "";
@@ -18,17 +19,10 @@ function plainPrice(quote) {
   return priceLine(quote).replaceAll(/[*~]/g, "").slice(0, 100);
 }
 
-function quotesFor(product, settings, offers, now) {
-  return PLAN_ORDER.map((plan) => {
+function quotesFor(product, offers, now) {
+  return (product.plans || PLAN_ORDER).map((plan) => {
     const offer = offers.find((item) => item.sku === product.sku && item.plan === plan);
-    const quote = quotePrice({
-      product,
-      plan,
-      now,
-      hoursEnabled: settings.hoursEnabled,
-      overrides: { price3h: settings.price3h, price6h: settings.price6h },
-      offer,
-    });
+    const quote = quotePrice({ product, plan, now, hoursEnabled: true, offer });
     return quote ? { plan, quote } : null;
   }).filter(Boolean);
 }
@@ -54,7 +48,7 @@ function machineSelect(product, priced, open) {
     return menu.setPlaceholder("Indisponível").setDisabled(true).addOptions({ label: "Indisponível", value: "indisponivel" });
   }
   return menu.setPlaceholder("Escolher duração").addOptions(priced.map((item) => ({
-    label: (PLAN_NAMES[item.plan] || item.plan).slice(0, 100),
+    label: (PLAN_LABEL[item.plan] || PLAN_NAMES[item.plan] || item.plan).slice(0, 100),
     description: plainPrice(item.quote),
     value: `${product.sku}:${item.plan}`,
   })));
@@ -78,13 +72,13 @@ export function renderStorePanel({ settings = {}, products, offers = [], now, ca
   const root = new ContainerBuilder().setAccentColor(0x111111);
   if (bannerUrl?.startsWith("https://")) root.addMediaGalleryComponents(gallery(bannerUrl));
   root.addTextDisplayComponents(text([
-    `${emojiText("gaming")} **${STORE_NAME}**`,
-    settings.description || STORE_DESCRIPTION,
+    `${settings.headerEmoji || emojiText("gaming")} **${STORE_NAME}**`,
+    STORE_DESCRIPTION,
   ].join("\n")));
   const visible = products.filter((item) => item.visible !== false);
   for (const product of visible) {
     root.addSeparatorComponents(separator());
-    const priced = quotesFor(product, { ...settings, hoursEnabled: settings.hoursEnabled !== false }, offers, now);
+    const priced = quotesFor(product, offers, now);
     const open = settings.purchasesEnabled !== false && fitsPlan(product.vcpus, product.azure?.spot, capacity) && priced.length > 0;
     const from = priced.length ? Math.min(...priced.map((item) => item.quote.total)) : null;
     root.addTextDisplayComponents(text([
