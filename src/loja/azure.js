@@ -1,3 +1,4 @@
+import { pickQuotas } from "../assinatura/model.js";
 import { buildDataDisk, buildSpecializedVm, parseGalleryImage, preferVersion } from "./image.js";
 
 function idOf(subscription, group, provider, ...parts) {
@@ -60,6 +61,17 @@ export function createAzureProvisioner(config, deps = {}) {
         const message = String(error?.message || error).split("\n")[0].slice(0, 240);
         console.warn(`Cota não consultada em ${location}: ${message}`);
         return { ok: true };
+      }
+    },
+    async usage(location) {
+      try {
+        const client = await compute();
+        const rows = [];
+        for await (const row of client.usageOperations.list(location)) rows.push(row);
+        return { ok: true, ...pickQuotas(rows) };
+      } catch (error) {
+        console.warn(`Cota da loja não consultada. ${String(error?.message || "").split("\n")[0].slice(0, 160)}`);
+        return { ok: false };
       }
     },
     async ip(state) {

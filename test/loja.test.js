@@ -8,7 +8,10 @@ import { openDatabase } from "../src/db/database.js";
 import { readConfig } from "../src/config.js";
 import { createStore } from "../src/loja/service.js";
 import { advanceProvision } from "../src/loja/provision.js";
-import { quotePrice } from "../src/loja/promotions.js";
+import { quotePrice, validateOffer } from "../src/loja/promotions.js";
+import { fitsPlan } from "../src/loja/availability.js";
+import { offerChoices, editStorePanel } from "../src/loja/router.js";
+import { storeCommands } from "../src/loja/commands.js";
 import { catalogBySku, formatBrl } from "../src/loja/products.js";
 import { buildSpecializedVm, DEFAULT_GALLERY_IMAGE, resolveGalleryImage } from "../src/loja/image.js";
 import { createAzureProvisioner } from "../src/loja/azure.js";
@@ -32,6 +35,7 @@ function world() {
     AZURE_LOCATION: "brazilsouth",
   });
   const store = createStore({ repo, config, audit: { async record() {} }, now: () => Date.parse("2026-11-12T15:00:00Z") });
+  store.noteCapacity({ ok: true, low: { used: 0, limit: 64 }, cores: { used: 0, limit: 64 }, family: { used: 0, limit: 64 } });
   store.settings(GUILD);
   return { repo, store, dir, close() { repo.close(); fs.rmSync(dir, { recursive: true, force: true }); } };
 }
@@ -81,51 +85,64 @@ function selectsOf(view) {
   return found;
 }
 
+function componentCount(node) {
+  if (!node || typeof node !== "object") return 0;
+  const children = node.components || [];
+  return (node.type ? 1 : 0) + children.reduce((sum, child) => sum + componentCount(child), 0);
+}
+
+function textLength(node) {
+  if (!node || typeof node !== "object") return 0;
+  return (node.content?.length || 0) + (node.components || []).reduce((sum, child) => sum + textLength(child), 0);
+}
+
 test("o painel da loja é Components V2 e cada máquina tem o próprio seletor", () => {
   const products = [
-    { sku: "t4-4", visible: true, stock: 0, purchasesEnabled: true, gpu: "Tesla T4", vcpus: 4, ramGib: 28, diskGb: 512, prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
-    { sku: "t4-8", visible: true, stock: 5, purchasesEnabled: false, gpu: "Tesla T4", vcpus: 8, ram: "56 GB", diskGb: 512, prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
-    { sku: "t4-16", visible: true, stock: 1, purchasesEnabled: true, gpu: "Tesla T4", vcpus: 16, ramGib: 110, diskGb: 512, prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
+    { sku: "t4-4", visible: true, gpu: "Tesla T4", vcpus: 4, ram: "28 GB", ramGib: 28, diskGb: 512, name: "T4 · 4 vCPUs", azure: { spot: true }, prices: { "3h": 459, "6h": 800, semanal: 2490, quinzenal: 3690, mensal: 4990 } },
+    { sku: "t4-8", visible: true, gpu: "Tesla T4", vcpus: 8, ram: "56 GB", diskGb: 512, name: "T4 · 8 vCPUs", azure: { spot: true }, prices: { semanal: 3590, quinzenal: 5590, mensal: 6990 } },
+    { sku: "t4-16", visible: true, gpu: "Tesla T4", vcpus: 16, ram: "110 GB", diskGb: 512, name: "T4 · 16 vCPUs", azure: { spot: true }, prices: { semanal: 4990, quinzenal: 6990, mensal: 8990 } },
   ];
+  const capacity = { ok: true, low: { used: 4, limit: 10 }, cores: { used: 0, limit: 64 }, family: { used: 0, limit: 64 } };
   const view = renderStorePanel({
-    settings: { title: "🎮 Ignix Cloud PC", description: "Tenha seu próprio computador na nuvem.", accent: 0x0a0a0a, hoursEnabled: true },
+    settings: { description: "Tenha seu próprio computador na nuvem.", purchasesEnabled: true },
     products,
-    offers: [],
-    now: 0,
+    offers: [{ id: "oferta", sku: "t4-4", plan: "semanal", promoCents: 1990, unitsLeft: 2, active: true, startsAt: 0, endsAt: 3_600_000 }],
+    now: 1_000,
+    capacity,
+    bannerUrl: "https://cdn.example.com/ignix.png",
+    supportUrl: "https://discord.com/channels/1/2",
   });
   const raw = JSON.stringify(view);
+  const tree = view.components[0].toJSON();
   assert.equal(view.flags, MessageFlags.IsComponentsV2);
   assert.equal(view.embeds, undefined);
   assert.equal(view.content, undefined);
-  assert.equal(view.components[0].toJSON().accent_color, undefined);
-  assert.equal((raw.match(/<:8688gaming:1568512664705961985>/g) || []).length, 1);
-  assert.doesNotMatch(raw, /<:timer:|<:cash:|<:windows:|<:tools:|<:carrinho:/);
-  assert.match(raw, /Tesla T4 · 4 vCPU/);
-  assert.match(raw, /-# 28GB RAM \/ 512GB SSD/);
-  assert.match(raw, /3h \*\*R\$ 4,59\*\*/);
-  assert.match(raw, /7d \*\*R\$ 24,90\*\*/);
+  assert.equal(tree.accent_color, 0x111111);
+  assert.match(raw, /IGNIX CLOUD/);
+  assert.match(raw, /Ignix Cloud PC/);
+  assert.match(raw, /GPU Tesla T4 · 4 vCPUs · 28 GB · 512 GB/);
+  assert.match(raw, /A partir de \*\*R\$ 4,59\*\*/);
+  assert.match(raw, /~~R\$ 24,90~~ \*\*R\$ 19,90\*\*/);
+  assert.match(raw, /<t:3600:R>/);
+  assert.ok(componentCount(tree) <= 40);
+  assert.ok(textLength(tree) <= 4000);
   const selects = selectsOf(view);
   assert.equal(selects.length, 3);
   const four = selects.find((item) => item.custom_id === "atlas:store:pick:t4-4");
   const eight = selects.find((item) => item.custom_id === "atlas:store:pick:t4-8");
-  const sixteen = selects.find((item) => item.custom_id === "atlas:store:pick:t4-16");
   assert.deepEqual(four.options.map((item) => item.value), ["t4-4:3h", "t4-4:6h", "t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
-  assert.equal(four.options.every((item) => item.emoji === undefined), true);
   assert.equal(four.disabled, undefined);
-  assert.equal(four.placeholder, "Escolher seu plano");
   assert.equal(eight.disabled, true);
-  assert.equal(eight.placeholder, "Compras desativadas");
-  assert.match(raw, /Esgotado/);
-  assert.deepEqual(sixteen.options.map((item) => item.value), ["t4-16:semanal", "t4-16:quinzenal", "t4-16:mensal"]);
-  assert.doesNotMatch(raw, /atlas:store:pick"/);
-  const hourlyOff = renderStorePanel({
-    settings: { title: "Ignix Cloud PC", description: "Loja", accent: 0x0a0a0a, hoursEnabled: false },
+  assert.equal(eight.placeholder, "Indisponível");
+  const paused = renderStorePanel({
+    settings: { purchasesEnabled: false },
     products,
     offers: [],
     now: 0,
+    capacity,
   });
-  const fourOff = selectsOf(hourlyOff).find((item) => item.custom_id === "atlas:store:pick:t4-4");
-  assert.deepEqual(fourOff.options.map((item) => item.value), ["t4-4:semanal", "t4-4:quinzenal", "t4-4:mensal"]);
+  assert.equal(selectsOf(paused).every((item) => item.disabled === true), true);
+  assert.match(JSON.stringify(paused), /Compras pausadas/);
 });
 
 test("publicar cria outro painel quando a mensagem guardada não existe", async () => {
@@ -192,30 +209,37 @@ test("preços T4 e desconto saem só do servidor", () => {
   assert.equal(catalogBySku("a10-1"), null);
 });
 
-test("estoque não fica negativo e o painel esconde hora desligada", async () => {
+test("a oferta sai na compra e volta se o pedido for cancelado", async () => {
   const env = world();
   try {
-    assert.equal(env.repo.setStock(GUILD, "t4-4", 1), true);
+    const created = await env.store.createOffer(GUILD, "admin", {
+      sku: "t4-4", plan: "mensal", promoCents: 3990, units: 1, startsAt: 1, endsAt: Date.parse("2026-12-01T00:00:00Z"),
+    });
+    assert.equal(created.ok, true);
+    const again = await env.store.createOffer(GUILD, "admin", {
+      sku: "t4-4", plan: "mensal", promoCents: 3500, units: 1, startsAt: 1, endsAt: Date.parse("2026-12-02T00:00:00Z"),
+    });
+    assert.match(again.error, /oferta ativa/);
     const first = env.store.choose(GUILD, "200000000000000001", "t4-4:mensal", "Ana");
     const second = env.store.choose(GUILD, "200000000000000002", "t4-4:mensal", "Bia");
     assert.equal(first.ok, true);
-    assert.equal(first.order.totalCents, 4990);
-    assert.equal(second.ok, false);
-    assert.equal(env.repo.storeProduct(GUILD, "t4-4").stock, 0);
+    assert.equal(first.order.totalCents, 3990);
+    assert.equal(second.ok, true);
+    assert.equal(second.order.totalCents, 4990);
+    assert.equal(env.repo.storeOffers(GUILD).some((offer) => offer.id === created.offer.id), false);
     const shown = JSON.stringify(env.store.panel(GUILD));
-    assert.match(shown, /Ignix Cloud PC/);
-    assert.match(shown, /Escolher seu plano/);
-    assert.doesNotMatch(shown, /Sem estoque no momento/);
+    assert.match(shown, /IGNIX CLOUD/);
+    assert.match(shown, /Escolher duração/);
     assert.match(shown, /R\$ 49,90/);
-    await env.store.setPurchases(GUILD, "admin", { sku: "t4-4", enabled: false });
-    const blocked = env.store.choose(GUILD, "200000000000000003", "t4-4:mensal", "Caio");
+    await env.store.setPurchases(GUILD, "admin", { enabled: false });
+    const blocked = env.store.choose(GUILD, "200000000000000003", "t4-4:semanal", "Caio");
     assert.equal(blocked.ok, false);
     assert.equal(blocked.error, "Compras desativadas no momento.");
-    assert.match(JSON.stringify(env.store.panel(GUILD)), /Compras desativadas/);
-    await env.store.setHours(GUILD, "admin", { enabled: false });
-    assert.doesNotMatch(JSON.stringify(env.store.panel(GUILD)), /3h \*\*/);
-    assert.equal(env.repo.releaseOrder(first.order.id, "cancelado", 1), true);
-    assert.equal(env.repo.storeProduct(GUILD, "t4-4").stock, 1);
+    assert.match(JSON.stringify(env.store.panel(GUILD)), /Indisponível/);
+    assert.equal(env.repo.releaseOrder(first.order.id, "cancelado", Date.parse("2026-11-12T15:00:00Z")), true);
+    assert.equal(env.repo.storeOffers(GUILD).find((offer) => offer.id === created.offer.id).unitsLeft, 1);
+    env.store.noteCapacity({ ok: false });
+    assert.equal(env.store.choose(GUILD, "200000000000000004", "t4-16:mensal", "Duda").ok, false);
   } finally {
     env.close();
   }
@@ -224,7 +248,6 @@ test("estoque não fica negativo e o painel esconde hora desligada", async () =>
 test("webhook exige assinatura, confere o valor e não processa duas vezes", async () => {
   const env = world();
   try {
-    env.repo.setStock(GUILD, "t4-4", 2);
     const chosen = env.store.choose(GUILD, "200000000000000001", "t4-4:semanal", "Ana");
     const raw = JSON.stringify({ referencia: chosen.order.id, valor_centavos: chosen.order.totalCents });
     const stamp = String(Math.floor(Date.parse("2026-11-12T15:00:00Z") / 1000));
@@ -236,7 +259,6 @@ test("webhook exige assinatura, confere o valor e não processa duas vezes", asy
     assert.equal(paid.orderId, chosen.order.id);
     assert.equal(again.duplicate, true);
     assert.equal(env.store.order(chosen.order.id).status, "pago");
-    env.repo.setStock(GUILD, "t4-8", 1);
     const other = env.store.choose(GUILD, "200000000000000003", "t4-8:mensal", "Caio");
     const wrongRaw = JSON.stringify({ referencia: other.order.id, valor_centavos: 1 });
     const wrongSig = createHmac("sha256", "segredo-wyvi").update(`${stamp}.${wrongRaw}`).digest("hex");
@@ -288,7 +310,7 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
     const product = env.repo.storeProduct(GUILD, "t4-4");
     await store.saveProduct(GUILD, "admin", { ...product, azure: { ...product.azure, vnet: "vnet", subnet: "sub", group: "Reido7" } });
     await store.saveSettings(GUILD, "admin", { imageId: "/subscriptions/x/resourceGroups/Reido7/providers/Microsoft.Compute/galleries/atlas/images/base/versions/1.0.0", imageKind: "gallery" });
-    env.repo.setStock(GUILD, "t4-4", 1);
+    store.noteCapacity({ ok: true, low: { used: 0, limit: 64 }, cores: { used: 0, limit: 64 }, family: { used: 0, limit: 64 } });
     const chosen = store.choose(GUILD, "200000000000000009", "t4-4:mensal", "Ana");
     env.repo.patchOrder(chosen.order.id, { status: "pago", paidAt: 1 }, 1);
     const createdVm = await store.provision(chosen.order.id);
@@ -324,6 +346,34 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
     admin.updateSettings(GUILD, { id: "1", owner: true, permissions: 8n, roleIds: [] }, { emoji: { controle: "x" } });
     assert.equal(env.repo.getSettings(GUILD).supportRoleId, "123");
     assert.equal(env.repo.getSettings(GUILD).logChannelId, "777");
+  } finally {
+    env.close();
+  }
+});
+
+test("disponibilidade, oferta e o painel só mudam quando precisa", async () => {
+  assert.equal(fitsPlan(4, true, { ok: true, low: { used: 2, limit: 6 } }), true);
+  assert.equal(fitsPlan(8, true, { ok: true, low: { used: 2, limit: 6 } }), false);
+  assert.equal(fitsPlan(4, false, { ok: true, family: { used: 1, limit: 8 }, cores: { used: 10, limit: 12 } }), false);
+  assert.equal(fitsPlan(4, false, { ok: false }), false);
+  const rejected = validateOffer({ original: 4990, promo: 4990, units: 1, startsAt: 1, endsAt: 5, now: 0, sku: "t4-4", plan: "mensal" });
+  assert.match(rejected.error, /menor que o original/);
+  const names = storeCommands().map((command) => command.name);
+  assert.equal(names.includes("estoque"), false);
+  assert.equal(names.includes("configurar-horas"), false);
+  assert.deepEqual(storeCommands().find((command) => command.name === "configurar-loja").options.map((option) => option.name), ["publicar", "compras", "status"]);
+  assert.equal(offerChoices([{ id: "abc", sku: "t4-4", plan: "mensal", unitsLeft: 2 }], "t4")[0].value, "abc");
+  const env = world();
+  try {
+    env.repo.saveStore({ ...env.repo.storeSettings(GUILD), channelId: "100000000000000010", messageId: "100000000000000011", updatedAt: 1 });
+    let edits = 0;
+    const client = { channels: { async fetch() { return { messages: { async fetch() { return { id: "100000000000000011", async edit() { edits += 1; } }; } } }; } } };
+    await editStorePanel(client, { store: env.store });
+    await editStorePanel(client, { store: env.store });
+    assert.equal(edits, 1);
+    await env.store.setPurchases(GUILD, "admin", { enabled: false });
+    await editStorePanel(client, { store: env.store });
+    assert.equal(edits, 2);
   } finally {
     env.close();
   }

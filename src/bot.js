@@ -4,7 +4,7 @@ import { fail, logInteractionError } from "./components/reply.js";
 import { routeClient } from "./components/client/router.js";
 import { registerCommands, routeAdminComponent, routeCommand } from "./commands/admin/router.js";
 import { createInfrastructure } from "./services/provider.js";
-import { routeStoreComponent, editStorePanel } from "./loja/router.js";
+import { routeStoreComponent, editStorePanel, routeStoreAutocomplete } from "./loja/router.js";
 import { routeTicket } from "./tickets/router.js";
 import { routeAnnounceComponent } from "./announce/router.js";
 import { routeInviteComponent } from "./invites/router.js";
@@ -34,6 +34,10 @@ export async function routeInteraction(interaction, app) {
     return;
   }
   try {
+    if (interaction.isAutocomplete?.()) {
+      await routeStoreAutocomplete(interaction, app);
+      return;
+    }
     if (interaction.isChatInputCommand?.()) {
       await routeCommand(interaction, app);
       return;
@@ -161,12 +165,14 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     client.users.fetch(row.userId).then((user) => sendMachineNotice(user, expiredNotice)).catch(() => {});
   }
   for (const order of app.repo.resumeOrders()) fulfill(client, app, order.id);
-  let phase = 0;
   const pulse = setInterval(() => {
-    phase += 1;
-    editStorePanel(client, app, phase).catch(() => {});
     app.invites.sweep(client).catch((error) => console.warn(`Convites: falha na verificação das 24 horas. ${error?.code || "erro"}`));
   }, 45_000);
+  const storeTimer = setInterval(() => {
+    editStorePanel(client, app).catch((error) => console.warn(`Loja: ${error?.code || "erro"}`));
+  }, config.storeRefreshMs || 180_000);
+  storeTimer.unref?.();
+  client.storeTimer = storeTimer;
   pulse.unref?.();
   client.storePulse = pulse;
   return client;

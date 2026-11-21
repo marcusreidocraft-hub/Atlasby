@@ -163,6 +163,7 @@ function mapSettings(row) {
     channelId: row.channel_id || "",
     messageId: row.message_id || "",
     hoursEnabled: row.hours_enabled !== 0,
+    purchasesEnabled: row.purchases_enabled !== 0,
     price3h: row.price_3h,
     price6h: row.price_6h,
     ticketCategoryId: row.ticket_category_id || "",
@@ -177,6 +178,10 @@ export function attachStore(db) {
   const productColumns = db.prepare("PRAGMA table_info(store_products)").all();
   if (!productColumns.some((column) => column.name === "purchases_enabled")) {
     db.exec("ALTER TABLE store_products ADD COLUMN purchases_enabled INTEGER NOT NULL DEFAULT 1");
+  }
+  const settingColumns = db.prepare("PRAGMA table_info(store_settings)").all();
+  if (!settingColumns.some((column) => column.name === "purchases_enabled")) {
+    db.exec("ALTER TABLE store_settings ADD COLUMN purchases_enabled INTEGER NOT NULL DEFAULT 1");
   }
   const columns = db.prepare("PRAGMA table_info(clients)").all();
   if (!columns.some((column) => column.name === "expiry_handled")) {
@@ -295,18 +300,21 @@ export function attachStore(db) {
     deactivateOffer(guildId, id) {
       return db.prepare("UPDATE store_offers SET active = 0 WHERE guild_id = ? AND id = ?").run(guildId, id).changes === 1;
     },
+    setPurchasesEnabled(guildId, enabled) {
+      return db.prepare("UPDATE store_settings SET purchases_enabled = ? WHERE guild_id = ?").run(enabled ? 1 : 0, guildId).changes === 1;
+    },
+    sweepOffers(guildId, now) {
+      db.prepare("UPDATE store_offers SET active = 0 WHERE guild_id = ? AND active = 1 AND (units_left <= 0 OR ends_at <= ?)").run(guildId, now);
+    },
     reserveOrder(input) {
       return transaction(() => {
         const open = db.prepare(`SELECT id FROM store_orders WHERE guild_id = ? AND user_id = ? AND sku = ? AND status IN ${OPEN}`).get(input.guildId, input.userId, input.sku);
         if (open) return { ok: false, error: "duplicado" };
-        const taken = db.prepare("UPDATE store_products SET stock = stock - 1 WHERE guild_id = ? AND sku = ? AND stock > 0 AND visible = 1").run(input.guildId, input.sku);
-        if (taken.changes !== 1) return { ok: false, error: "estoque" };
         if (input.offerId) {
-          const burned = db.prepare("UPDATE store_offers SET units_left = units_left - 1 WHERE id = ? AND units_left > 0 AND active = 1").run(input.offerId);
-          if (burned.changes !== 1) {
-            db.prepare("UPDATE store_products SET stock = stock + 1 WHERE guild_id = ? AND sku = ?").run(input.guildId, input.sku);
-            return { ok: false, error: "oferta" };
-          }
+          const burned = db.prepare(`UPDATE store_offers SET units_left = units_left - 1,
+            active = CASE WHEN units_left - 1 <= 0 THEN 0 ELSE 1 END
+            WHERE id = ? AND units_left > 0 AND active = 1 AND starts_at <= ? AND ends_at > ?`).run(input.offerId, input.now, input.now);
+          if (burned.changes !== 1) return { ok: false, error: "oferta" };
         }
         const id = randomUUID();
         db.prepare(`INSERT INTO store_orders (
@@ -343,8 +351,9 @@ export function attachStore(db) {
       return transaction(() => {
         const row = orderById.get(id);
         if (!row || !["aguardando_pagamento", "pago", "provisionando", "acompanhamento"].includes(row.status)) return false;
-        db.prepare("UPDATE store_products SET stock = stock + 1 WHERE guild_id = ? AND sku = ?").run(row.guild_id, row.sku);
-        if (row.offer_id) db.prepare("UPDATE store_offers SET units_left = units_left + 1 WHERE id = ?").run(row.offer_id);
+        if (row.offer_id) {
+          db.prepare("UPDATE store_offers SET units_left = units_left + 1, active = CASE WHEN ends_at > ? THEN 1 ELSE 0 END WHERE id = ?").run(now, row.offer_id);
+        }
         db.prepare("UPDATE store_orders SET status = ?, updated_at = ? WHERE id = ?").run(status, now, id);
         return true;
       });

@@ -48,6 +48,12 @@ export function parsePanelColor(value) {
   return Number.parseInt(clean, 16);
 }
 
+function parseStoreRefresh(value) {
+  const parsed = Number(text(value));
+  if (!Number.isInteger(parsed) || parsed <= 0) return 180_000;
+  return Math.min(300_000, Math.max(120_000, parsed));
+}
+
 function parseIops(value) {
   if (!text(value)) return 3000;
   const number = Number(text(value));
@@ -120,6 +126,8 @@ export function readConfig(env = {}) {
     messageContentIntent: parseBoolean(env.ENABLE_MESSAGE_CONTENT_INTENT, false),
     panelColor: parsePanelColor(env.PANEL_COLOR),
     bannerUrl: parseUrl(env.PANEL_BANNER_URL),
+    storeBannerUrl: parseUrl(env.STORE_BANNER_URL),
+    storeRefreshMs: parseStoreRefresh(env.STORE_REFRESH_MS),
     supportUrl: parseUrl(env.SUPPORT_CHANNEL_URL),
     adminRoleIds: snowflakes(env.ADMIN_ROLE_IDS),
     adminLogChannelId: SNOWFLAKE.test(text(env.ADMIN_LOG_CHANNEL_ID)) ? text(env.ADMIN_LOG_CHANNEL_ID) : "",

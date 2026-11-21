@@ -199,11 +199,17 @@ No Discord, depois que o host reiniciar o processo: publique o painel, cadastre 
 
 ## Loja
 
-O painel comercial fica no canal escolhido em `/configurar-loja`. Ele é editado no lugar. Os planos de 3h e 6h somem por completo quando `/configurar-horas` os desliga. Sem estoque, o produto mostra "Sem estoque no momento" e não entra na compra.
+A loja é fixa: IGNIX CLOUD, três planos T4 e os preços do catálogo. `/configurar-loja publicar` grava o canal em que o comando foi usado e edita a mesma mensagem. Se ela foi apagada, publica outra. `/configurar-loja compras` liga ou desliga todas as compras. `/configurar-loja status` mostra a disponibilidade, as ofertas e o link do painel.
+
+A disponibilidade sai da cota da Azure na região `AZURE_LOCATION`. Em Spot, os vCPU livres de baixa prioridade precisam cobrir o plano. Em Normal, a família NCASv3_T4 e os vCPU regionais precisam cobrir juntos. A consulta fica em cache por 2 minutos. A cada `STORE_REFRESH_MS` (entre 2 e 5 minutos, padrão 3) o bot reavalia e só edita o painel se a disponibilidade, uma oferta ou as unidades mudaram. Sem Azure, o plano aparece como Indisponível e o botão fica desativado. `STORE_BANNER_URL` é o banner do topo. Vazio, o painel segue só com o texto.
+
+`/criar-oferta` pede produto, duração, preço promocional (`29,90`), unidades, início e fim em `AAAA-MM-DD HH:MM`, no fuso de São Paulo. O preço precisa ser menor que o original. Não pode haver outra oferta ativa do mesmo produto e plano no mesmo período. O painel mostra o preço antigo riscado, o novo, o desconto e o tempo `<t:...:R>`. A unidade sai na hora da compra e volta se o pedido for cancelado antes da entrega. `/remover-oferta` completa as ofertas ativas.
+
+Também ficam `/pedidos`, `/pedido`, `/cancelar-pedido`, `/configurar-cargo`, `/configurar-azure`, `/configurar-imagem` e `/assinatura`. A categoria dos pedidos continua em `/configurar-atendimento`. Não há mais `/configurar-loja banner`, `texto`, `canal` ou `produto`, nem `/configurar-horas`, `/estoque`, `/adicionar-estoque` ou `/remover-estoque`.
 
 O webhook Pix é `http://<endereço público>:<SERVER_PORT>/wyvi/webhook`. No painel da Wyvi, cadastre essa URL em HTTPS se o host termina TLS, com os eventos `cobranca.paga`, `cobranca.expirada` e `cobranca.estornada`. O segredo que a Wyvi mostra uma vez vai em `WYVI_WEBHOOK_SECRET`. A chave com `cobranca:criar` e `cobranca:ler` vai em `WYVI_API_KEY`.
 
-Antes da primeira venda, publique a loja, defina estoque, cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão é a versão 1.0.0 de Atlas2.0 na galeria, specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
+Antes da primeira venda, publique a loja, defina cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão da galeria é specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
 
 ## Limitações
 

@@ -7,7 +7,7 @@ import { renderOrder } from "./panel.js";
 import { STORE_COMMANDS } from "./commands.js";
 import { attendanceOf, canAttend, renderAttendance, ticketOverwrites } from "./attendance.js";
 import { emojiText } from "./emojis.js";
-import { deliverComponents, isStaleMessage, publishStorePanel, panelLocation } from "./publish.js";
+import { deliverComponents, isStaleMessage, publishStorePanel } from "./publish.js";
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,6 +42,7 @@ export async function handleStoreCommand(interaction, app, actor) {
     const sub = interaction.options.getSubcommand();
     if (sub === "publicar") {
       const settings = app.store.settings(guildId);
+      await app.store.preparePanel(guildId);
       const outcome = await publishStorePanel({
         channelId: interaction.channelId,
         settings,
@@ -58,24 +59,8 @@ export async function handleStoreCommand(interaction, app, actor) {
       await present(interaction, notice(outcome.created ? "Painel da loja publicado." : "Painel da loja atualizado no lugar.", app.config.panelColor));
       return true;
     }
-    if (sub === "banner") {
-      await app.store.saveSettings(guildId, actor.id, { bannerUrl: interaction.options.getString("url") });
-    } else if (sub === "texto") {
-      await app.store.saveSettings(guildId, actor.id, { title: interaction.options.getString("titulo"), description: interaction.options.getString("descricao") });
-    } else if (sub === "canal") {
-      const category = interaction.options.getChannel("categoria");
-      const current = app.store.settings(guildId);
-      const location = panelLocation({
-        currentChannelId: current.channelId,
-        nextChannelId: interaction.options.getChannel("painel").id,
-        messageId: current.messageId,
-      });
-      await app.store.saveSettings(guildId, actor.id, { ...location, ticketCategoryId: category?.id || "" });
-    } else if (sub === "compras") {
-      const result = await app.store.setPurchases(guildId, actor.id, {
-        sku: interaction.options.getString("produto") || "",
-        enabled: interaction.options.getString("acao") === "ativar",
-      });
+    if (sub === "compras") {
+      const result = await app.store.setPurchases(guildId, actor.id, { enabled: interaction.options.getString("acao") === "ativar" });
       if (!result.ok) {
         await present(interaction, notice(result.error, app.config.panelColor));
         return true;
@@ -83,66 +68,31 @@ export async function handleStoreCommand(interaction, app, actor) {
       const updated = await refresh(interaction, app).catch(() => false);
       await present(interaction, notice(updated ? "Compras atualizadas no painel." : "Compras atualizadas. Publique o painel para exibir.", app.config.panelColor));
       return true;
-    } else if (sub === "produto") {
-      const prices = Object.fromEntries(interaction.options.getString("precos").split(",").map((part) => part.split("=")).filter((pair) => pair.length === 2).map(([key, value]) => [key.trim(), Number(value)]));
-      await app.store.saveProduct(guildId, actor.id, {
-        sku: interaction.options.getString("sku"),
-        name: interaction.options.getString("nome"),
-        headline: interaction.options.getString("nome"),
-        vmSize: interaction.options.getString("tamanho"),
-        vcpus: interaction.options.getInteger("vcpus"),
-        ram: interaction.options.getString("ram"),
-        gpu: "GPU",
-        prices,
-        visible: true,
-      });
     }
-    const updated = await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice(updated ? "Loja atualizada no painel." : "Loja gravada. Publique o painel para exibir.", app.config.panelColor));
-    return true;
-  }
-  if (name === "configurar-horas") {
-    const price3h = app.store.parseMoney(interaction.options.getString("preco3") || "");
-    const price6h = app.store.parseMoney(interaction.options.getString("preco6") || "");
-    await app.store.setHours(guildId, actor.id, { enabled: interaction.options.getBoolean("ativo"), price3h, price6h });
-    await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice("Planos por hora atualizados.", app.config.panelColor));
+    if (sub === "status") {
+      await app.store.preparePanel(guildId);
+      await present(interaction, notice(app.store.status(guildId), app.config.panelColor));
+      return true;
+    }
+    await present(interaction, notice("Use publicar, compras ou status.", app.config.panelColor));
     return true;
   }
   if (name === "criar-oferta") {
     const start = parseDate(interaction.options.getString("inicio"));
     const end = parseDate(interaction.options.getString("fim"));
     const promo = app.store.parseMoney(interaction.options.getString("preco") || "");
-    if (!start || !end || end <= start) {
-      await present(interaction, notice("Informe início e fim válidos.", app.config.panelColor));
-      return true;
-    }
     const created = await app.store.createOffer(guildId, actor.id, {
       sku: interaction.options.getString("produto"), plan: interaction.options.getString("plano"),
-      units: interaction.options.getInteger("unidades"), startsAt: start, endsAt: end,
-      percent: interaction.options.getInteger("desconto"), promoCents: promo,
+      units: interaction.options.getInteger("unidades"), startsAt: start, endsAt: end, promoCents: promo,
     });
     await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice(created.ok ? `Oferta ${created.offer.id} criada.` : created.error, app.config.panelColor));
+    await present(interaction, notice(created.ok ? `Oferta criada. Desconto de ${created.percent}%.` : created.error, app.config.panelColor));
     return true;
   }
   if (name === "remover-oferta") {
     const removed = await app.store.removeOffer(guildId, actor.id, interaction.options.getString("id"));
     await refresh(interaction, app).catch(() => false);
     await present(interaction, notice(removed.ok ? "Oferta removida." : removed.error, app.config.panelColor));
-    return true;
-  }
-  if (name === "estoque") {
-    app.store.settings(guildId);
-    const products = app.repo.storeProducts(guildId);
-    await present(interaction, notice(products.map((item) => `${item.headline}: ${item.stock}`).join("\n") || "Nenhum produto.", app.config.panelColor));
-    return true;
-  }
-  if (name === "adicionar-estoque" || name === "remover-estoque") {
-    const delta = interaction.options.getInteger("quantidade") * (name === "adicionar-estoque" ? 1 : -1);
-    const changed = await app.store.changeStock(guildId, actor.id, interaction.options.getString("produto"), delta);
-    await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice(changed.ok ? "Estoque atualizado." : changed.error, app.config.panelColor));
     return true;
   }
   if (name === "configurar-cargo") {
@@ -341,18 +291,43 @@ export async function routeStoreComponent(interaction, app) {
   return false;
 }
 
-export async function editStorePanel(client, app, phase) {
+const panelSignatures = new Map();
+
+export function offerChoices(offers, query) {
+  const needle = String(query || "").toLowerCase();
+  return offers
+    .filter((offer) => `${offer.sku} ${offer.plan} ${offer.id}`.toLowerCase().includes(needle))
+    .slice(0, 25)
+    .map((offer) => ({ name: `${offer.sku} · ${offer.plan} · ${offer.unitsLeft} un.`.slice(0, 100), value: offer.id }));
+}
+
+export async function routeStoreAutocomplete(interaction, app) {
+  if (interaction.commandName !== "remover-oferta") {
+    await interaction.respond([]);
+    return;
+  }
+  const offers = app.store.activeOffers(interaction.guildId);
+  await interaction.respond(offerChoices(offers, interaction.options.getFocused()));
+}
+
+export async function editStorePanel(client, app) {
   for (const guildId of app.store.guilds()) {
-    if (!app.store.hasOffer(guildId)) continue;
     const settings = app.store.settings(guildId);
-    if (!settings.channelId || !settings.messageId) continue;
+    if (!settings?.channelId || !settings.messageId) continue;
     try {
+      await app.store.preparePanel(guildId);
+      const view = app.store.panel(guildId);
+      const signature = JSON.stringify(view.components);
+      if (panelSignatures.get(settings.messageId) === signature) continue;
       const channel = await client.channels.fetch(settings.channelId);
       const message = await channel.messages.fetch(settings.messageId);
-      const view = app.store.panel(guildId, phase);
       await deliverComponents((body) => message.edit(body), view);
+      panelSignatures.set(message.id, signature);
     } catch (error) {
-      if (isStaleMessage(error)) await app.store.saveSettings(guildId, "sistema", { messageId: "" }).catch(() => {});
+      if (isStaleMessage(error)) {
+        panelSignatures.delete(settings.messageId);
+        await app.store.saveSettings(guildId, "sistema", { messageId: "" }).catch(() => {});
+      }
       console.error(`Painel da loja [${error?.code ?? "erro"}]: ${error instanceof Error ? error.message : "erro"}`);
     }
   }

@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { catalogBySku, durationMs, formatBrl, parseMoney, PLAN_NAMES } from "./products.js";
+import { CATALOG, catalogBySku, durationMs, formatBrl, parseMoney, PLAN_NAMES, STORE_DESCRIPTION, storeBanner } from "./products.js";
 import { emojiText } from "./emojis.js";
-import { priceFromDiscount, quotePrice } from "./promotions.js";
+import { quotePrice, validateOffer } from "./promotions.js";
+import { fitsPlan } from "./availability.js";
 import { advanceProvision, resourceNames } from "./provision.js";
 import { resolveGalleryImage } from "./image.js";
 import { chargeCents, chargeReference, verifyWyviSignature } from "./payments.js";
 import { renderStorePanel } from "./panel.js";
 
 const RESERVE_MS = 30 * 60 * 1000;
-const DEFAULT_DESCRIPTION = "Tenha seu próprio computador na nuvem! Jogue, trabalhe e utilize seus programas favoritos com desempenho e praticidade.";
+const CAPACITY_MS = 2 * 60 * 1000;
+const DEFAULT_DESCRIPTION = STORE_DESCRIPTION;
 
-export function createStore({ repo, config, audit, now = () => Date.now(), wyvi = null, sunshine = null, provisioner = null, infra = null }) {
+export function createStore({ repo, config, audit, now = () => Date.now(), wyvi = null, sunshine = null, provisioner = null, infra = null, capacityReader = null }) {
   function defaults() {
     return {
       title: "🎮 Ignix Cloud PC",
@@ -31,8 +33,23 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     return repo.storeSettings(guildId);
   }
 
+  let capacity = { ok: false, at: 0 };
+
   function activeOffer(guildId, sku, plan) {
     return repo.storeOffers(guildId).find((offer) => offer.sku === sku && offer.plan === plan && offer.active && offer.unitsLeft > 0 && offer.startsAt <= now() && now() < offer.endsAt) ?? null;
+  }
+
+  function catalogProducts(guildId) {
+    return CATALOG.map((item) => {
+      const saved = repo.storeProduct(guildId, item.sku);
+      return {
+        ...item,
+        visible: true,
+        roleId: saved?.roleId || "",
+        azure: saved?.azure || { spot: true, location: config.azure?.location || "brazilsouth" },
+        prices: item.prices,
+      };
+    });
   }
 
   async function note(guildId, actorId, action, detail) {
@@ -41,9 +58,39 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
   }
 
   return {
-    panel(guildId, phase = 0) {
+    panel(guildId) {
       const settings = settingsOf(guildId);
-      return renderStorePanel({ settings, products: repo.storeProducts(guildId), offers: repo.storeOffers(guildId), now: now(), phase });
+      return renderStorePanel({
+        settings,
+        products: catalogProducts(guildId),
+        offers: repo.storeOffers(guildId),
+        now: now(),
+        capacity,
+        bannerUrl: storeBanner(config.storeBannerUrl),
+        supportUrl: repo.getSettings?.(guildId)?.supportUrl || config.supportUrl || "",
+      });
+    },
+    noteCapacity(value) {
+      capacity = { at: now(), ok: false, ...value };
+    },
+    async refreshCapacity() {
+      if (capacity.at && now() - capacity.at < CAPACITY_MS && capacity.ok !== undefined) return capacity;
+      const reader = capacityReader || (provisioner?.usage ? () => provisioner.usage(config.azure?.location || "brazilsouth") : null);
+      if (!reader) {
+        capacity = { ok: false, at: now() };
+        return capacity;
+      }
+      try {
+        const value = await reader();
+        capacity = { at: now(), ok: Boolean(value?.ok), low: value?.low || null, cores: value?.cores || null, family: value?.family || null };
+      } catch {
+        capacity = { ok: false, at: now() };
+      }
+      return capacity;
+    },
+    async preparePanel(guildId) {
+      repo.sweepOffers?.(guildId, now());
+      await this.refreshCapacity();
     },
     settings(guildId) {
       return settingsOf(guildId);
@@ -62,11 +109,10 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       if (price6h) patch.price6h = price6h;
       return this.saveSettings(guildId, actorId, patch);
     },
-    async setPurchases(guildId, actorId, { sku = "", enabled }) {
+    async setPurchases(guildId, actorId, { enabled }) {
       ready(guildId);
-      const changed = repo.setPurchases(guildId, sku, enabled);
-      if (sku && changed !== 1) return { ok: false, error: "Produto não encontrado." };
-      await note(guildId, actorId, "compras", `${enabled ? "Compras ativadas" : "Compras desativadas"} ${sku ? `em ${sku}` : "em todos os produtos"}.`);
+      if (!repo.setPurchasesEnabled(guildId, enabled)) return { ok: false, error: "A loja ainda não foi preparada." };
+      await note(guildId, actorId, "compras", enabled ? "Compras ativadas." : "Compras desativadas.");
       return { ok: true };
     },
     async setStock(guildId, actorId, sku, stock) {
@@ -107,18 +153,26 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     },
     async createOffer(guildId, actorId, input) {
       ready(guildId);
-      const product = repo.storeProduct(guildId, input.sku);
-      if (!product?.prices?.[input.plan]) return { ok: false, error: "Esse plano não existe nesse produto." };
-      const original = product.prices[input.plan];
-      const promo = input.percent ? priceFromDiscount(original, input.percent) : input.promoCents;
-      if (!promo || promo >= original) return { ok: false, error: "O preço promocional precisa ser menor que o original." };
+      const product = catalogBySku(input.sku);
+      const check = validateOffer({
+        original: product?.prices?.[input.plan],
+        promo: input.promoCents,
+        units: input.units,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        now: now(),
+        existing: repo.storeOffers(guildId),
+        sku: input.sku,
+        plan: input.plan,
+      });
+      if (!check.ok) return check;
       const offer = {
-        id: randomUUID(), guildId, sku: input.sku, plan: input.plan, promoCents: promo,
+        id: randomUUID(), guildId, sku: input.sku, plan: input.plan, promoCents: check.promo,
         unitsLeft: input.units, startsAt: input.startsAt, endsAt: input.endsAt,
       };
       repo.saveOffer(offer);
-      await note(guildId, actorId, "oferta", `Oferta criada para ${input.sku} ${input.plan}.`);
-      return { ok: true, offer };
+      await note(guildId, actorId, "oferta", `Oferta criada para ${input.sku} ${input.plan}. Desconto de ${check.percent}%.`);
+      return { ok: true, offer, percent: check.percent };
     },
     async removeOffer(guildId, actorId, id) {
       if (!repo.deactivateOffer(guildId, id)) return { ok: false, error: "Oferta não encontrada." };
@@ -132,14 +186,14 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       const sku = value.slice(0, split);
       const plan = value.slice(split + 1);
       const settings = repo.storeSettings(guildId);
-      const product = repo.storeProduct(guildId, sku);
+      const product = catalogProducts(guildId).find((item) => item.sku === sku);
+      if (!product) return { ok: false, error: "Esse plano não está disponível." };
+      if (settings.purchasesEnabled === false) return { ok: false, error: "Compras desativadas no momento." };
+      if (!fitsPlan(product.vcpus, product.azure?.spot, capacity)) return { ok: false, error: "Este plano está indisponível no momento." };
       const quote = quotePrice({
-        product, plan, now: now(), hoursEnabled: settings.hoursEnabled,
-        overrides: { price3h: settings.price3h, price6h: settings.price6h },
-        offer: activeOffer(guildId, sku, plan),
+        product, plan, now: now(), hoursEnabled: true, offer: activeOffer(guildId, sku, plan),
       });
       if (!quote) return { ok: false, error: "Esse plano não está disponível." };
-      if (product.purchasesEnabled === false) return { ok: false, error: "Compras desativadas no momento." };
       const reserved = repo.reserveOrder({
         guildId, userId, sku, plan, clientName,
         originalCents: quote.original, discountCents: quote.discount, totalCents: quote.total,
@@ -148,7 +202,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       if (!reserved.ok) {
         const message = reserved.error === "duplicado"
           ? "Você já tem um pedido aberto deste produto."
-          : "Sem estoque no momento.";
+          : "A oferta acabou.";
         return { ok: false, error: message };
       }
       return { ok: true, order: reserved.order, product, quote };
@@ -322,6 +376,23 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     },
     guilds() {
       return repo.storeGuilds();
+    },
+    status(guildId) {
+      const settings = settingsOf(guildId);
+      const products = catalogProducts(guildId);
+      const lines = products.map((product) => `${product.name}: ${fitsPlan(product.vcpus, product.azure?.spot, capacity) ? "disponível" : "indisponível"}`);
+      const offers = repo.storeOffers(guildId).filter((offer) => offer.unitsLeft > 0 && offer.startsAt <= now() && now() < offer.endsAt);
+      const link = settings.channelId ? `https://discord.com/channels/${guildId}/${settings.channelId}` : "Painel ainda não publicado.";
+      return [
+        settings.purchasesEnabled === false ? "Compras desativadas." : "Compras ativas.",
+        ...lines,
+        offers.length ? offers.map((offer) => `Oferta ${offer.sku} ${offer.plan}: ${offer.unitsLeft} un.`).join("\n") : "Nenhuma oferta ativa.",
+        link,
+      ].join("\n");
+    },
+    activeOffers(guildId) {
+      ready(guildId);
+      return repo.storeOffers(guildId).filter((offer) => offer.unitsLeft > 0 && offer.startsAt <= now() && now() < offer.endsAt);
     },
     hasOffer(guildId) {
       return repo.storeOffers(guildId).some((offer) => offer.active && offer.unitsLeft > 0 && offer.startsAt <= now() && now() < offer.endsAt);
