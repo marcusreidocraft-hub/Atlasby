@@ -5,8 +5,8 @@ import { attendanceOf, canAttend, ticketOverwrites } from "../loja/attendance.js
 import { parseMoney } from "../loja/products.js";
 import { ticketChannelName, ticketCategory } from "./catalog.js";
 import { announceTicket } from "./countdown.js";
-import { chargeFiles, renderChargePanel } from "../loja/charge-panel.js";
 import { closeTicketModal, paymentModal, renderTicketCreated, renderTicketDenied, renderTicketDesk, renderTicketWelcome, ticketModal } from "./panel.js";
+import { showOrderCharge } from "./purchase.js";
 import { ticketUrl } from "./purchase.js";
 
 function actorOf(interaction) {
@@ -188,16 +188,8 @@ async function openSupportChannel(interaction, app, { guildId, category, reason,
 }
 
 async function chargeOrder(interaction, app, ticket) {
-  const result = await app.store.payment(ticket.orderId);
-  if (!result.ok) {
-    await present(interaction, notice(result.error, app.config.panelColor));
-    return;
-  }
-  const files = await chargeFiles(result.order);
-  const view = renderChargePanel(result.order, { withQr: files.length > 0 });
-  const sent = await interaction.channel.send({ components: view.components, files, flags: V2, allowedMentions: { parse: [] } });
-  app.store.rememberPaymentMessage(ticket.orderId, sent.id);
-  await present(interaction, notice("Cobrança publicada no ticket.", app.config.panelColor));
+  const result = await showOrderCharge(interaction, app, ticket.orderId);
+  await present(interaction, notice(result.ok ? "Cobrança publicada no ticket." : result.error, app.config.panelColor));
 }
 
 async function runStaffAction(interaction, app, ticket, action) {

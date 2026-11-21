@@ -11,7 +11,7 @@ import { routeInviteComponent } from "./invites/router.js";
 import { routeMachineComponent } from "./maquina/router.js";
 import { notice, V2 } from "./panels/ui.js";
 import { renderTicketWelcome } from "./tickets/panel.js";
-import { orderFacts } from "./tickets/purchase.js";
+import { orderFacts, refreshPurchaseSummary } from "./tickets/purchase.js";
 import { renderChargePanel } from "./loja/charge-panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { machineLinks, renderMachineNotice, sendMachineNotice } from "./panels/machine-dm.js";
@@ -66,7 +66,8 @@ async function fulfill(client, app, orderId) {
   }
   const result = await app.store.provision(orderId);
   const order = app.store.order(orderId);
-  if (order?.channelId && order?.paymentMessageId) {
+  if (!order) return;
+  if (order.channelId && order.paymentMessageId) {
     const charge = renderChargePanel({ ...order, status: order.status === "aguardando_pagamento" ? order.status : "pago" });
     client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.paymentMessageId)).then((message) => message.edit({
       components: charge.components,
@@ -74,19 +75,18 @@ async function fulfill(client, app, orderId) {
       allowedMentions: { parse: [] },
     })).catch(() => {});
   }
-  if (order?.channelId && order?.messageId) {
-    const ticket = app.repo.supportTicketByOrder(order.id);
-    if (ticket) {
-      const settings = app.repo.getSettings(order.guildId);
-      const desk = attendanceOf(app.repo, app.config, order.guildId);
-      const view = renderTicketWelcome(ticket, settings, desk.supportRoleId, orderFacts(order, product));
-      client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.messageId)).then((message) => message.edit({
-        components: view.components,
-        flags: V2,
-        allowedMentions: { parse: [] },
-      })).catch(() => {});
-    }
+  const ticket = app.repo.supportTicketByOrder(order.id);
+  if (ticket?.channelId && ticket.messageId) {
+    const settings = app.repo.getSettings(order.guildId);
+    const desk = attendanceOf(app.repo, app.config, order.guildId);
+    const view = renderTicketWelcome(ticket, settings, desk.supportRoleId, orderFacts(order, product));
+    client.channels.fetch(ticket.channelId).then((channel) => channel.messages.fetch(ticket.messageId)).then((message) => message.edit({
+      components: view.components,
+      flags: V2,
+      allowedMentions: { parse: [] },
+    })).catch(() => {});
   }
+  refreshPurchaseSummary(client, app, order.id).catch(() => {});
   if (result.delivered?.ok) {
     const owner = app.repo.getByOwner(order.guildId, order.userId);
     const ready = renderMachineNotice({
@@ -150,6 +150,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     const server = createStoreHttp(async (raw, headers) => {
       const result = await app.store.handleWebhook(raw, headers);
       if (result.paid && result.orderId) setImmediate(() => fulfill(client, app, result.orderId));
+      else if (result.chargeCleared && result.orderId) setImmediate(() => refreshPurchaseSummary(client, app, result.orderId));
       return result.status;
     });
     await new Promise((resolve, reject) => {
@@ -189,7 +190,10 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   const storeTimer = setInterval(() => {
     editStorePanel(client, app).catch((error) => console.warn(`Loja: ${error?.code || "erro"}`));
     app.store.pollPayments().then((rows) => {
-      for (const row of rows) if (row.paid) fulfill(client, app, row.orderId);
+      for (const row of rows) {
+        if (row.paid) fulfill(client, app, row.orderId);
+        else if (row.chargeCleared) refreshPurchaseSummary(client, app, row.orderId);
+      }
     }).catch((error) => console.warn(`WyzeCash: ${error?.code || "erro"}`));
   }, config.storeRefreshMs || 180_000);
   storeTimer.unref?.();

@@ -1,12 +1,11 @@
 import { MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
-import { notice, V2, V2_EPHEMERAL } from "../panels/ui.js";
+import { notice, V2 } from "../panels/ui.js";
 import { ack, present } from "../components/reply.js";
 import { parseDate } from "../services/plans.js";
 import { formatBrl } from "./products.js";
-import { openPurchaseTicket } from "../tickets/purchase.js";
+import { openPurchaseTicket, showOrderCharge } from "../tickets/purchase.js";
 import { STORE_COMMANDS } from "./commands.js";
 import { attendanceOf, canAttend, renderAttendance } from "./attendance.js";
-import { chargeFiles, renderChargePanel } from "./charge-panel.js";
 import { deliverComponents, isStaleMessage, publishStorePanel } from "./publish.js";
 
 async function refresh(interaction, app) {
@@ -169,12 +168,12 @@ export async function routeStoreComponent(interaction, app) {
   const actor = { id: interaction.user.id, guildId, permissions: interaction.member?.permissions?.bitfield ?? 0n, roleIds: interaction.member?.roles?.cache?.map?.((role) => role.id) ?? [], owner: interaction.guild?.ownerId === interaction.user.id };
   const copy = /^atlas:store:copy:([0-9a-f-]{36})$/.exec(id);
   if (copy) {
-    const order = app.store.order(copy[1]);
-    const code = order?.pixCode || "";
-    await interaction.reply({
-      content: code || "Este pedido ainda não tem código Pix.",
-      flags: MessageFlags.Ephemeral,
-    });
+    const code = app.store.order(copy[1])?.pixCode || "";
+    if (!code) {
+      await interaction.reply({ content: "Este pedido ainda não tem código Pix.", flags: MessageFlags.Ephemeral });
+      return true;
+    }
+    await interaction.reply({ content: code, flags: MessageFlags.Ephemeral });
     return true;
   }
   const check = /^atlas:store:check:([0-9a-f-]{36})$/.exec(id);
@@ -200,6 +199,7 @@ export async function routeStoreComponent(interaction, app) {
   }
   const claim = /^atlas:store:claim:([0-9a-f-]{36})$/.exec(id);
   const pay = /^atlas:store:pay:([0-9a-f-]{36})$/.exec(id);
+  const cancel = /^atlas:store:cancel:([0-9a-f-]{36})$/.exec(id);
   const notify = /^atlas:store:notify:([0-9a-f-]{36})$/.exec(id);
   const close = /^atlas:store:close:([0-9a-f-]{36})$/.exec(id);
   if (claim || notify || close) {
@@ -250,16 +250,26 @@ export async function routeStoreComponent(interaction, app) {
     }
     return true;
   }
-  if (pay) {
-    await ack(interaction, false);
-    const result = await app.store.payment(pay[1]);
-    if (!result.ok) {
-      await present(interaction, notice(result.error, app.config.panelColor));
+  if (pay || cancel) {
+    const order = app.store.order((pay || cancel)[1]);
+    const allowed = order && (order.userId === actor.id || canAttend(actor, app.config, attendanceOf(app.repo, app.config, guildId)));
+    if (!allowed) {
+      await ack(interaction, false);
+      await present(interaction, notice("Só o cliente ou a equipe pode fazer isso.", app.config.panelColor));
       return true;
     }
-    const files = await chargeFiles(result.order);
-    const view = renderChargePanel(result.order, { withQr: files.length > 0 });
-    await interaction.editReply({ components: view.components, files, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
+  }
+  if (cancel) {
+    await ack(interaction, false);
+    const closed = await app.store.close(guildId, actor.id, cancel[1], "Cancelado pelo cliente.");
+    await refresh(interaction, app).catch(() => false);
+    await present(interaction, notice(closed.ok ? "Pedido cancelado. A oferta volta se a máquina ainda não foi entregue." : closed.error, app.config.panelColor));
+    return true;
+  }
+  if (pay) {
+    await ack(interaction, false);
+    const result = await showOrderCharge(interaction, app, pay[1]);
+    await present(interaction, notice(result.ok ? (result.reused ? "A cobrança pendente continua valendo." : "Pagamento gerado neste ticket.") : result.error, app.config.panelColor));
     return true;
   }
   return false;

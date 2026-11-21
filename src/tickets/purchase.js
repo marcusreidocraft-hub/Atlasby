@@ -7,7 +7,7 @@ import { announceTicket } from "./countdown.js";
 import { ticketChannelName } from "./catalog.js";
 import { renderTicketCreated, renderTicketWelcome } from "./panel.js";
 import { chargeFiles, renderChargePanel } from "../loja/charge-panel.js";
-import { notice } from "../panels/ui.js";
+import { renderPurchaseSummary } from "../loja/summary.js";
 
 const DURATION = Object.freeze({
   semanal: "7 dias",
@@ -53,25 +53,61 @@ export async function openPurchaseTicket(interaction, app, value, options = {}) 
   await announceTicket(interaction, settings, () => createPurchase(interaction, app, value, settings), options);
 }
 
-async function postCharge(channel, app, orderId) {
-  const result = await app.store.payment(orderId);
-  if (!result.ok) {
-    await channel.send({
-      components: notice(result.error).components,
-      flags: V2,
-      allowedMentions: { parse: [] },
-    });
-    return;
-  }
-  const files = await chargeFiles(result.order);
-  const view = renderChargePanel(result.order, { withQr: files.length > 0 });
-  const sent = await channel.send({
-    components: view.components,
-    files,
-    flags: V2,
-    allowedMentions: { parse: [] },
+function summaryOf(order, product, user, payDisabled) {
+  const facts = orderFacts(order, product);
+  return renderPurchaseSummary({
+    order: { ...order, duration: facts.duration },
+    product,
+    userId: user.id,
+    userName: user.globalName || user.username || "Cliente",
+    avatarUrl: user.displayAvatarURL?.({ extension: "png", size: 256 }) || "https://cdn.discordapp.com/embed/avatars/0.png",
+    payDisabled,
   });
-  app.store.rememberPaymentMessage(orderId, sent.id);
+}
+
+export async function refreshPurchaseSummary(client, app, orderId) {
+  const order = app.store.order(orderId);
+  if (!order?.channelId || !order.messageId) return;
+  const channel = await client.channels.fetch(order.channelId).catch(() => null);
+  if (!channel?.messages?.fetch) return;
+  const product = app.repo.storeProduct(order.guildId, order.sku);
+  let user = { id: order.userId, username: order.clientName || "Cliente" };
+  try {
+    user = await client.users.fetch(order.userId);
+  } catch { /* segue com o nome salvo */ }
+  const view = summaryOf(order, product, user, order.status !== "aguardando_pagamento" || Boolean(order.pixCode && (!order.pixExpiresAt || order.pixExpiresAt > Date.now())));
+  const message = await channel.messages.fetch(order.messageId).catch(() => null);
+  if (!message) return;
+  await message.edit({ components: view.components, flags: V2, allowedMentions: { parse: [] } }).catch(() => {});
+}
+
+export async function showOrderCharge(interaction, app, orderId) {
+  const result = await app.store.payment(orderId);
+  if (!result.ok) return result;
+  const order = result.order;
+  const channel = interaction.channel?.send
+    ? interaction.channel
+    : await interaction.client.channels.fetch(order.channelId);
+  const files = await chargeFiles(order);
+  const view = renderChargePanel(order, { withQr: files.length > 0 });
+  if (order.paymentMessageId) {
+    const message = await channel.messages.fetch(order.paymentMessageId);
+    await message.edit({ components: view.components, files, flags: V2, allowedMentions: { parse: [] } });
+  } else {
+    const sent = await channel.send({ components: view.components, files, flags: V2, allowedMentions: { parse: [] } });
+    app.store.rememberPaymentMessage(orderId, sent.id);
+  }
+  if (order.messageId) {
+    const product = app.repo.storeProduct(order.guildId, order.sku);
+    let user = interaction.user;
+    if (user?.id !== order.userId) {
+      try { user = await interaction.client.users.fetch(order.userId); } catch { user = { id: order.userId, username: order.clientName || "Cliente" }; }
+    }
+    const summary = summaryOf(app.store.order(orderId), product, user, true);
+    const message = await channel.messages.fetch(order.messageId);
+    await message.edit({ components: summary.components, flags: V2, allowedMentions: { parse: [] } }).catch(() => {});
+  }
+  return { ...result, order: app.store.order(orderId) };
 }
 
 async function createPurchase(interaction, app, value, settings) {
@@ -115,8 +151,14 @@ async function createPurchase(interaction, app, value, settings) {
     });
     await message.pin().catch(() => {});
     app.repo.patchSupportTicket(ticket.id, { channelId: channel.id, messageId: message.id });
-    app.store.rememberTicket(orderId, channel.id, message.id);
-    await postCharge(channel, app, orderId).catch(() => {});
+    const summary = summaryOf(chosen.order, chosen.product, interaction.user, false);
+    const summaryMessage = await channel.send({
+      components: summary.components,
+      flags: V2,
+      allowedMentions: { users: [interaction.user.id] },
+    });
+    app.store.rememberTicket(orderId, channel.id, summaryMessage.id);
+    app.repo.patchOrder(orderId, { reserveExpiresAt: Date.now() + 24 * 60 * 60 * 1000 }, Date.now());
     return { ok: true, url: ticketUrl(guildId, channel.id) };
   } catch (error) {
     console.error(`Ticket: ${error instanceof Error ? error.message : "erro"}`);

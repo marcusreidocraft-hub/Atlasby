@@ -18,8 +18,7 @@ function priceLines(order) {
 function expiryLine(order) {
   const at = Number(order.pixExpiresAt);
   if (!Number.isFinite(at) || at <= 0) return "";
-  const unix = Math.floor(at / 1000);
-  return `Expira <t:${unix}:R> · <t:${unix}:f>`;
+  return `Expira <t:${Math.floor(at / 1000)}:R>`;
 }
 
 export function renderChargePanel(order, { withQr = false } = {}) {
@@ -32,8 +31,8 @@ export function renderChargePanel(order, { withQr = false } = {}) {
     priceLines(order),
     `Status: **${status}**`,
     expiryLine(order),
-    !confirmed && order.pixCode ? `Copia e cola:\n\`\`\`\n${order.pixCode}\n\`\`\`` : "",
   ].filter(Boolean).join("\n")));
+  if (!confirmed && order.pixCode) root.addTextDisplayComponents(text(`\`\`\`\n${order.pixCode}\n\`\`\``));
   if (withQr && !confirmed && order.pixCode) root.addMediaGalleryComponents(gallery(`attachment://${PIX_QR_FILE}`));
   if (!confirmed && !expired && order.pixCode && order.id) {
     root.addActionRowComponents(new ActionRowBuilder().addComponents(

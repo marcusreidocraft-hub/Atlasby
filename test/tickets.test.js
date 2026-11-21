@@ -7,9 +7,10 @@ import { MessageFlags } from "discord.js";
 import { openDatabase } from "../src/db/database.js";
 import { inspectModal } from "../src/panels/admin.js";
 import { DEFAULT_TICKET_HOURS, ticketChannelName, ticketMark } from "../src/tickets/catalog.js";
-import { announceTicket, countdownBar } from "../src/tickets/countdown.js";
+import { announceTicket, countdownBar, playCountdown } from "../src/tickets/countdown.js";
 import { adminSelect, renderTicketDenied, renderTicketDesk, renderTicketWelcome, ticketModal } from "../src/tickets/panel.js";
 import { openPurchaseTicket, orderFacts } from "../src/tickets/purchase.js";
+import { renderPurchaseSummary } from "../src/loja/summary.js";
 import { canAttend } from "../src/loja/attendance.js";
 
 test("a central de atendimento lista as três categorias", () => {
@@ -55,23 +56,52 @@ test("o número do ticket cresce no mesmo servidor", () => {
   }
 });
 
+function countdownMark(body) {
+  const raw = JSON.stringify(body);
+  if (raw.includes("Ticket criado")) return "final";
+  return raw.match(/# (\d)/)?.[1] || raw;
+}
+
 test("a contagem regressiva edita a mesma resposta e termina com o link", async () => {
   assert.equal(countdownBar(5), "▰▱▱▱▱");
   assert.equal(countdownBar(3), "▰▰▰▱▱");
   assert.equal(countdownBar(1), "▰▰▰▰▰");
   const edits = [];
-  const interaction = { editReply: async (body) => { edits.push(JSON.stringify(body)); } };
-  await announceTicket(interaction, {}, async () => ({ ok: true, url: "https://discord.com/channels/g/c" }), { delay: 0 });
-  assert.equal(edits.length, 6);
-  assert.match(edits[0], /Preparando seu atendimento/);
-  assert.match(edits[0], /# 5/);
-  assert.match(edits[0], /▰▱▱▱▱/);
-  assert.match(edits[4], /# 1/);
-  assert.match(edits[5], /Ticket criado/);
-  assert.match(edits[5], /https:\/\/discord.com\/channels\/g\/c/);
-  edits.length = 0;
-  await announceTicket(interaction, {}, async () => { throw new Error("canal"); }, { delay: 0 });
-  assert.match(edits.at(-1), /Não foi possível abrir o atendimento/);
+  let clock = 0;
+  const sleeps = [];
+  const interaction = {
+    editReply: async (body) => {
+      clock += 250;
+      edits.push(countdownMark(body));
+    },
+  };
+  const pending = new Promise((resolve) => setTimeout(resolve, 0));
+  await announceTicket(interaction, {}, async () => {
+    await pending;
+    return { ok: true, url: "https://discord.com/channels/g/c" };
+  }, {
+    delay: 1000,
+    now: () => clock,
+    sleep: async (ms) => { sleeps.push(ms); clock += ms; },
+  });
+  assert.deepEqual(edits, ["5", "4", "3", "2", "1", "final"]);
+  assert.deepEqual(sleeps, [750, 750, 750, 750, 750]);
+  assert.equal(edits.at(-1), "final");
+  assert.equal(edits.filter((item) => item === "final").length, 1);
+  const stopped = [];
+  const waits = [];
+  const gate = { closed: false };
+  await playCountdown(async (view) => {
+    stopped.push(countdownMark(view));
+    if (stopped.length === 2) gate.closed = true;
+  }, {
+    delay: 1000,
+    now: () => 0,
+    sleep: async (ms) => { if (gate.closed) throw new Error("não deveria esperar"); waits.push(ms); },
+    gate,
+  });
+  assert.deepEqual(stopped, ["5", "4"]);
+  assert.deepEqual(waits, [1000]);
 });
 
 test("o ticket de compra usa o painel da central e bloqueia duplicado", async () => {
@@ -102,6 +132,27 @@ test("o ticket de compra usa o painel da central e bloqueia duplicado", async ()
   assert.match(welcome, /Adicionar membro/);
   assert.match(welcome, /Criar canal de voz/);
   assert.doesNotMatch(welcome, /Assumir atendimento/);
+  const summary = JSON.stringify(renderPurchaseSummary({
+    order: { ...facts, originalCents: 2490, discountCents: 500, totalCents: 1990, status: "aguardando_pagamento", duration: facts.duration },
+    product: { name: "Tesla T4 · 4 vCPU", ram: "28 GB", diskGb: 512 },
+    userId: "cliente",
+    userName: "Ana",
+    avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png",
+    payDisabled: true,
+  }));
+  assert.match(summary, /~~R\$ 24,90~~/);
+  assert.match(summary, /\*\*R\$ 19,90\*\*/);
+  assert.match(summary, /"disabled":true/);
+  const openPay = JSON.stringify(renderPurchaseSummary({
+    order: { id: facts.id, sku: "t4-4", originalCents: 2490, discountCents: 0, totalCents: 2490, status: "aguardando_pagamento", duration: "7 dias" },
+    product: { name: "Tesla T4 · 4 vCPU", ram: "28 GB", diskGb: 512 },
+    userId: "cliente",
+    userName: "Ana",
+    avatarUrl: "https://cdn.discordapp.com/embed/avatars/0.png",
+    payDisabled: false,
+  }));
+  assert.match(openPay, /Gerar pagamento/);
+  assert.doesNotMatch(openPay, /"disabled":true/);
   assert.equal(ticketChannelName("compra", "Ana", 7), "compra-ana-7");
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atlas-compra-"));
@@ -123,7 +174,11 @@ test("o ticket de compra usa o painel da central e bloqueia duplicado", async ()
     guildId: "g",
     deferred: true,
     replied: true,
-    user: { id: "cliente", username: "Ana" },
+    user: {
+      id: "cliente",
+      username: "Ana",
+      displayAvatarURL: () => "https://cdn.discordapp.com/embed/avatars/0.png",
+    },
     client: { user: { id: "bot" } },
     editReply: async () => {},
     guild: {
@@ -146,7 +201,7 @@ test("o ticket de compra usa o painel da central e bloqueia duplicado", async ()
     store: {
       choose: () => {
         choices += 1;
-        return { ok: true, order, product: { name: "Tesla T4 · 4 vCPU" } };
+        return { ok: true, order, product: { name: "Tesla T4 · 4 vCPU", ram: "28 GB", diskGb: 512 } };
       },
       rememberTicket: (id, channelId) => { order.channelId = channelId; },
       openOrder: () => null,
@@ -160,6 +215,15 @@ test("o ticket de compra usa o painel da central e bloqueia duplicado", async ()
     assert.equal(sent[0].overwrites[0].id, "everyone");
     assert.match(JSON.stringify(sent[0].body), /Compra #1/);
     assert.match(JSON.stringify(sent[0].body), /R\$ 24,90/);
+    const summary = JSON.stringify(sent[1].body);
+    assert.match(summary, /Resumo da compra/);
+    assert.match(summary, /cdn.discordapp.com\/embed\/avatars\/0.png/);
+    assert.match(summary, /Tesla T4 · 4 vCPU/);
+    assert.match(summary, /28GB RAM · 512GB SSD v2/);
+    assert.match(summary, /7 dias/);
+    assert.match(summary, /Gerar pagamento/);
+    assert.match(summary, /Cancelar pedido/);
+    assert.equal(sent.length, 2);
     const ticket = repo.supportTicketByOrder(order.id);
     assert.equal(ticket.channelId, "canal");
     assert.equal(ticket.category, "compra");

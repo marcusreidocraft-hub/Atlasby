@@ -69,7 +69,8 @@ test("o painel de pagamento mostra valor, oferta, QR, código e confirmação", 
   assert.match(raw, /R\$ 19,90/);
   assert.match(raw, /oferta de R\$ 5,00/);
   assert.match(raw, /Aguardando pagamento/);
-  assert.match(raw, /00020126580014br\.gov\.bcb\.pix/);
+  assert.match(raw, /```\\n00020126580014br\.gov\.bcb\.pix\\n```/);
+  assert.doesNotMatch(raw, /Copia e cola/);
   assert.match(raw, /Copiar código/);
   assert.match(raw, /Já paguei/);
   assert.match(raw, /attachment:\/\/pix-qr\.png/);
@@ -91,10 +92,12 @@ test("pagamento confirmado é idempotente e a expiração devolve a oferta", asy
     WYZECASH_WEBHOOK_SECRET: SECRET,
   });
   let lookups = 0;
+  const keys = [];
   const payments = createWyzeCashClient({
     apiKey: "wyze_teste",
     fetchImpl: async (_url, init) => {
       if (init?.method === "POST") {
+        keys.push(init.headers["idempotency-key"]);
         return { ok: true, async json() { return { id: "BKY-OFERTA", copyPaste: "000201", expiresAt: "2026-11-12T15:30:00.000Z", status: "pending", amount: 1990 }; } };
       }
       lookups += 1;
@@ -118,6 +121,13 @@ test("pagamento confirmado é idempotente e a expiração devolve a oferta", asy
     assert.equal(charged.ok, true);
     assert.equal(charged.order.chargeId, "BKY-OFERTA");
     assert.equal(charged.order.pixCode, "000201");
+    const again = await store.payment(chosen.order.id);
+    assert.equal(again.reused, true);
+    assert.equal(again.order.chargeId, "BKY-OFERTA");
+    repo.patchOrder(chosen.order.id, { pixExpiresAt: 1 }, 1);
+    const renewed = await store.payment(chosen.order.id);
+    assert.equal(renewed.order.pixCode, "000201");
+    assert.deepEqual(keys, [chosen.order.id, `${chosen.order.id}:1`]);
     const pending = await store.confirmFromProvider(chosen.order.id);
     assert.equal(pending.pending, true);
     const paid = await store.confirmFromProvider(chosen.order.id);
@@ -132,7 +142,10 @@ test("pagamento confirmado é idempotente e a expiração devolve a oferta", asy
     const signature = sign(raw);
     const expired = await store.handleWebhook(raw, { "x-wyzecash-signature": `t=${STAMP},v1=${signature}`, "x-wyzecash-event": "payment.expired" });
     assert.equal(expired.expired, true);
-    assert.equal(store.order(second.order.id).status, "expirado");
+    assert.equal(expired.chargeCleared, true);
+    assert.equal(store.order(second.order.id).status, "aguardando_pagamento");
+    assert.equal(store.order(second.order.id).pixCode, "");
+    await store.close("100000000000000001", "admin", second.order.id, "desistiu");
     assert.equal(repo.storeOffers("100000000000000001").find((offer) => offer.id === created.offer.id).unitsLeft, 1);
   } finally {
     repo.close();

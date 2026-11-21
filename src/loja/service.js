@@ -238,19 +238,18 @@ export function createStore({ repo, config, audit, now = () => Date.now(), payme
       if (!order) return { ok: false, error: "Pedido não encontrado." };
       if (order.status !== "aguardando_pagamento") return { ok: false, error: "Este pedido não está aguardando pagamento." };
       if (!gateway?.configured) return { ok: false, error: "Defina WYZECASH_API_KEY no host. Nada foi cobrado." };
-      if (order.pixCode) return { ok: true, order, copiaECola: order.pixCode };
+      if (order.pixCode && (!order.pixExpiresAt || order.pixExpiresAt > now())) return { ok: true, order, copiaECola: order.pixCode, reused: true };
       try {
         const charge = await gateway.createPayment({
           cents: order.totalCents,
           description: `Ignix Cloud PC ${order.id}`,
-          idempotencyKey: order.id,
+          idempotencyKey: order.pixExpiresAt ? `${order.id}:${order.pixExpiresAt}` : order.id,
         });
         const expiresAt = Date.parse(charge.expiresAt);
         const next = repo.patchOrder(orderId, {
           chargeId: charge.id,
           pixCode: charge.copyPaste,
           pixExpiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
-          reserveExpiresAt: Number.isFinite(expiresAt) ? expiresAt : order.reserveExpiresAt,
         }, now());
         repo.addStoreEvent({ guildId: order.guildId, orderId, kind: "pix", detail: "Cobrança Pix criada.", now: now() });
         return { ok: true, order: next, copiaECola: charge.copyPaste };
@@ -285,8 +284,13 @@ export function createStore({ repo, config, audit, now = () => Date.now(), payme
       }
       if (charge?.status === "paid") return this.markPaid(order);
       if (charge?.status === "expired" || charge?.status === "refunded") {
-        if (order.status === "aguardando_pagamento") repo.releaseOrder(order.id, "expirado", now());
-        return { ok: true, expired: true, orderId: order.id };
+        if (order.status !== "aguardando_pagamento") return { ok: true, expired: true, orderId: order.id };
+        if (charge.status === "refunded") {
+          repo.releaseOrder(order.id, "expirado", now());
+          return { ok: true, expired: true, orderId: order.id };
+        }
+        const next = repo.patchOrder(order.id, { chargeId: "", pixCode: "", pixExpiresAt: 0 }, now());
+        return { ok: true, expired: true, chargeCleared: true, orderId: order.id, order: next };
       }
       return { ok: true, pending: true, orderId: order.id };
     },
@@ -322,8 +326,13 @@ export function createStore({ repo, config, audit, now = () => Date.now(), payme
         return { status: 200, rejected: true };
       }
       if (event === "payment.expired" || event === "payment.refunded") {
-        if (order.status === "aguardando_pagamento") repo.releaseOrder(order.id, "expirado", now());
-        return { status: 200, expired: true, orderId: order.id };
+        if (order.status !== "aguardando_pagamento") return { status: 200, expired: true, orderId: order.id };
+        if (event === "payment.refunded") {
+          repo.releaseOrder(order.id, "expirado", now());
+          return { status: 200, expired: true, orderId: order.id };
+        }
+        repo.patchOrder(order.id, { chargeId: "", pixCode: "", pixExpiresAt: 0 }, now());
+        return { status: 200, expired: true, chargeCleared: true, orderId: order.id };
       }
       const paid = this.markPaid(order);
       return { status: 200, paid: paid.paid, duplicate: paid.duplicate, orderId: paid.paid ? order.id : undefined };
