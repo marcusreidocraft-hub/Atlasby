@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CATALOG, catalogBySku, durationMs, formatBrl, parseMoney, PLAN_NAMES, STORE_DESCRIPTION, storeBanner } from "./products.js";
+import { BASE_THROUGHPUT } from "../maquina/limits.js";
 import { emojiText } from "./emojis.js";
 import { quotePrice, validateOffer } from "./promotions.js";
 import { fitsPlan } from "./availability.js";
@@ -295,20 +296,27 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
         return { ok: false, error: "Configure a rede antes de criar a VM.", order: next };
       }
       const image = resolveGalleryImage({ storedId: settings.imageId, storedKind: settings.imageKind, envId: config.azure?.imageId });
+      const catalog = catalogBySku(order.sku);
       repo.patchOrder(orderId, { status: "provisionando" }, now());
       const state = {
         orderId,
         step: "start",
         ...(order.provision || {}),
         names: order.provision?.names || resourceNames(orderId),
-        location: azure.location, group: azure.group, size: azure.size, vcpus: product.vcpus,
-        spot: azure.spot, disk: azure.disk, diskGb: product.diskGb, vnet: azure.vnet, subnet: azure.subnet,
+        location: azure.location || config.azure?.location, group: azure.group, size: azure.size || catalog?.vmSize, vcpus: catalog?.vcpus || product.vcpus,
+        spot: azure.spot, disk: "Premium_LRS", diskGb: Math.min(512, config.azure?.maxOsDiskGb || 512),
+        dataGb: catalog?.diskGb || product.diskGb,
+        zone: config.azure?.zone || "",
+        iops: config.azure?.dataIops || 3000,
+        throughput: BASE_THROUGHPUT,
+        vnet: azure.vnet, subnet: azure.subnet,
         nsg: azure.nsg, imageId: image.id, imageKind: image.kind,
       };
       const steps = {
         quota: (current) => provisioner.quota(current),
         ip: (current) => provisioner.ip(current),
         nic: (current) => provisioner.nic(current),
+        disk: (current) => provisioner.disk(current),
         vm: (current) => provisioner.vm(current),
         readIp: (current) => provisioner.readIp(current),
         health: async (ip) => {

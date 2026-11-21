@@ -27,7 +27,7 @@ test("disco v2 respeita IOPS, taxa e tamanho", () => {
   assert.equal(maxThroughputForIops(16000), 1200);
   assert.equal(autoThroughput(3000), 750);
   assert.equal(validateDataDisk({ gb: 128, iops: 3000, throughput: 125 }).ok, true);
-  assert.match(validateDataDisk({ gb: 64, iops: 3000, throughput: 125 }).error, /128, 256, 512 ou 1024/);
+  assert.match(validateDataDisk({ gb: 64, iops: 3000, throughput: 125 }).error, /128, 256, 512, 1024 ou 2048/);
   assert.match(validateDataDisk({ gb: 128, iops: 70000, throughput: 125 }).error, /64000/);
   assert.match(validateDataDisk({ gb: 512, iops: 3000, throughput: 800 }).error, /750/);
   assert.equal(sizeById("t4-4").size, "Standard_NC4as_T4_v3");
@@ -277,7 +277,7 @@ test("continuar aceita a sugestão e a única imagem não trava o menu", async (
   assert.match(await press(`atlas:maquina:ok:zone:${dataId}`), /Firewall/);
   await press(`atlas:maquina:ok:nsg:${dataId}`);
   const data = repo.getDraft(dataId).payload;
-  assert.equal(data.dataGb, 128);
+  assert.equal(data.dataGb, 512);
   assert.equal(data.iops, 3000);
   assert.equal(data.throughput, 125);
   assert.equal(data.zone, "2");

@@ -120,7 +120,7 @@ test("o painel da loja é Components V2 e cada máquina tem o próprio seletor",
   assert.equal(tree.accent_color, 0x111111);
   assert.match(raw, /IGNIX CLOUD/);
   assert.match(raw, /Ignix Cloud PC/);
-  assert.match(raw, /GPU Tesla T4 · 4 vCPUs · 28 GB · 512 GB/);
+  assert.match(raw, /GPU Tesla T4 · 4 vCPUs · 28 GB · 512 GB SSD v2/);
   assert.match(raw, /A partir de \*\*R\$ 4,59\*\*/);
   assert.match(raw, /~~R\$ 24,90~~ \*\*R\$ 19,90\*\*/);
   assert.match(raw, /<t:3600:R>/);
@@ -197,6 +197,9 @@ test("preços T4 e desconto saem só do servidor", () => {
   assert.equal(t4.vcpus, 4);
   assert.equal(t4.ramGib, 28);
   assert.equal(t4.vmSize, "Standard_NC4as_T4_v3");
+  assert.equal(t4.diskGb, 512);
+  assert.equal(catalogBySku("t4-8").diskGb, 1024);
+  assert.equal(catalogBySku("t4-16").diskGb, 2048);
   assert.equal(catalogBySku("t4-8").ramGib, 56);
   assert.equal(catalogBySku("t4-16").ramGib, 110);
   assert.equal(quotePrice({ product: t4, plan: "mensal", now: 0 }).total, 4990);
@@ -285,13 +288,17 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
   assert.equal(resumed.created, false);
   assert.equal(resumed.state.step, "done");
   const env = world();
-  let vms = 0;
+    let vms = 0;
+    const disks = [];
+    let vmState = null;
   try {
     const config = readConfig({
       DISCORD_TOKEN: "token",
       DISCORD_CLIENT_ID: "100000000000000003",
       ALLOWED_GUILD_IDS: GUILD,
       WYVI_WEBHOOK_SECRET: "segredo-wyvi",
+      AZURE_ZONE: "1",
+      AZURE_DATA_IOPS: "3000",
     });
     const store = createStore({
       repo: env.repo,
@@ -303,7 +310,8 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
         async quota() { return { ok: true }; },
         async ip() { return "/ip"; },
         async nic() { return "/nic"; },
-        async vm() { vms += 1; return "/subscriptions/x/resourceGroups/Reido7/providers/Microsoft.Compute/virtualMachines/atlas"; },
+        async disk(state) { disks.push(state); return "/disk/dados"; },
+        async vm(state) { vms += 1; vmState = state; return "/subscriptions/x/resourceGroups/Reido7/providers/Microsoft.Compute/virtualMachines/atlas"; },
         async readIp() { return "203.0.113.50"; },
       },
     });
@@ -317,6 +325,12 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
     const repeated = await store.provision(chosen.order.id);
     assert.equal(createdVm.ok, true);
     assert.equal(vms, 1);
+    assert.equal(disks[0].dataGb, 512);
+    assert.equal(disks[0].zone, "1");
+    assert.equal(disks[0].iops, 3000);
+    assert.equal(disks[0].throughput, 125);
+    assert.equal(vmState.dataDiskId, "/disk/dados");
+    assert.equal(vmState.disk, "Premium_LRS");
     assert.equal(repeated.done, true);
     assert.equal(env.repo.getByOwner(GUILD, "200000000000000009").publicIp, "203.0.113.50");
     env.repo.saveSettings(GUILD, { supportUrl: "", logChannelId: "777", supportRoleId: "123", ticketCategoryId: "456", emoji: {} }, 1);

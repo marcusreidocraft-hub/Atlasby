@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { actorFrom, present } from "../components/reply.js";
+import { suggestedDataGb } from "../loja/catalog.config.js";
 import { resolveGalleryImage, withGalleryVersion } from "../loja/image.js";
+import { specsFromSize } from "../services/vm-size.js";
 import { diskLabel, machineLinks, renderMachineNotice, sendMachineNotice } from "../panels/machine-dm.js";
 import { notice, V2_EPHEMERAL } from "../panels/ui.js";
 import { formatDate, PLAN_LABEL } from "../services/plans.js";
@@ -112,7 +114,7 @@ function goOn(interaction, app, draft, from) {
   if (from === "size") return applySize(interaction, app, draft, WIZARD_DEFAULTS.size);
   if (from === "spot") return applySpot(interaction, app, draft, WIZARD_DEFAULTS.spot);
   if (from === "disk") return applyDisk(interaction, app, draft, WIZARD_DEFAULTS.disk);
-  if (from === "gb") return applyGb(interaction, app, draft, WIZARD_DEFAULTS.gb);
+  if (from === "gb") return applyGb(interaction, app, draft, suggestedDataGb(specsFromSize(sizeById(draft.payload.sizeId)?.size).vcpus));
   if (from === "iops") return applyIops(interaction, app, draft, WIZARD_DEFAULTS.iops);
   if (from === "flow") return applyFlow(interaction, app, draft, WIZARD_DEFAULTS.flow);
   if (from === "zone") return applyZone(interaction, app, draft, suggestedZone(app));

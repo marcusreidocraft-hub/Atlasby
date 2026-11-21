@@ -2,7 +2,9 @@ import { ActionRowBuilder, ButtonStyle, ContainerBuilder, LabelBuilder, ModalBui
 import { press, separator, text, V2_EPHEMERAL } from "../panels/ui.js";
 import { DATA_SIZES, IOPS_CHOICES, autoThroughput } from "./limits.js";
 import { nsgOptions } from "./nsg.js";
-import { MACHINE_SIZES } from "./payload.js";
+import { suggestedDataGb } from "../loja/catalog.config.js";
+import { MACHINE_SIZES, sizeById } from "./payload.js";
+import { specsFromSize } from "../services/vm-size.js";
 import { progressMark } from "./create.js";
 
 const STEPS = [
@@ -103,7 +105,8 @@ export function renderDiskStep(draft, accent) {
 }
 
 export function renderGbStep(draft, accent) {
-  return shell(accent, ["## Disco de dados", "Tamanho do Premium SSD v2.", "Sugestão: 128 GB"], [
+  const suggested = suggestedDataGb(specsFromSize(sizeById(draft.sizeId)?.size).vcpus);
+  return shell(accent, ["## Disco de dados", "Tamanho do Premium SSD v2.", `Sugestão: ${suggested} GB`], [
     select(`atlas:maquina:gb:${draft.id}`, "Gigabytes", DATA_SIZES.map((gb) => ({ label: `${gb} GB`, value: String(gb) }))),
     move(draft.id, "gb"),
   ]);

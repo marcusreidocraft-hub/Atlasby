@@ -5,6 +5,7 @@ export function resourceNames(orderId) {
     ip: `atlas-ip-${short}`,
     nic: `atlas-nic-${short}`,
     disk: `atlas-os-${short}`,
+    data: `atlas-dd-${short}`.slice(0, 20),
   };
 }
 
@@ -19,6 +20,12 @@ export async function advanceProvision(state, steps) {
   let created = false;
   if (!next.ipId) next.ipId = await steps.ip(next);
   if (!next.nicId) next.nicId = await steps.nic(next);
+  if (next.dataGb && !next.zone) {
+    return { state: { ...next, step: "acompanhamento", error: "Defina AZURE_ZONE para criar o disco SSD v2." }, created: false };
+  }
+  if (next.dataGb && !next.dataDiskId) {
+    next.dataDiskId = await steps.disk(next);
+  }
   if (!next.vmId) {
     next.vmId = await steps.vm(next);
     created = true;

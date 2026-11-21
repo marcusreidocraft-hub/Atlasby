@@ -89,7 +89,7 @@ export function renderStorePanel({ settings = {}, products, offers = [], now, ca
     const from = priced.length ? Math.min(...priced.map((item) => item.quote.total)) : null;
     root.addTextDisplayComponents(text([
       `**${product.name || product.headline}**`,
-      `GPU ${product.gpu || "Tesla T4"} · ${product.vcpus} vCPUs · ${product.ram || `${product.ramGib || ""} GB`} · ${product.diskGb || 512} GB`,
+      `GPU ${product.gpu || "Tesla T4"} · ${product.vcpus} vCPUs · ${product.ram || `${product.ramGib || ""} GB`} · ${product.diskGb || 512} GB SSD v2`,
       from != null ? `A partir de **${formatBrl(from)}**` : "",
       priced.map(compactAmount).join("\n"),
       open ? "" : "Indisponível",
