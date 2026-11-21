@@ -1,5 +1,5 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ContainerBuilder, LabelBuilder, ModalBuilder, SectionBuilder, StringSelectMenuBuilder, TextInputBuilder, TextInputStyle } from "discord.js";
-import { TICKET_CATEGORIES, ticketEmojiObject, ticketHours, ticketMark } from "./catalog.js";
+import { TICKET_CATEGORIES, ticketCategory, ticketEmojiObject, ticketHours, ticketMark } from "./catalog.js";
 import { separator, text, V2, V2_EPHEMERAL } from "../panels/ui.js";
 import { formatBrl } from "../loja/products.js";
 
@@ -45,9 +45,10 @@ export function ticketModal(categoryId) {
     .addLabelComponents(new LabelBuilder().setLabel("Como podemos ajudar?").setDescription("Explique sua solicitação com os detalhes importantes.").setTextInputComponent(field));
 }
 
-export function renderTicketCreated(url, settings) {
+export function renderTicketCreated(url, settings, { existing = false } = {}) {
   const root = new ContainerBuilder();
-  root.addTextDisplayComponents(text(`## ${mark(settings, "titulo")} Ticket criado\nSeu atendimento já está disponível.`));
+  const lead = existing ? "Você já tem um atendimento aberto." : "Seu atendimento já está disponível.";
+  root.addTextDisplayComponents(text(`## ${mark(settings, "titulo")} Ticket criado\n${lead}`));
   const button = new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel("Acessar").setURL(url);
   const emoji = ticketEmojiObject(mark(settings, "acessar"));
   if (emoji) button.setEmoji(emoji);
@@ -55,13 +56,22 @@ export function renderTicketCreated(url, settings) {
   return { components: [root], flags: V2_EPHEMERAL };
 }
 
-export function renderTicketWelcome(ticket, settings, supportRoleId) {
-  const category = TICKET_CATEGORIES[ticket.category];
-  const quote = String(ticket.reason).split("\n").map((line) => `> ${line}`).join("\n");
+export function renderTicketWelcome(ticket, settings, supportRoleId, order = null) {
+  const category = ticketCategory(ticket.category);
+  const quote = String(ticket.reason || "").split("\n").map((line) => `> ${line}`).join("\n");
+  const purchase = order ? [
+    `### Pedido`,
+    `ID: \`${order.id}\``,
+    `Plano: ${order.planName || order.sku}`,
+    `Duração: ${order.duration || order.plan}`,
+    `Valor: ${order.price}${order.offer ? ` · ${order.offer}` : ""}`,
+    order.statusLabel ? `Status: ${order.statusLabel}` : "",
+  ].filter(Boolean) : [];
   const root = new ContainerBuilder();
   root.addTextDisplayComponents(text([
     `## ${mark(settings, category.id)} ${category.title} #${ticket.number}`,
     `<@${ticket.userId}>${supportRoleId ? ` • <@&${supportRoleId}>` : ""}`,
+    ...purchase,
     `### ${mark(settings, "motivo")} Motivo`,
     quote,
   ].join("\n")));

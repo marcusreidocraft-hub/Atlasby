@@ -330,6 +330,9 @@ export function attachStore(db) {
     storeOrder(id) {
       return mapOrder(orderById.get(id));
     },
+    openStoreOrder(guildId, userId) {
+      return mapOrder(db.prepare(`SELECT * FROM store_orders WHERE guild_id = ? AND user_id = ? AND status IN ${OPEN} ORDER BY created_at DESC LIMIT 1`).get(guildId, userId));
+    },
     storeGuilds() {
       return db.prepare("SELECT guild_id FROM store_settings").all().map((row) => row.guild_id);
     },

@@ -3,7 +3,7 @@ import { PLAN_NAMES, STORE_DESCRIPTION, STORE_NAME, dataDiskLabel, formatBrl } f
 import { offerApplies, quotePrice } from "./promotions.js";
 import { fitsPlan } from "./availability.js";
 import { emojiText } from "./emojis.js";
-import { press, gallery, separator, text, V2 } from "../panels/ui.js";
+import { gallery, separator, text, V2 } from "../panels/ui.js";
 
 const PLAN_ORDER = ["semanal", "quinzenal", "mensal"];
 const PLAN_SHORT = { semanal: "7d", quinzenal: "15d", mensal: "30d" };
@@ -105,41 +105,3 @@ export function renderStorePanel({ settings = {}, products, offers = [], now, ca
   }
   return { components: [root], flags: V2 };
 }
-
-export function renderOrder(order, product, { accent = 0x0a0a0a, supportRoleId = "" } = {}) {
-  const root = new ContainerBuilder().setAccentColor(accent);
-  const paid = order.status === "pago" || order.status === "entregue";
-  root.addTextDisplayComponents(text([
-    `## ${emojiText("ticket")} Pedido Ignix Cloud PC`,
-    `${emojiText("arrow")} Cliente: <@${order.userId}>`,
-    `${emojiText("gaming")} Produto: ${product?.headline || order.sku}`,
-    `${emojiText("timer")} Plano: ${PLAN_NAMES[order.plan] || order.plan}`,
-    `${emojiText("cash")} Valor original: ${formatBrl(order.originalCents)}`,
-    `${emojiText("megaphone")} Desconto: ${formatBrl(order.discountCents)}`,
-    `${emojiText("cash")} Total: ${formatBrl(order.totalCents)}`,
-    `${paid ? emojiText("verified") : emojiText("warning")} Status: ${statusLabel(order.status)}`,
-    order.assigneeId ? `${emojiText("staff")} Atendimento: <@${order.assigneeId}>` : "",
-    supportRoleId ? `${emojiText("admin")} Equipe: <@&${supportRoleId}>` : "",
-  ].filter(Boolean).join("\n")));
-  root.addActionRowComponents(new ActionRowBuilder().addComponents(
-    press(`atlas:store:claim:${order.id}`, "Assumir atendimento", ButtonStyle.Secondary, emojiText("staff")),
-    press(`atlas:store:pay:${order.id}`, "Gerar pagamento", ButtonStyle.Primary, emojiText("cash")),
-    press(`atlas:store:notify:${order.id}`, "Notificar cliente", ButtonStyle.Secondary, emojiText("bell")),
-    press(`atlas:store:close:${order.id}`, "Fechar ticket", ButtonStyle.Danger, emojiText("warning")),
-  ));
-  return { components: [root], flags: V2 };
-}
-
-function statusLabel(status) {
-  return {
-    aguardando_pagamento: "Aguardando pagamento",
-    pago: "Pago",
-    provisionando: "Preparando a máquina",
-    acompanhamento: "Acompanhamento",
-    entregue: "Entregue",
-    cancelado: "Cancelado",
-    expirado: "Expirado",
-  }[status] || status;
-}
-
-export { statusLabel };

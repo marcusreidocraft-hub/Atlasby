@@ -1,5 +1,16 @@
 import { buttonEmoji } from "../services/emojis.js";
 
+export const PURCHASE_CATEGORY = Object.freeze({
+  id: "compra",
+  title: "Compra",
+  description: "Pedido da loja da Ignix Cloud PC.",
+  emoji: "cash",
+});
+
+export function ticketCategory(id) {
+  return TICKET_CATEGORIES[id] || (id === "compra" ? PURCHASE_CATEGORY : { id, title: String(id || "Atendimento"), description: "", emoji: "ticket" });
+}
+
 export const TICKET_CATEGORIES = Object.freeze({
   suporte: {
     id: "suporte",
@@ -47,6 +58,7 @@ const SLOT_KEY = Object.freeze({
   suporte: "tools",
   parcerias: "partner",
   outros: "settings",
+  compra: "cash",
   abrir: "ticket",
   acessar: "link",
   motivo: "pencil",

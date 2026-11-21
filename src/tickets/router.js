@@ -3,8 +3,10 @@ import { notice, V2, V2_EPHEMERAL } from "../panels/ui.js";
 import { ack, present } from "../components/reply.js";
 import { attendanceOf, canAttend, ticketOverwrites } from "../loja/attendance.js";
 import { parseMoney } from "../loja/products.js";
-import { TICKET_CATEGORIES, ticketChannelName } from "./catalog.js";
+import { ticketChannelName, ticketCategory } from "./catalog.js";
+import { announceTicket } from "./countdown.js";
 import { closeTicketModal, paymentModal, renderPixCharge, renderTicketCreated, renderTicketDenied, renderTicketDesk, renderTicketWelcome, ticketModal } from "./panel.js";
+import { ticketUrl } from "./purchase.js";
 
 function actorOf(interaction) {
   const member = interaction.member;
@@ -18,12 +20,6 @@ function actorOf(interaction) {
 
 function settingsOf(app, guildId) {
   return app.repo.getSettings(guildId);
-}
-
-async function welcome(interaction, app, ticket) {
-  const settings = settingsOf(app, interaction.guildId);
-  const desk = attendanceOf(app.repo, app.config, interaction.guildId);
-  return renderTicketWelcome(ticket, settings, desk.supportRoleId);
 }
 
 export async function routeTicket(interaction, app) {
@@ -41,31 +37,14 @@ export async function routeTicket(interaction, app) {
   const opened = /^atlas:modal:topen:(suporte|parcerias|outros)$/.exec(id);
   if (opened) {
     await ack(interaction, false);
+    const existing = app.repo.supportTicketOpen(guildId, interaction.user.id);
+    if (existing?.channelId) {
+      await present(interaction, renderTicketCreated(ticketUrl(guildId, existing.channelId), settings, { existing: true }));
+      return true;
+    }
     const reason = interaction.fields.getTextInputValue("motivo").trim().slice(0, 1000);
     const category = opened[1];
-    const ticket = app.repo.openSupportTicket({ guildId, userId: interaction.user.id, category, reason, now: Date.now() });
-    const desk = attendanceOf(app.repo, app.config, guildId);
-    const channel = await interaction.guild.channels.create({
-      name: ticketChannelName(category, interaction.user.username, ticket.number),
-      type: ChannelType.GuildText,
-      parent: desk.categoryId || null,
-      permissionOverwrites: ticketOverwrites({
-        everyoneId: interaction.guild.roles.everyone.id,
-        userId: interaction.user.id,
-        botId: interaction.client.user.id,
-        staffRoleIds: desk.staffRoleIds,
-      }),
-    });
-    const view = await welcome({ ...interaction, guildId }, app, ticket);
-    const message = await channel.send({
-      components: view.components,
-      flags: V2,
-      allowedMentions: { roles: desk.supportRoleId ? [desk.supportRoleId] : [], users: [interaction.user.id] },
-    });
-    await message.pin().catch(() => {});
-    app.repo.patchSupportTicket(ticket.id, { channelId: channel.id, messageId: message.id });
-    const url = `https://discord.com/channels/${guildId}/${channel.id}`;
-    await present(interaction, renderTicketCreated(url, settings));
+    await announceTicket(interaction, settings, () => openSupportChannel(interaction, app, { guildId, category, reason, settings }));
     return true;
   }
   const menu = /^atlas:ticket:menu:([0-9a-f-]{36})$/.exec(id);
@@ -93,6 +72,11 @@ export async function routeTicket(interaction, app) {
       return true;
     }
     if (action === "pix") {
+      if (ticket.orderId) {
+        await ack(interaction, false);
+        await chargeOrder(interaction, app, ticket);
+        return true;
+      }
       await interaction.showModal(paymentModal(ticket.id));
       return true;
     }
@@ -125,6 +109,12 @@ export async function routeTicket(interaction, app) {
     await ack(interaction, false);
     const reason = interaction.fields.getTextInputValue("motivo").trim();
     await transcribe(interaction, app, ticket, reason);
+    if (ticket.orderId) {
+      const order = app.store.order(ticket.orderId);
+      if (order && order.status !== "entregue" && order.status !== "cancelado") {
+        await app.store.close(guildId, interaction.user.id, ticket.orderId, reason);
+      }
+    }
     app.repo.patchSupportTicket(ticket.id, { status: "fechado" });
     await interaction.channel?.delete?.("Ticket encerrado").catch(() => {});
     return true;
@@ -153,6 +143,57 @@ export async function routeTicket(interaction, app) {
     return true;
   }
   return false;
+}
+
+async function openSupportChannel(interaction, app, { guildId, category, reason, settings }) {
+  let ticketId = "";
+  try {
+    const ticket = app.repo.openSupportTicket({ guildId, userId: interaction.user.id, category, reason, now: Date.now() });
+    ticketId = ticket.id;
+    const desk = attendanceOf(app.repo, app.config, guildId);
+    const channel = await interaction.guild.channels.create({
+      name: ticketChannelName(category, interaction.user.username, ticket.number),
+      type: ChannelType.GuildText,
+      parent: desk.categoryId || null,
+      permissionOverwrites: ticketOverwrites({
+        everyoneId: interaction.guild.roles.everyone.id,
+        userId: interaction.user.id,
+        botId: interaction.client.user.id,
+        staffRoleIds: desk.staffRoleIds,
+      }),
+    });
+    const view = renderTicketWelcome(ticket, settings, desk.supportRoleId);
+    const message = await channel.send({
+      components: view.components,
+      flags: V2,
+      allowedMentions: { roles: desk.supportRoleId ? [desk.supportRoleId] : [], users: [interaction.user.id] },
+    });
+    await message.pin().catch(() => {});
+    app.repo.patchSupportTicket(ticket.id, { channelId: channel.id, messageId: message.id });
+    return { ok: true, url: ticketUrl(guildId, channel.id) };
+  } catch (error) {
+    console.error(`Ticket: ${error instanceof Error ? error.message : "erro"}`);
+    if (ticketId) app.repo.patchSupportTicket(ticketId, { status: "fechado" });
+    return { ok: false, error: "Não foi possível abrir o atendimento. Tente de novo em instantes." };
+  }
+}
+
+async function chargeOrder(interaction, app, ticket) {
+  const result = await app.store.payment(ticket.orderId);
+  if (!result.ok) {
+    await present(interaction, notice(result.error, app.config.panelColor));
+    return;
+  }
+  const settings = settingsOf(app, interaction.guildId);
+  const view = renderPixCharge({
+    cents: result.order.totalCents,
+    description: `${result.order.sku} · ${result.order.plan}`,
+    copiaECola: result.copiaECola,
+    staffId: interaction.user.id,
+    settings,
+  });
+  await interaction.channel.send({ components: view.components, flags: V2, allowedMentions: { users: [interaction.user.id] } });
+  await present(interaction, notice("Cobrança publicada no ticket.", app.config.panelColor));
 }
 
 async function runStaffAction(interaction, app, ticket, action) {
@@ -206,7 +247,7 @@ async function transcribe(interaction, app, ticket, reason) {
     history = [...fetched.values()].reverse().map((message) => `${message.author?.username || "sistema"}: ${message.content || "[painel]"}`).join("\n").slice(0, 1500);
   } catch { /* segue só com o motivo */ }
   const channel = await interaction.client.channels.fetch(desk.logChannelId);
-  const category = TICKET_CATEGORIES[ticket.category]?.title || ticket.category;
+  const category = ticketCategory(ticket.category).title;
   await channel.send({
     components: notice([
       `Transcrição ${category} #${ticket.number}`,

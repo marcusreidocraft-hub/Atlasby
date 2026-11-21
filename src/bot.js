@@ -9,10 +9,11 @@ import { routeTicket } from "./tickets/router.js";
 import { routeAnnounceComponent } from "./announce/router.js";
 import { routeInviteComponent } from "./invites/router.js";
 import { routeMachineComponent } from "./maquina/router.js";
-import { renderOrder } from "./loja/panel.js";
+import { notice, V2 } from "./panels/ui.js";
+import { renderTicketWelcome } from "./tickets/panel.js";
+import { orderFacts } from "./tickets/purchase.js";
 import { createStoreHttp } from "./loja/http.js";
 import { machineLinks, renderMachineNotice, sendMachineNotice } from "./panels/machine-dm.js";
-import { V2 } from "./panels/ui.js";
 import { formatDate, PLAN_LABEL } from "./services/plans.js";
 import { PLAN_NAMES } from "./loja/products.js";
 import { attendanceOf } from "./loja/attendance.js";
@@ -65,11 +66,17 @@ async function fulfill(client, app, orderId) {
   const result = await app.store.provision(orderId);
   const order = app.store.order(orderId);
   if (order?.channelId && order?.messageId) {
-    client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.messageId)).then((message) => message.edit({
-      components: renderOrder(order, product).components,
-      flags: V2,
-      allowedMentions: { parse: [] },
-    })).catch(() => {});
+    const ticket = app.repo.supportTicketByOrder(order.id);
+    if (ticket) {
+      const settings = app.repo.getSettings(order.guildId);
+      const desk = attendanceOf(app.repo, app.config, order.guildId);
+      const view = renderTicketWelcome(ticket, settings, desk.supportRoleId, orderFacts(order, product));
+      client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.messageId)).then((message) => message.edit({
+        components: view.components,
+        flags: V2,
+        allowedMentions: { parse: [] },
+      })).catch(() => {});
+    }
   }
   if (result.delivered?.ok) {
     const owner = app.repo.getByOwner(order.guildId, order.userId);
@@ -96,7 +103,7 @@ async function fulfill(client, app, orderId) {
     const logChannelId = attendanceOf(app.repo, app.config, order.guildId).logChannelId;
     if (!logChannelId) return;
     deliver(client, logChannelId, {
-      components: renderOrder(order, product).components,
+      components: notice(`Falha ao provisionar o pedido ${order.id}.`).components,
       flags: V2,
       allowedMentions: { parse: [] },
     }).catch(() => {});

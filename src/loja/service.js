@@ -211,6 +211,9 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
     rememberTicket(orderId, channelId, messageId) {
       return repo.patchOrder(orderId, { channelId, messageId }, now());
     },
+    openOrder(guildId, userId) {
+      return repo.openStoreOrder(guildId, userId);
+    },
     async claim(guildId, actorId, orderId) {
       const order = repo.storeOrder(orderId);
       if (!order || order.guildId !== guildId) return { ok: false, error: "Pedido não encontrado." };

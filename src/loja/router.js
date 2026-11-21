@@ -1,17 +1,13 @@
-import { AttachmentBuilder, ChannelType, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
+import { AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
 import { notice, V2, V2_EPHEMERAL } from "../panels/ui.js";
 import { ack, present } from "../components/reply.js";
 import { parseDate } from "../services/plans.js";
 import { formatBrl } from "./products.js";
-import { renderOrder } from "./panel.js";
+import { openPurchaseTicket } from "../tickets/purchase.js";
 import { STORE_COMMANDS } from "./commands.js";
-import { attendanceOf, canAttend, renderAttendance, ticketOverwrites } from "./attendance.js";
+import { attendanceOf, canAttend, renderAttendance } from "./attendance.js";
 import { emojiText } from "./emojis.js";
 import { deliverComponents, isStaleMessage, publishStorePanel } from "./publish.js";
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 async function refresh(interaction, app) {
   const guildId = interaction.guildId;
@@ -145,21 +141,6 @@ export async function handleStoreCommand(interaction, app, actor) {
   return false;
 }
 
-async function ticketChannel(interaction, app, order) {
-  const desk = attendanceOf(app.repo, app.config, interaction.guildId);
-  return interaction.guild.channels.create({
-    name: `pedido-${order.id.slice(0, 8)}`,
-    type: ChannelType.GuildText,
-    parent: desk.categoryId || null,
-    permissionOverwrites: ticketOverwrites({
-      everyoneId: interaction.guild.roles.everyone.id,
-      userId: interaction.user.id,
-      botId: interaction.client.user.id,
-      staffRoleIds: desk.staffRoleIds,
-    }),
-  });
-}
-
 async function writeTranscript(interaction, app, order, reason) {
   const desk = attendanceOf(app.repo, app.config, interaction.guildId);
   if (!desk.logChannelId) return;
@@ -188,33 +169,8 @@ export async function routeStoreComponent(interaction, app) {
   const actor = { id: interaction.user.id, guildId, permissions: interaction.member?.permissions?.bitfield ?? 0n, roleIds: interaction.member?.roles?.cache?.map?.((role) => role.id) ?? [], owner: interaction.guild?.ownerId === interaction.user.id };
   if (id.startsWith("atlas:store:pick")) {
     await ack(interaction, false);
-    await present(interaction, notice(`${emojiText("cart")} Preparando seu pedido... 3...`, app.config.panelColor));
-    await sleep(700);
-    await interaction.editReply({ components: notice("Preparando seu pedido... 2...", app.config.panelColor).components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
-    await sleep(700);
-    await interaction.editReply({ components: notice("Preparando seu pedido... 1...", app.config.panelColor).components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
-    const chosen = app.store.choose(guildId, interaction.user.id, interaction.values?.[0] ?? "", interaction.user.username);
-    if (!chosen.ok) {
-      await present(interaction, notice(chosen.error, app.config.panelColor));
-      return true;
-    }
-    try {
-      const channel = await ticketChannel(interaction, app, chosen.order);
-      const desk = attendanceOf(app.repo, app.config, guildId);
-      const view = renderOrder(chosen.order, chosen.product, { accent: app.store.settings(guildId).accent, supportRoleId: desk.supportRoleId });
-      const message = await channel.send({
-        components: view.components,
-        flags: V2,
-        allowedMentions: desk.supportRoleId ? { roles: [desk.supportRoleId] } : { parse: [] },
-      });
-      app.store.rememberTicket(chosen.order.id, channel.id, message.id);
-      await refresh(interaction, app).catch(() => false);
-      await present(interaction, notice(`Pedido aberto em <#${channel.id}>.`, app.config.panelColor));
-    } catch (error) {
-      console.error(`Ticket: ${error instanceof Error ? error.message : "erro"}`);
-      await app.store.close(guildId, interaction.user.id, chosen.order.id, "Falha ao abrir o canal.");
-      await present(interaction, notice("Não foi possível abrir o pedido. O estoque foi devolvido.", app.config.panelColor));
-    }
+    await openPurchaseTicket(interaction, app, interaction.values?.[0] ?? "");
+    await refresh(interaction, app).catch(() => false);
     return true;
   }
   const claim = /^atlas:store:claim:([0-9a-f-]{36})$/.exec(id);
