@@ -5,7 +5,8 @@ import { attendanceOf, canAttend, ticketOverwrites } from "../loja/attendance.js
 import { parseMoney } from "../loja/products.js";
 import { ticketChannelName, ticketCategory } from "./catalog.js";
 import { announceTicket } from "./countdown.js";
-import { closeTicketModal, paymentModal, renderPixCharge, renderTicketCreated, renderTicketDenied, renderTicketDesk, renderTicketWelcome, ticketModal } from "./panel.js";
+import { chargeFiles, renderChargePanel } from "../loja/charge-panel.js";
+import { closeTicketModal, paymentModal, renderTicketCreated, renderTicketDenied, renderTicketDesk, renderTicketWelcome, ticketModal } from "./panel.js";
 import { ticketUrl } from "./purchase.js";
 
 function actorOf(interaction) {
@@ -127,18 +128,26 @@ export async function routeTicket(interaction, app) {
       await present(interaction, notice("Informe um valor válido, como 10,00.", app.config.panelColor));
       return true;
     }
-    if (!app.wyvi?.configured) {
-      await present(interaction, notice("Defina WYVI_API_KEY no host. Nada foi cobrado.", app.config.panelColor));
+    if (!app.payments?.configured) {
+      await present(interaction, notice("Defina WYZECASH_API_KEY no host. Nada foi cobrado.", app.config.panelColor));
       return true;
     }
-    const charge = await app.wyvi.createCharge({
-      cents,
-      description,
-      reference: ticket.id,
-      idempotencyKey: `${ticket.id}-${Date.now()}`,
-    });
-    const view = renderPixCharge({ cents, description, copiaECola: charge.copiaECola, staffId: interaction.user.id, settings });
-    await interaction.channel.send({ components: view.components, flags: V2, allowedMentions: { users: [interaction.user.id] } });
+    let charge;
+    try {
+      charge = await app.payments.createPayment({
+        cents,
+        description: description || "Ignix Cloud PC",
+        idempotencyKey: `suporte-${ticket.id}-${cents}`.slice(0, 128),
+      });
+    } catch (error) {
+      console.error(`WyzeCash: cobrança recusada (${error?.status || "erro"} ${error?.code || ""}).`.trim());
+      await present(interaction, notice("Não foi possível gerar o Pix. Tente de novo em instantes.", app.config.panelColor));
+      return true;
+    }
+    const draft = { id: "", totalCents: cents, originalCents: cents, discountCents: 0, pixCode: charge.copyPaste, status: "aguardando_pagamento", pixExpiresAt: Date.parse(charge.expiresAt) || 0 };
+    const files = await chargeFiles(draft);
+    const view = renderChargePanel(draft, { withQr: files.length > 0 });
+    await interaction.channel.send({ components: view.components, files, flags: V2, allowedMentions: { users: [interaction.user.id] } });
     await present(interaction, notice("Cobrança publicada no ticket.", app.config.panelColor));
     return true;
   }
@@ -184,15 +193,10 @@ async function chargeOrder(interaction, app, ticket) {
     await present(interaction, notice(result.error, app.config.panelColor));
     return;
   }
-  const settings = settingsOf(app, interaction.guildId);
-  const view = renderPixCharge({
-    cents: result.order.totalCents,
-    description: `${result.order.sku} · ${result.order.plan}`,
-    copiaECola: result.copiaECola,
-    staffId: interaction.user.id,
-    settings,
-  });
-  await interaction.channel.send({ components: view.components, flags: V2, allowedMentions: { users: [interaction.user.id] } });
+  const files = await chargeFiles(result.order);
+  const view = renderChargePanel(result.order, { withQr: files.length > 0 });
+  const sent = await interaction.channel.send({ components: view.components, files, flags: V2, allowedMentions: { parse: [] } });
+  app.store.rememberPaymentMessage(ticket.orderId, sent.id);
   await present(interaction, notice("Cobrança publicada no ticket.", app.config.panelColor));
 }
 

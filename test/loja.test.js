@@ -31,7 +31,7 @@ function world() {
     DISCORD_TOKEN: "token",
     DISCORD_CLIENT_ID: "100000000000000003",
     ALLOWED_GUILD_IDS: GUILD,
-    WYVI_WEBHOOK_SECRET: "segredo-wyvi",
+    WYZECASH_WEBHOOK_SECRET: "segredo-wyze",
     AZURE_LOCATION: "brazilsouth",
   });
   const store = createStore({ repo, config, audit: { async record() {} }, now: () => Date.parse("2026-11-12T15:00:00Z") });
@@ -267,24 +267,29 @@ test("a oferta sai na compra e volta se o pedido for cancelado", async () => {
   }
 });
 
+function wyzeHeaders(raw, { event = "payment.paid", delivery = "evt-1", secret = "segredo-wyze", stamp = String(Math.floor(Date.parse("2026-11-12T15:00:00Z") / 1000)) } = {}) {
+  const signature = createHmac("sha256", secret).update(`${stamp}.${raw}`).digest("hex");
+  return { "x-wyzecash-signature": `t=${stamp},v1=${signature}`, "x-wyzecash-event": event, "x-wyzecash-delivery": delivery };
+}
+
 test("webhook exige assinatura, confere o valor e não processa duas vezes", async () => {
   const env = world();
   try {
     const chosen = env.store.choose(GUILD, "200000000000000001", "t4-4:semanal", "Ana");
-    const raw = JSON.stringify({ referencia: chosen.order.id, valor_centavos: chosen.order.totalCents });
-    const stamp = String(Math.floor(Date.parse("2026-11-12T15:00:00Z") / 1000));
-    const signature = createHmac("sha256", "segredo-wyvi").update(`${stamp}.${raw}`).digest("hex");
-    const headers = { "x-wyvi-carimbo": stamp, "x-wyvi-assinatura": `v1=${signature}`, "x-wyvi-evento": "cobranca.paga", "x-wyvi-entrega": "entrega-1" };
-    assert.equal((await env.store.handleWebhook(raw, { ...headers, "x-wyvi-assinatura": "v1=00" })).status, 401);
+    env.repo.patchOrder(chosen.order.id, { chargeId: "BKY-1" }, 1);
+    const raw = JSON.stringify({ id: "evt-1", type: "payment.paid", data: { id: "BKY-1", amount: chosen.order.totalCents } });
+    const headers = wyzeHeaders(raw, { delivery: "evt-1" });
+    assert.equal((await env.store.handleWebhook(raw, { ...headers, "x-wyzecash-signature": "t=1,v1=00" })).status, 401);
     const paid = await env.store.handleWebhook(raw, headers);
     const again = await env.store.handleWebhook(raw, headers);
+    assert.equal(paid.paid, true);
     assert.equal(paid.orderId, chosen.order.id);
     assert.equal(again.duplicate, true);
     assert.equal(env.store.order(chosen.order.id).status, "pago");
     const other = env.store.choose(GUILD, "200000000000000003", "t4-8:mensal", "Caio");
-    const wrongRaw = JSON.stringify({ referencia: other.order.id, valor_centavos: 1 });
-    const wrongSig = createHmac("sha256", "segredo-wyvi").update(`${stamp}.${wrongRaw}`).digest("hex");
-    await env.store.handleWebhook(wrongRaw, { ...headers, "x-wyvi-assinatura": `v1=${wrongSig}`, "x-wyvi-entrega": "entrega-2" });
+    env.repo.patchOrder(other.order.id, { chargeId: "BKY-2" }, 1);
+    const wrongRaw = JSON.stringify({ id: "evt-2", type: "payment.paid", data: { id: "BKY-2", amount: 1 } });
+    await env.store.handleWebhook(wrongRaw, wyzeHeaders(wrongRaw, { delivery: "evt-2" }));
     assert.equal(env.store.order(other.order.id).status, "aguardando_pagamento");
   } finally {
     env.close();
@@ -315,7 +320,7 @@ test("a mesma VM não é criada duas vezes para o pedido", async () => {
       DISCORD_TOKEN: "token",
       DISCORD_CLIENT_ID: "100000000000000003",
       ALLOWED_GUILD_IDS: GUILD,
-      WYVI_WEBHOOK_SECRET: "segredo-wyvi",
+      WYZECASH_WEBHOOK_SECRET: "segredo-wyze",
       AZURE_ZONE: "1",
       AZURE_DATA_IOPS: "3000",
     });

@@ -1,4 +1,4 @@
-import { AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
+import { MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle, LabelBuilder } from "discord.js";
 import { notice, V2, V2_EPHEMERAL } from "../panels/ui.js";
 import { ack, present } from "../components/reply.js";
 import { parseDate } from "../services/plans.js";
@@ -6,7 +6,7 @@ import { formatBrl } from "./products.js";
 import { openPurchaseTicket } from "../tickets/purchase.js";
 import { STORE_COMMANDS } from "./commands.js";
 import { attendanceOf, canAttend, renderAttendance } from "./attendance.js";
-import { emojiText } from "./emojis.js";
+import { chargeFiles, renderChargePanel } from "./charge-panel.js";
 import { deliverComponents, isStaleMessage, publishStorePanel } from "./publish.js";
 
 async function refresh(interaction, app) {
@@ -135,7 +135,7 @@ export async function handleStoreCommand(interaction, app, actor) {
   if (name === "cancelar-pedido") {
     const cancelled = await app.store.cancel(guildId, actor.id, interaction.options.getString("id"));
     await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice(cancelled.ok ? "Pedido cancelado. Se já houve pagamento, o reembolso é feito no painel da Wyvi." : cancelled.error, app.config.panelColor));
+    await present(interaction, notice(cancelled.ok ? "Pedido cancelado. Se já houve pagamento, o reembolso é feito no painel da WyzeCash." : cancelled.error, app.config.panelColor));
     return true;
   }
   return false;
@@ -167,6 +167,31 @@ export async function routeStoreComponent(interaction, app) {
   if (!id.startsWith("atlas:store:") && !id.startsWith("atlas:modal:store:")) return false;
   const guildId = interaction.guildId;
   const actor = { id: interaction.user.id, guildId, permissions: interaction.member?.permissions?.bitfield ?? 0n, roleIds: interaction.member?.roles?.cache?.map?.((role) => role.id) ?? [], owner: interaction.guild?.ownerId === interaction.user.id };
+  const copy = /^atlas:store:copy:([0-9a-f-]{36})$/.exec(id);
+  if (copy) {
+    const order = app.store.order(copy[1]);
+    const code = order?.pixCode || "";
+    await interaction.reply({
+      content: code || "Este pedido ainda não tem código Pix.",
+      flags: MessageFlags.Ephemeral,
+    });
+    return true;
+  }
+  const check = /^atlas:store:check:([0-9a-f-]{36})$/.exec(id);
+  if (check) {
+    await ack(interaction, false);
+    const result = await app.store.confirmFromProvider(check[1]);
+    if (result.paid) app.onOrderPaid?.(result.orderId);
+    const text = result.paid
+      ? "Pagamento confirmado. A máquina segue para a entrega."
+      : result.expired
+        ? "Esta cobrança expirou. A unidade da oferta voltou."
+        : result.pending
+          ? "O pagamento ainda não consta. Assim que a WyzeCash confirmar, a máquina é criada."
+          : result.error;
+    await present(interaction, notice(text, app.config.panelColor));
+    return true;
+  }
   if (id.startsWith("atlas:store:pick")) {
     await ack(interaction, false);
     await openPurchaseTicket(interaction, app, interaction.values?.[0] ?? "");
@@ -210,7 +235,7 @@ export async function routeStoreComponent(interaction, app) {
     await writeTranscript(interaction, app, order, reason);
     const closed = await app.store.close(guildId, actor.id, orderId, reason);
     await refresh(interaction, app).catch(() => false);
-    await present(interaction, notice(closed.ok ? "Ticket fechado. O reembolso de um Pix pago é feito no painel da Wyvi." : closed.error, app.config.panelColor));
+    await present(interaction, notice(closed.ok ? "Ticket fechado. O reembolso de um Pix pago é feito no painel da WyzeCash." : closed.error, app.config.panelColor));
     return true;
   }
   if (notify) {
@@ -232,16 +257,9 @@ export async function routeStoreComponent(interaction, app) {
       await present(interaction, notice(result.error, app.config.panelColor));
       return true;
     }
-    let file = null;
-    if (result.qrcode?.startsWith("data:image")) file = Buffer.from(result.qrcode.split(",")[1], "base64");
-    else if (result.copiaECola) {
-      const qr = await import("qrcode");
-      file = await qr.toBuffer(result.copiaECola, { type: "png", width: 320, margin: 1 });
-    }
-    const payload = notice(`${emojiText("cash")} Pix copia e cola:\n${result.copiaECola}\n\n${emojiText("timer")} O pagamento expira em 1 hora. A máquina só é criada depois da confirmação da Wyvi.`, app.config.panelColor);
-    const body = { components: payload.components, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } };
-    if (file) body.files = [new AttachmentBuilder(file, { name: "pix.png" })];
-    await interaction.editReply(body);
+    const files = await chargeFiles(result.order);
+    const view = renderChargePanel(result.order, { withQr: files.length > 0 });
+    await interaction.editReply({ components: view.components, files, flags: V2_EPHEMERAL, allowedMentions: { parse: [] } });
     return true;
   }
   return false;

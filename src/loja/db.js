@@ -71,7 +71,7 @@ const SCHEMA = `
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS wyvi_events (
+  CREATE TABLE IF NOT EXISTS payment_events (
     delivery_id TEXT PRIMARY KEY,
     event_name TEXT NOT NULL,
     created_at INTEGER NOT NULL
@@ -143,6 +143,8 @@ function mapOrder(row) {
     assigneeId: row.assignee_id || "",
     chargeId: row.charge_id || "",
     pixCode: row.pix_code || "",
+    pixExpiresAt: row.pix_expires_at || 0,
+    paymentMessageId: row.payment_message_id || "",
     paidAt: row.paid_at,
     provision: row.provision_json ? JSON.parse(row.provision_json) : null,
     offerId: row.offer_id || "",
@@ -175,6 +177,9 @@ function mapSettings(row) {
 
 export function attachStore(db) {
   db.exec(SCHEMA);
+  const orderColumns = db.prepare("PRAGMA table_info(store_orders)").all();
+  if (!orderColumns.some((column) => column.name === "pix_expires_at")) db.exec("ALTER TABLE store_orders ADD COLUMN pix_expires_at INTEGER");
+  if (!orderColumns.some((column) => column.name === "payment_message_id")) db.exec("ALTER TABLE store_orders ADD COLUMN payment_message_id TEXT NOT NULL DEFAULT ''");
   const productColumns = db.prepare("PRAGMA table_info(store_products)").all();
   if (!productColumns.some((column) => column.name === "purchases_enabled")) {
     db.exec("ALTER TABLE store_products ADD COLUMN purchases_enabled INTEGER NOT NULL DEFAULT 1");
@@ -344,9 +349,9 @@ export function attachStore(db) {
       if (!current) return null;
       const next = { ...current, ...patch };
       db.prepare(`UPDATE store_orders SET status = ?, channel_id = ?, message_id = ?, assignee_id = ?, charge_id = ?, pix_code = ?,
-        paid_at = ?, provision_json = ?, updated_at = ? WHERE id = ?`).run(
+        pix_expires_at = ?, payment_message_id = ?, paid_at = ?, provision_json = ?, updated_at = ? WHERE id = ?`).run(
         next.status, next.channelId, next.messageId, next.assigneeId, next.chargeId, next.pixCode,
-        next.paidAt, next.provision ? JSON.stringify(next.provision) : null, now, id,
+        next.pixExpiresAt || null, next.paymentMessageId || "", next.paidAt, next.provision ? JSON.stringify(next.provision) : null, now, id,
       );
       return mapOrder(orderById.get(id));
     },
@@ -367,12 +372,15 @@ export function attachStore(db) {
     resumeOrders() {
       return resume.all().map(mapOrder);
     },
-    rememberWyviEvent(deliveryId, eventName, now) {
-      const inserted = db.prepare("INSERT OR IGNORE INTO wyvi_events (delivery_id, event_name, created_at) VALUES (?, ?, ?)").run(deliveryId, eventName, now);
+    rememberPaymentEvent(deliveryId, eventName, now) {
+      const inserted = db.prepare("INSERT OR IGNORE INTO payment_events (delivery_id, event_name, created_at) VALUES (?, ?, ?)").run(deliveryId, eventName, now);
       return inserted.changes === 1;
     },
-    findOrderByReference(reference) {
-      return mapOrder(db.prepare("SELECT * FROM store_orders WHERE id = ?").get(reference));
+    findOrderByCharge(chargeId) {
+      return mapOrder(db.prepare("SELECT * FROM store_orders WHERE charge_id = ?").get(chargeId));
+    },
+    pendingCharges() {
+      return db.prepare("SELECT * FROM store_orders WHERE status = 'aguardando_pagamento' AND charge_id != ''").all().map(mapOrder);
     },
     addStoreEvent(row) {
       db.prepare("INSERT INTO store_events (id, guild_id, order_id, kind, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(

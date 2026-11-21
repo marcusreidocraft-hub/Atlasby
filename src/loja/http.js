@@ -4,7 +4,7 @@ export function createStoreHttp(handler) {
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url || "/", "http://127.0.0.1");
-      if (req.method !== "POST" || url.pathname !== "/wyvi/webhook") {
+      if (req.method !== "POST" || url.pathname !== "/webhooks/wyzecash") {
         res.writeHead(404, { "content-type": "application/json" });
         res.end(JSON.stringify({ error: "não encontrado" }));
         return;

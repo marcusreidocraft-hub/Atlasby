@@ -6,6 +6,8 @@ import { V2 } from "../panels/ui.js";
 import { announceTicket } from "./countdown.js";
 import { ticketChannelName } from "./catalog.js";
 import { renderTicketCreated, renderTicketWelcome } from "./panel.js";
+import { chargeFiles, renderChargePanel } from "../loja/charge-panel.js";
+import { notice } from "../panels/ui.js";
 
 const DURATION = Object.freeze({
   semanal: "7 dias",
@@ -17,7 +19,7 @@ const DURATION = Object.freeze({
 
 const STATUS = Object.freeze({
   aguardando_pagamento: "Aguardando pagamento",
-  pago: "Pago",
+  pago: "Pagamento confirmado",
   provisionando: "Preparando a máquina",
   acompanhamento: "Acompanhamento",
   entregue: "Entregue",
@@ -49,6 +51,27 @@ export async function openPurchaseTicket(interaction, app, value, options = {}) 
     return;
   }
   await announceTicket(interaction, settings, () => createPurchase(interaction, app, value, settings), options);
+}
+
+async function postCharge(channel, app, orderId) {
+  const result = await app.store.payment(orderId);
+  if (!result.ok) {
+    await channel.send({
+      components: notice(result.error).components,
+      flags: V2,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  const files = await chargeFiles(result.order);
+  const view = renderChargePanel(result.order, { withQr: files.length > 0 });
+  const sent = await channel.send({
+    components: view.components,
+    files,
+    flags: V2,
+    allowedMentions: { parse: [] },
+  });
+  app.store.rememberPaymentMessage(orderId, sent.id);
 }
 
 async function createPurchase(interaction, app, value, settings) {
@@ -93,6 +116,7 @@ async function createPurchase(interaction, app, value, settings) {
     await message.pin().catch(() => {});
     app.repo.patchSupportTicket(ticket.id, { channelId: channel.id, messageId: message.id });
     app.store.rememberTicket(orderId, channel.id, message.id);
+    await postCharge(channel, app, orderId).catch(() => {});
     return { ok: true, url: ticketUrl(guildId, channel.id) };
   } catch (error) {
     console.error(`Ticket: ${error instanceof Error ? error.message : "erro"}`);

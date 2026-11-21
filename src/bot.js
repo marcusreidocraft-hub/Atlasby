@@ -12,6 +12,7 @@ import { routeMachineComponent } from "./maquina/router.js";
 import { notice, V2 } from "./panels/ui.js";
 import { renderTicketWelcome } from "./tickets/panel.js";
 import { orderFacts } from "./tickets/purchase.js";
+import { renderChargePanel } from "./loja/charge-panel.js";
 import { createStoreHttp } from "./loja/http.js";
 import { machineLinks, renderMachineNotice, sendMachineNotice } from "./panels/machine-dm.js";
 import { formatDate, PLAN_LABEL } from "./services/plans.js";
@@ -65,6 +66,14 @@ async function fulfill(client, app, orderId) {
   }
   const result = await app.store.provision(orderId);
   const order = app.store.order(orderId);
+  if (order?.channelId && order?.paymentMessageId) {
+    const charge = renderChargePanel({ ...order, status: order.status === "aguardando_pagamento" ? order.status : "pago" });
+    client.channels.fetch(order.channelId).then((channel) => channel.messages.fetch(order.paymentMessageId)).then((message) => message.edit({
+      components: charge.components,
+      flags: V2,
+      allowedMentions: { parse: [] },
+    })).catch(() => {});
+  }
   if (order?.channelId && order?.messageId) {
     const ticket = app.repo.supportTicketByOrder(order.id);
     if (ticket) {
@@ -114,6 +123,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   const infra = createInfrastructure(config);
   const bridge = { send: async () => false };
   const app = createApp({ config, repo, infra, deliverLog: (channelId, payload) => bridge.send(channelId, payload) });
+  app.onOrderPaid = (orderId) => fulfill(client, app, orderId);
   bridge.send = (channelId, payload) => deliver(client, channelId, payload);
   client.on(Events.InviteCreate, (invite) => app.invites.noteInvite(invite));
   client.on(Events.InviteDelete, (invite) => app.invites.forgetInvite(invite));
@@ -139,7 +149,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   if (config.serverPort) {
     const server = createStoreHttp(async (raw, headers) => {
       const result = await app.store.handleWebhook(raw, headers);
-      if (result.orderId) setImmediate(() => fulfill(client, app, result.orderId));
+      if (result.paid && result.orderId) setImmediate(() => fulfill(client, app, result.orderId));
       return result.status;
     });
     await new Promise((resolve, reject) => {
@@ -150,7 +160,8 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
       });
     });
     client.storeServer = server;
-    console.log(`Webhook da loja escutando na porta ${config.serverPort}.`);
+    const webhookUrl = config.publicUrl ? `${config.publicUrl}/webhooks/wyzecash` : `porta ${config.serverPort} /webhooks/wyzecash`;
+    console.log(`Webhook da WyzeCash em ${webhookUrl}.`);
   }
   app.store.expireReservations();
   const expired = await app.store.expireClients();
@@ -177,6 +188,9 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
   }, 45_000);
   const storeTimer = setInterval(() => {
     editStorePanel(client, app).catch((error) => console.warn(`Loja: ${error?.code || "erro"}`));
+    app.store.pollPayments().then((rows) => {
+      for (const row of rows) if (row.paid) fulfill(client, app, row.orderId);
+    }).catch((error) => console.warn(`WyzeCash: ${error?.code || "erro"}`));
   }, config.storeRefreshMs || 180_000);
   storeTimer.unref?.();
   client.storeTimer = storeTimer;

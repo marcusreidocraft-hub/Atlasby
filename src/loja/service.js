@@ -6,14 +6,15 @@ import { quotePrice, validateOffer } from "./promotions.js";
 import { fitsPlan } from "./availability.js";
 import { advanceProvision, resourceNames } from "./provision.js";
 import { resolveGalleryImage } from "./image.js";
-import { chargeCents, chargeReference, verifyWyviSignature } from "./payments.js";
+import { createWyzeCashClient, paymentAmount, paymentId, verifyWyzeCashSignature, webhookEvent, webhookEventId } from "./payments.js";
 import { renderStorePanel } from "./panel.js";
 
 const RESERVE_MS = 30 * 60 * 1000;
 const CAPACITY_MS = 2 * 60 * 1000;
 const DEFAULT_DESCRIPTION = STORE_DESCRIPTION;
 
-export function createStore({ repo, config, audit, now = () => Date.now(), wyvi = null, sunshine = null, provisioner = null, infra = null, capacityReader = null }) {
+export function createStore({ repo, config, audit, now = () => Date.now(), payments = null, sunshine = null, provisioner = null, infra = null, capacityReader = null }) {
+  const gateway = payments ?? createWyzeCashClient({ apiKey: config.wyzecash?.apiKey || "", baseUrl: config.wyzecash?.baseUrl });
   function defaults() {
     return {
       title: "🎮 Ignix Cloud PC",
@@ -226,7 +227,7 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       if (!order || order.guildId !== guildId) return { ok: false, error: "Pedido não encontrado." };
       if (order.status !== "entregue") repo.releaseOrder(orderId, "cancelado", now());
       else repo.patchOrder(orderId, { status: "cancelado" }, now());
-      await note(guildId, actorId, "fechar_pedido", `Pedido fechado. Motivo: ${String(reason || "não informado").slice(0, 180)}. Reembolso de pedido pago é feito no painel da Wyvi.`);
+      await note(guildId, actorId, "fechar_pedido", `Pedido fechado. Motivo: ${String(reason || "não informado").slice(0, 180)}. Reembolso de pedido pago é feito no painel da WyzeCash.`);
       return { ok: true };
     },
     async cancel(guildId, actorId, orderId) {
@@ -236,37 +237,96 @@ export function createStore({ repo, config, audit, now = () => Date.now(), wyvi 
       const order = repo.storeOrder(orderId);
       if (!order) return { ok: false, error: "Pedido não encontrado." };
       if (order.status !== "aguardando_pagamento") return { ok: false, error: "Este pedido não está aguardando pagamento." };
-      if (!wyvi?.configured) return { ok: false, error: "Defina WYVI_API_KEY no host. Nada foi cobrado." };
-      if (order.pixCode) return { ok: true, order, copiaECola: order.pixCode, qrcode: "" };
-      const charge = await wyvi.createCharge({
-        cents: order.totalCents,
-        description: `Ignix Cloud PC ${order.sku} ${PLAN_NAMES[order.plan] || order.plan}`,
-        reference: order.id,
-        idempotencyKey: order.id,
-      });
-      const next = repo.patchOrder(orderId, { chargeId: charge.id, pixCode: charge.copiaECola }, now());
-      repo.addStoreEvent({ guildId: order.guildId, orderId, kind: "pix", detail: "Cobrança Pix criada.", now: now() });
-      return { ok: true, order: next, copiaECola: charge.copiaECola, qrcode: charge.qrcode };
+      if (!gateway?.configured) return { ok: false, error: "Defina WYZECASH_API_KEY no host. Nada foi cobrado." };
+      if (order.pixCode) return { ok: true, order, copiaECola: order.pixCode };
+      try {
+        const charge = await gateway.createPayment({
+          cents: order.totalCents,
+          description: `Ignix Cloud PC ${order.id}`,
+          idempotencyKey: order.id,
+        });
+        const expiresAt = Date.parse(charge.expiresAt);
+        const next = repo.patchOrder(orderId, {
+          chargeId: charge.id,
+          pixCode: charge.copyPaste,
+          pixExpiresAt: Number.isFinite(expiresAt) ? expiresAt : 0,
+          reserveExpiresAt: Number.isFinite(expiresAt) ? expiresAt : order.reserveExpiresAt,
+        }, now());
+        repo.addStoreEvent({ guildId: order.guildId, orderId, kind: "pix", detail: "Cobrança Pix criada.", now: now() });
+        return { ok: true, order: next, copiaECola: charge.copyPaste };
+      } catch (error) {
+        console.error(`WyzeCash: cobrança recusada (${error?.status || "erro"} ${error?.code || ""}).`.trim());
+        return { ok: false, error: "Não foi possível gerar o Pix. Tente de novo em instantes." };
+      }
+    },
+    rememberPaymentMessage(orderId, messageId) {
+      return repo.patchOrder(orderId, { paymentMessageId: messageId }, now());
+    },
+    async confirmFromProvider(orderId) {
+      const order = repo.storeOrder(orderId);
+      if (!order) return { ok: false, error: "Pedido não encontrado." };
+      if (order.status !== "aguardando_pagamento") {
+        const paid = order.status === "pago" || order.status === "provisionando" || order.status === "acompanhamento" || order.status === "entregue";
+        return { ok: true, paid, duplicate: true, orderId: order.id, order };
+      }
+      if (!order.chargeId || !gateway?.configured) return { ok: false, error: "Este pedido ainda não tem cobrança." };
+      try {
+        const charge = await gateway.getPayment(order.chargeId);
+        return this.applyChargeStatus(order, charge);
+      } catch (error) {
+        console.error(`WyzeCash: consulta recusada (${error?.status || "erro"} ${error?.code || ""}).`.trim());
+        return { ok: false, error: "Não foi possível consultar o pagamento agora." };
+      }
+    },
+    applyChargeStatus(order, charge) {
+      if (charge?.amount != null && Number.isInteger(charge.amount) && charge.amount !== order.totalCents) {
+        repo.addStoreEvent({ guildId: order.guildId, orderId: order.id, kind: "valor", detail: "Consulta recusada porque o valor não confere.", now: now() });
+        return { ok: false, error: "O valor da cobrança não confere com o pedido." };
+      }
+      if (charge?.status === "paid") return this.markPaid(order);
+      if (charge?.status === "expired" || charge?.status === "refunded") {
+        if (order.status === "aguardando_pagamento") repo.releaseOrder(order.id, "expirado", now());
+        return { ok: true, expired: true, orderId: order.id };
+      }
+      return { ok: true, pending: true, orderId: order.id };
+    },
+    markPaid(order) {
+      if (order.status !== "aguardando_pagamento") return { ok: true, paid: false, duplicate: true, orderId: order.id };
+      repo.patchOrder(order.id, { status: "pago", paidAt: now() }, now());
+      repo.addStoreEvent({ guildId: order.guildId, orderId: order.id, kind: "pago", detail: "Pagamento confirmado.", now: now() });
+      return { ok: true, paid: true, orderId: order.id, status: 200 };
+    },
+    async pollPayments() {
+      if (!gateway?.configured) return [];
+      const changed = [];
+      for (const order of repo.pendingCharges()) {
+        const result = await this.confirmFromProvider(order.id);
+        if (result.paid || result.expired) changed.push(result);
+      }
+      return changed;
     },
     async handleWebhook(raw, headers) {
-      if (!verifyWyviSignature(raw, headers, config.wyvi?.webhookSecret || "", now())) return { status: 401 };
-      const event = String(headers["x-wyvi-evento"] || "");
-      const delivery = String(headers["x-wyvi-entrega"] || "");
-      if (!delivery) return { status: 400 };
-      if (!repo.rememberWyviEvent(delivery, event || "desconhecido", now())) return { status: 200, duplicate: true };
-      if (event !== "cobranca.paga") return { status: 200 };
+      if (!verifyWyzeCashSignature(raw, headers, config.wyzecash?.webhookSecret || "", now())) return { status: 401 };
       let body = {};
       try { body = JSON.parse(raw); } catch { return { status: 400 }; }
-      const order = repo.findOrderByReference(chargeReference(body));
+      const event = webhookEvent(body, headers);
+      const delivery = webhookEventId(body, headers);
+      if (!delivery) return { status: 400 };
+      if (!repo.rememberPaymentEvent(delivery, event || "desconhecido", now())) return { status: 200, duplicate: true };
+      if (event !== "payment.paid" && event !== "payment.expired" && event !== "payment.refunded") return { status: 200 };
+      const order = repo.findOrderByCharge(paymentId(body));
       if (!order) return { status: 200 };
-      const cents = chargeCents(body);
+      const cents = paymentAmount(body);
       if (cents != null && cents !== order.totalCents) {
         repo.addStoreEvent({ guildId: order.guildId, orderId: order.id, kind: "valor", detail: "Webhook recusado porque o valor não confere.", now: now() });
         return { status: 200, rejected: true };
       }
-      if (order.status === "aguardando_pagamento") repo.patchOrder(order.id, { status: "pago", paidAt: now() }, now());
-      repo.addStoreEvent({ guildId: order.guildId, orderId: order.id, kind: "pago", detail: "Pagamento confirmado pelo webhook.", now: now() });
-      return { status: 200, orderId: order.id };
+      if (event === "payment.expired" || event === "payment.refunded") {
+        if (order.status === "aguardando_pagamento") repo.releaseOrder(order.id, "expirado", now());
+        return { status: 200, expired: true, orderId: order.id };
+      }
+      const paid = this.markPaid(order);
+      return { status: 200, paid: paid.paid, duplicate: paid.duplicate, orderId: paid.paid ? order.id : undefined };
     },
     async deliver(orderId, names, publicIp, vmId = "") {
       const order = repo.storeOrder(orderId);

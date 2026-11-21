@@ -3,7 +3,7 @@ import { createAudit } from "./services/audit.js";
 import { createClients } from "./services/clients.js";
 import { createSunshineAgent } from "./services/sunshine.js";
 import { createStore } from "./loja/service.js";
-import { createWyviClient } from "./loja/payments.js";
+import { createWyzeCashClient } from "./loja/payments.js";
 import { createAzureProvisioner } from "./loja/azure.js";
 import { createSealer } from "./services/crypto.js";
 import { createEmojiBook } from "./services/emojis.js";
@@ -25,9 +25,9 @@ export function createApp({ config, repo, infra, now = () => Date.now(), deliver
     async vm() { throw new Error("azure"); },
     async readIp() { return ""; },
   };
-  const wyvi = createWyviClient({ apiKey: config.wyvi?.apiKey || "", baseUrl: config.wyvi?.baseUrl });
-  const store = createStore({ repo, config, audit, now, wyvi, sunshine: agent, provisioner, infra });
+  const payments = createWyzeCashClient({ apiKey: config.wyzecash?.apiKey || "", baseUrl: config.wyzecash?.baseUrl });
+  const store = createStore({ repo, config, audit, now, payments, sunshine: agent, provisioner, infra });
   const invites = createInviteTracker({ book: createInviteBook({ repo, now }), repo, config });
   const subscription = createSubscriptionBook({ config, now });
-  return { config, repo, infra, emojis, clients, admin, sealer, store, wyvi, audit, invites, provisioner, subscription };
+  return { config, repo, infra, emojis, clients, admin, sealer, store, payments, audit, invites, provisioner, subscription };
 }

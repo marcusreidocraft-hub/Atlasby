@@ -33,6 +33,11 @@ Sem `ALLOWED_GUILD_IDS` o bot sobe, mas não registra comandos nem responde.
 | `DATA_DIR` | `data` | pasta do `atlas.sqlite` |
 | `AGENT_SECRET` | vazio | segredo igual em todas as VMs. Vazio desliga o PIN |
 | `AGENT_PORT` | `7474` | porta do agente dentro da VM |
+| `SERVER_PORT` | vazio | porta do webhook. Vazio desliga o servidor HTTP |
+| `PUBLIC_URL` | vazio | origem HTTPS do webhook, sem barra no fim |
+| `WYZECASH_API_KEY` | vazio | chave `wyze_…` da WyzeCash. Vazio desliga a cobrança |
+| `WYZECASH_WEBHOOK_SECRET` | vazio | segredo de assinatura do webhook |
+| `WYZECASH_API_BASE` | `https://app.wyzecash.com.br/v1` | endereço da API |
 | `CONFIRMATION_TTL_SECONDS` | `60` | prazo da formatação, de 15 a 300 |
 | `ENABLE_MESSAGE_CONTENT_INTENT` | falso | lida e não usada |
 | `PANEL_COLOR` | `5865F2` | cor dos containers, com ou sem `#` |
@@ -207,7 +212,13 @@ A disponibilidade sai da cota da Azure na região `AZURE_LOCATION`. Em Spot, os 
 
 Também ficam `/pedidos`, `/pedido`, `/cancelar-pedido`, `/configurar-cargo`, `/configurar-azure`, `/configurar-imagem` e `/assinatura`. A categoria dos pedidos continua em `/configurar-atendimento`. Não há mais `/configurar-loja banner`, `texto`, `canal` ou `produto`, nem `/configurar-horas`, `/estoque`, `/adicionar-estoque` ou `/remover-estoque`.
 
-O webhook Pix é `http://<endereço público>:<SERVER_PORT>/wyvi/webhook`. No painel da Wyvi, cadastre essa URL em HTTPS se o host termina TLS, com os eventos `cobranca.paga`, `cobranca.expirada` e `cobranca.estornada`. O segredo que a Wyvi mostra uma vez vai em `WYVI_WEBHOOK_SECRET`. A chave com `cobranca:criar` e `cobranca:ler` vai em `WYVI_API_KEY`.
+O Pix sai pela WyzeCash. Não há ambiente de testes: toda cobrança é de produção e vale 30 minutos.
+
+A chave é criada no painel da WyzeCash, em Integrações e API › Developer API (Chaves de API), com as permissões `payments:create` e `payments:get`. Ela aparece uma vez e vai em `WYZECASH_API_KEY`. O bot não grava essa chave em log.
+
+O webhook é cadastrado em Integrações e API › Webhooks. A URL é `https://<seu domínio>/webhooks/wyzecash`. Com `PUBLIC_URL` definida, use `<PUBLIC_URL>/webhooks/wyzecash`. O processo escuta essa rota na `SERVER_PORT`. Marque os eventos `payment.paid` e `payment.expired`. O segredo que o painel mostra vai em `WYZECASH_WEBHOOK_SECRET`. A assinatura é o HMAC-SHA256 de `t.` mais o corpo cru, no cabeçalho `X-WyzeCash-Signature`, e só então o pedido é liberado. Um evento repetido não entrega a máquina duas vezes.
+
+O ticket de compra mostra o valor, a oferta quando houver, o QR Code, o Copia e Cola e os botões Copiar código e Já paguei. Já paguei consulta a cobrança uma vez. Enquanto o pedido está pendente, o bot consulta de novo no mesmo intervalo da loja, entre 2 e 5 minutos. Pago, o painel passa a Pagamento confirmado e a VM segue o provisionamento, o cargo e a mensagem privada. Expirar ou cancelar antes da entrega devolve a unidade da oferta. A unidade sai na hora da compra, para duas pessoas não levarem a última.
 
 Antes da primeira venda, publique a loja, defina cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão da galeria é specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
 

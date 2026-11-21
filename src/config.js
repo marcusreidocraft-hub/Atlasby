@@ -117,11 +117,12 @@ export function readConfig(env = {}) {
     agentSecret: text(env.AGENT_SECRET),
     agentPort: parseAgentPort(env.AGENT_PORT),
     serverPort: parsePort(env.SERVER_PORT),
-    wyvi: {
-      apiKey: text(env.WYVI_API_KEY),
-      webhookSecret: text(env.WYVI_WEBHOOK_SECRET),
-      baseUrl: text(env.WYVI_API_BASE) || "https://api.wyvipay.com.br",
+    wyzecash: {
+      apiKey: text(env.WYZECASH_API_KEY),
+      webhookSecret: text(env.WYZECASH_WEBHOOK_SECRET),
+      baseUrl: text(env.WYZECASH_API_BASE) || "https://app.wyzecash.com.br/v1",
     },
+    publicUrl: parseUrl(env.PUBLIC_URL).replace(/\/$/, ""),
     confirmationTtlMs: parseTtl(env.CONFIRMATION_TTL_SECONDS) * 1000,
     messageContentIntent: parseBoolean(env.ENABLE_MESSAGE_CONTENT_INTENT, false),
     panelColor: parsePanelColor(env.PANEL_COLOR),
