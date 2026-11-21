@@ -488,6 +488,9 @@ test("painéis usam Components V2 e o texto do painel", () => {
   assert.match(card, /Mensal · Ativo/);
   assert.match(card, /Instância Spot: se desligar inesperadamente/);
   assert.match(card, /Desligar VM/);
+  assert.match(card, /Segurança/);
+  assert.match(card, /atlas:vm:password/);
+  assert.match(card, /Alterar senha/);
   const pictured = renderControl({
     machineName: "Mesa 01", clientName: "Ana", gpu: "Tesla T4", vcpus: 4, ram: "28 GB",
     publicIp: "203.0.113.10", planType: "mensal", expiresAt: Date.parse("2026-11-05T03:00:00.000Z"),
@@ -566,6 +569,107 @@ test("formatação exige frase, dono e prazo", async () => {
   const repeat = await env.app.clients.confirmFormat(GUILD, CLIENT, fresh, "CONFIRMAR");
   assert.match(textOf(repeat), /já foi usada|expirou/);
   env.close();
+});
+
+test("alterar senha confirma, aplica pela extensão e não grava a senha", async () => {
+  const secret = "Nuvem#Segura2026";
+  const seen = [];
+  let extensionState = null;
+  const compute = {
+    virtualMachines: {
+      async instanceView() { return { statuses: [{ code: "PowerState/running" }] }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+    },
+    virtualMachineExtensions: {
+      async get() {
+        if (!extensionState) {
+          const error = new Error("not found");
+          error.statusCode = 404;
+          throw error;
+        }
+        return extensionState;
+      },
+      async beginCreateOrUpdateAndWait(_group, _name, extensionName, body) {
+        seen.push({ extensionName, body });
+        return {};
+      },
+    },
+  };
+  const env = harness({ azure: true, compute });
+  await register(env);
+  const actor = { id: CLIENT, permissions: 0n, roleIds: [], owner: false };
+  const stranger = { id: OTHER, permissions: 0n, roleIds: [], owner: false };
+  const opened = env.app.clients.passwordStart(GUILD, actor);
+  assert.equal(opened.modal.toJSON().custom_id, "atlas:modal:password");
+  const rejected = env.app.clients.acceptPassword(GUILD, actor, { password: "Password123!", confirm: "Password123!" });
+  assert.match(textOf(rejected), /recusada pela Azure/);
+  const accepted = env.app.clients.acceptPassword(GUILD, actor, { password: secret, confirm: secret });
+  const confirmation = /atlas:vm:password:yes:([0-9a-f-]{36})/.exec(textOf(accepted))[1];
+  assert.doesNotMatch(textOf(accepted), new RegExp(secret));
+  const stored = JSON.stringify(env.repo.getConfirmation(confirmation));
+  assert.equal(stored.includes(secret), false);
+  const denied = await env.app.clients.applyPassword(GUILD, stranger, confirmation);
+  assert.match(textOf(denied), /dono da VM/);
+  const done = await env.app.clients.applyPassword(GUILD, actor, confirmation);
+  assert.match(textOf(done), /Senha alterada/);
+  assert.equal(seen[0].extensionName, "enablevmaccess");
+  assert.equal(seen[0].body.publisher, "Microsoft.Compute");
+  assert.equal(seen[0].body.typePropertiesType, "VMAccessAgent");
+  assert.equal(seen[0].body.typeHandlerVersion, "2.4");
+  assert.equal(seen[0].body.settings.UserName, "atlasadmin");
+  assert.equal(seen[0].body.protectedSettings.Password, secret);
+  const dump = fs.readdirSync(env.dir).map((name) => fs.readFileSync(path.join(env.dir, name))).reduce((all, file) => Buffer.concat([all, file]), Buffer.alloc(0));
+  assert.equal(dump.includes(Buffer.from(secret)), false);
+  assert.equal(env.logs.some((line) => line.includes(secret)), false);
+  assert.match(env.logs.join("\n"), /senha_alterada/);
+  const cooled = env.app.clients.acceptPassword(GUILD, actor, { password: secret, confirm: secret });
+  assert.match(textOf(cooled), /Espere para tentar/);
+  extensionState = { provisioningState: "Updating" };
+  env.setNow(Date.parse("2026-10-06T03:10:00.000Z"));
+  const again = env.app.clients.acceptPassword(GUILD, actor, { password: secret, confirm: secret });
+  const second = /atlas:vm:password:yes:([0-9a-f-]{36})/.exec(textOf(again))[1];
+  const busy = await env.app.clients.applyPassword(GUILD, actor, second);
+  assert.match(textOf(busy), /já está em execução/);
+  assert.equal(seen.length, 1);
+  env.close();
+
+  const offCompute = {
+    virtualMachines: {
+      async instanceView() { return { statuses: [{ code: "PowerState/deallocated" }] }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+    },
+    virtualMachineExtensions: { async beginCreateOrUpdateAndWait() { throw new Error("não deveria aplicar"); } },
+  };
+  const off = harness({ azure: true, compute: offCompute });
+  await register(off);
+  const offAccepted = off.app.clients.acceptPassword(GUILD, actor, { password: secret, confirm: secret });
+  const offId = /atlas:vm:password:yes:([0-9a-f-]{36})/.exec(textOf(offAccepted))[1];
+  const stopped = await off.app.clients.applyPassword(GUILD, actor, offId);
+  assert.match(textOf(stopped), /Ligue a máquina antes/);
+  off.close();
+
+  const slow = {
+    virtualMachines: {
+      async instanceView() { return { statuses: [{ code: "PowerState/running" }] }; },
+      async get() { return { location: "brazilsouth", osProfile: { adminUsername: "atlasadmin" } }; },
+    },
+    virtualMachineExtensions: {
+      async get() {
+        const error = new Error("not found");
+        error.statusCode = 404;
+        throw error;
+      },
+      async beginCreateOrUpdateAndWait() { return new Promise(() => {}); },
+    },
+  };
+  const timed = harness({ azure: true, compute: slow });
+  await register(timed);
+  const timedAccepted = timed.app.clients.acceptPassword(GUILD, actor, { password: secret, confirm: secret });
+  const timedId = /atlas:vm:password:yes:([0-9a-f-]{36})/.exec(textOf(timedAccepted))[1];
+  const timeout = await timed.app.clients.applyPassword(GUILD, actor, timedId);
+  assert.match(textOf(timeout), /não respondeu a tempo/);
+  assert.equal(timed.logs.some((line) => line.includes(secret)), false);
+  timed.close();
 });
 
 test("botão adia antes da Azure e o outro cliente não aciona a máquina", async () => {

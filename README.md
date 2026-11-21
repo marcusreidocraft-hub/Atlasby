@@ -126,7 +126,7 @@ Um administrador usa `/criar-maquina`. O assistente pede o membro, o tamanho T4,
 
 ## O que o cliente vê
 
-**Controlar VM** abre um cartão privado em imagem: Ignix, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
+**Controlar VM** abre um cartão privado em imagem: Ignix, Seu poder em nuvem, status, GPU e vCPU, IP, tempo do plano, plano e última consulta. Se a imagem não puder ser gerada, o mesmo conteúdo aparece em texto. Os botões são Ligar ou Desligar, Liberar PIN, Acesso RDP, Formatar VM, Atualizar e Desparear dispositivos. Em Segurança, Alterar senha pede a nova senha duas vezes, confirma sem mostrá-la e aplica na VM ligada pela extensão VMAccessAgent. A senha não entra no log nem no banco. Liberar PIN pede os 4 dígitos do Moonlight e envia ao agente da VM.
 
 **Consultar plano** mostra plano, início, vencimento, tempo restante e status.
 

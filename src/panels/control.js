@@ -55,6 +55,10 @@ export function renderControl(client, { accent, emojis, now, notice, image, agen
       press("atlas:vm:rdp", "Acesso RDP", ButtonStyle.Secondary, emojis.rdp),
       press("atlas:vm:format", "Formatar VM", ButtonStyle.Danger, emojis.alerta),
     ));
+    root.addTextDisplayComponents(text("**Segurança**"));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press("atlas:vm:password", "Alterar senha", ButtonStyle.Secondary),
+    ));
     root.addActionRowComponents(new ActionRowBuilder().addComponents(
       press("atlas:vm:refresh", "Atualizar", ButtonStyle.Secondary, emojis.engrenagem),
       press("atlas:vm:unpair", "Desparear dispositivos", ButtonStyle.Secondary),
@@ -62,6 +66,38 @@ export function renderControl(client, { accent, emojis, now, notice, image, agen
   });
   if (image) payload.files = [new AttachmentBuilder(image, { name: CARD_FILE })];
   return payload;
+}
+
+export function renderPasswordModal() {
+  const next = new TextInputBuilder().setCustomId("nova").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(12).setMaxLength(72).setPlaceholder("12 a 72 caracteres");
+  const again = new TextInputBuilder().setCustomId("confirmar").setStyle(TextInputStyle.Short).setRequired(true).setMinLength(12).setMaxLength(72).setPlaceholder("Repita a senha");
+  return new ModalBuilder()
+    .setCustomId("atlas:modal:password")
+    .setTitle("Alterar senha")
+    .addLabelComponents(
+      new LabelBuilder().setLabel("Nova senha").setDescription("De 12 a 72 caracteres, com 3 tipos diferentes.").setTextInputComponent(next),
+      new LabelBuilder().setLabel("Confirmar senha").setTextInputComponent(again),
+    );
+}
+
+export function renderPasswordConfirm(confirmation) {
+  return container(0xed4245, (root) => {
+    root.addTextDisplayComponents(text([
+      "## Alterar senha",
+      "A nova senha será aplicada na máquina. Ela não aparece aqui.",
+      `A confirmação expira <t:${Math.floor(confirmation.expiresAt / 1000)}:R>.`,
+    ].join("\n")));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press(`atlas:vm:password:yes:${confirmation.id}`, "Confirmar", ButtonStyle.Danger),
+      press(`atlas:vm:password:no:${confirmation.id}`, "Cancelar", ButtonStyle.Secondary),
+    ));
+  });
+}
+
+export function renderPasswordStatus(message) {
+  return container(0x5865f2, (root) => {
+    root.addTextDisplayComponents(text(`## Alterar senha\n${message}`));
+  });
 }
 
 export function renderPinModal() {

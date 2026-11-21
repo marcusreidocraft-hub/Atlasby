@@ -159,7 +159,7 @@ export function createInfrastructure(config, deps = {}) {
     return { mode: "manual", status: null, reason };
   }
 
-  async function azureCall(infraId, ms, work) {
+  async function azureCall(infraId, ms, work, scrub = (text) => text) {
     if (!config.azure.configured) return manual("unconfigured");
     const target = parseVmResourceId(infraId);
     if (!target) return manual("infra");
@@ -172,7 +172,8 @@ export function createInfrastructure(config, deps = {}) {
         rememberMissing(infraId, error);
         return { mode: "missing", reason: code };
       }
-      console.error(`Azure: ${code} em ${infraId}. ${String(error?.message || "erro").split("\n")[0].slice(0, 240)}`);
+      const line = scrub(String(error?.message || "erro").split("\n")[0]).slice(0, 240);
+      console.error(`Azure: ${code} em ${infraId}. ${line}`);
       throw Object.assign(new Error("azure"), { code });
     }
   }
@@ -315,6 +316,42 @@ export function createInfrastructure(config, deps = {}) {
         await client.virtualMachines.beginCreateOrUpdateAndWait(target.resourceGroup, target.name, next);
         return { mode: "azure", status: "desligada" };
       });
+    },
+    async resetWindowsPassword(infraId, { username = "", password = "" } = {}) {
+      const scrub = (text) => (password ? String(text).split(password).join("[omitido]") : String(text));
+      return azureCall(infraId, writeMs, async (client, target) => {
+        const view = await client.virtualMachines.instanceView(target.resourceGroup, target.name);
+        const code = (view?.statuses ?? []).find((status) => String(status.code ?? "").startsWith("PowerState/"))?.code ?? "";
+        if (!code.endsWith("running")) return { mode: "azure", code: "off" };
+        const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
+        if (vm.osProfile?.linuxConfiguration) return { mode: "azure", code: "linux" };
+        const account = String(vm.osProfile?.adminUsername || username || "").trim();
+        if (!account) return { mode: "azure", code: "nouser" };
+        let current = null;
+        try {
+          current = await client.virtualMachineExtensions.get(target.resourceGroup, target.name, "enablevmaccess");
+        } catch (error) {
+          if (error?.statusCode !== 404) throw error;
+        }
+        if (/creating|updating|deleting/i.test(String(current?.provisioningState || ""))) return { mode: "azure", code: "busy" };
+        try {
+          await client.virtualMachineExtensions.beginCreateOrUpdateAndWait(target.resourceGroup, target.name, "enablevmaccess", {
+            location: vm.location,
+            publisher: "Microsoft.Compute",
+            typePropertiesType: "VMAccessAgent",
+            typeHandlerVersion: "2.4",
+            autoUpgradeMinorVersion: true,
+            forceUpdateTag: String(Date.now()),
+            settings: { UserName: account },
+            protectedSettings: { Password: password },
+          });
+        } catch (error) {
+          const blob = `${error?.code || ""} ${error?.statusCode || ""} ${error?.message || ""}`;
+          if (error?.statusCode === 409 || /conflict|in progress|already/i.test(blob)) return { mode: "azure", code: "busy" };
+          throw error;
+        }
+        return { mode: "azure", code: "ok" };
+      }, scrub);
     },
   };
 }
