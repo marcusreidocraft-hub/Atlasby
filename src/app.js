@@ -10,6 +10,7 @@ import { createEmojiBook } from "./services/emojis.js";
 import { createInviteBook } from "./invites/book.js";
 import { createInviteTracker } from "./invites/tracker.js";
 import { createSubscriptionBook } from "./assinatura/azure.js";
+import { createResellers } from "./reseller/service.js";
 
 export function createApp({ config, repo, infra, now = () => Date.now(), deliverLog = null, sunshine = null }) {
   const sealer = createSealer(config.credentialsKey);
@@ -29,5 +30,6 @@ export function createApp({ config, repo, infra, now = () => Date.now(), deliver
   const store = createStore({ repo, config, audit, now, payments, sunshine: agent, provisioner, infra });
   const invites = createInviteTracker({ book: createInviteBook({ repo, now }), repo, config });
   const subscription = createSubscriptionBook({ config, now });
-  return { config, repo, infra, emojis, clients, admin, sealer, store, payments, audit, invites, provisioner, subscription };
+  const resellers = createResellers({ repo, infra, audit, config, now });
+  return { config, repo, infra, emojis, clients, admin, sealer, store, payments, audit, invites, provisioner, subscription, resellers };
 }

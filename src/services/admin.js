@@ -4,6 +4,7 @@ import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { vmOptionValue } from "./provider.js";
 import { normalizeVmId, resolveOwner } from "./vm-link.js";
+import { assignmentFor } from "../reseller/match.js";
 import { validateAccess, validateIdentity, validateSchedule, validateSpecs } from "./fields.js";
 import { specsFromSize } from "./vm-size.js";
 import { expiryFrom, formatDate, startOfToday } from "./plans.js";
@@ -143,8 +144,10 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
     },
     async vmChoices(guildId, targetUserId) {
       const clients = repo.listClients(guildId);
+      const assigned = repo.resellerVmsByGuild?.(guildId) || [];
       const vms = await infra.listVms();
       return vms.filter((vm) => {
+        if (assignmentFor(vm, assigned)) return false;
         const owner = resolveOwner(vm, clients);
         return !owner || owner.userId === targetUserId;
       }).map((vm) => ({ ...vm, own: resolveOwner(vm, clients)?.userId === targetUserId }));
@@ -194,6 +197,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!vm) return notice("Essa VM não está mais na lista. Abra a lista de novo.", config.panelColor);
       const other = resolveOwner(vm, repo.listClients(guildId));
       if (other?.userId && other.userId !== draft.payload.targetUserId) return notice("Essa VM já está vinculada a outro cliente.", config.panelColor);
+      if (assignmentFor(vm, repo.resellerVmsByGuild?.(guildId) || [])) return notice("Essa VM está com um revendedor.", config.panelColor);
       const specs = specsFromSize(vm.size);
       draft.payload.infraId = vm.id;
       draft.payload.vmName = vm.name;
@@ -234,6 +238,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       if (!schedule.ok) return { payload: notice(schedule.error, config.panelColor) };
       const other = resolveOwner({ id: schedule.value.infraId }, repo.listClients(guildId));
       if (other?.userId && other.userId !== draft.payload.targetUserId) return { payload: notice("Este ID já está vinculado a outro cliente.", config.panelColor) };
+      if (assignmentFor({ id: schedule.value.infraId }, repo.resellerVmsByGuild?.(guildId) || [])) return { payload: notice("Essa VM está com um revendedor.", config.panelColor) };
       draft.payload = {
         ...draft.payload,
         ...schedule.value,
@@ -251,6 +256,7 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       const data = draft.payload;
       const other = resolveOwner({ id: data.infraId }, repo.listClients(guildId));
       if (other?.userId && other.userId !== data.targetUserId) return notice("Este ID já está vinculado a outro cliente.", config.panelColor);
+      if (assignmentFor({ id: data.infraId }, repo.resellerVmsByGuild?.(guildId) || [])) return notice("Essa VM está com um revendedor.", config.panelColor);
       const row = {
         id: data.existingId || randomUUID(),
         guildId,

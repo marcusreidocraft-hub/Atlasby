@@ -363,6 +363,31 @@ export function createInfrastructure(config, deps = {}) {
         return { mode: "azure" };
       });
     },
+    async tagReseller(infraId, resellerId) {
+      return azureCall(infraId, writeMs, async (client, target) => {
+        const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
+        const tags = { ...(vm.tags || {}) };
+        if (resellerId) tags["ignix-reseller"] = String(resellerId);
+        else delete tags["ignix-reseller"];
+        await client.virtualMachines.beginUpdateAndWait(target.resourceGroup, target.name, { tags });
+        return { mode: "azure" };
+      });
+    },
+    async restart(infraId) {
+      const skipped = remembered(infraId);
+      if (skipped) return skipped;
+      return azureCall(infraId, writeMs, async (client, target) => {
+        await client.virtualMachines.beginRestartAndWait(target.resourceGroup, target.name);
+        return { mode: "azure", status: "ligada" };
+      });
+    },
+    async adminUsername(infraId) {
+      const result = await azureCall(infraId, readMs, async (client, target) => {
+        const vm = await client.virtualMachines.get(target.resourceGroup, target.name);
+        return String(vm.osProfile?.adminUsername || "");
+      });
+      return typeof result === "string" ? result : "";
+    },
   };
 }
 

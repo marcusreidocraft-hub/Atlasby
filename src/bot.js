@@ -19,6 +19,7 @@ import { formatDate, PLAN_LABEL } from "./services/plans.js";
 import { PLAN_NAMES } from "./loja/products.js";
 import { attendanceOf } from "./loja/attendance.js";
 import { repairVmLinks } from "./services/vm-link.js";
+import { routeResellerAutocomplete, routeResellerCommand } from "./reseller/router.js";
 
 async function deliver(client, channelId, payload) {
   const channel = await client.channels.fetch(channelId);
@@ -38,7 +39,8 @@ export async function routeInteraction(interaction, app) {
   }
   try {
     if (interaction.isAutocomplete?.()) {
-      await routeStoreAutocomplete(interaction, app);
+      if (interaction.commandName === "revendedor") await routeResellerAutocomplete(interaction, app);
+      else await routeStoreAutocomplete(interaction, app);
       return;
     }
     if (interaction.isChatInputCommand?.()) {
@@ -154,7 +156,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
       if (result.paid && result.orderId) setImmediate(() => fulfill(client, app, result.orderId));
       else if (result.chargeCleared && result.orderId) setImmediate(() => refreshPurchaseSummary(client, app, result.orderId));
       return result.status;
-    });
+    }, { resellers: app.resellers });
     await new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(config.serverPort, "0.0.0.0", () => {
@@ -165,6 +167,7 @@ export async function startBot({ config, repo, client = new Client({ intents: [G
     client.storeServer = server;
     const webhookUrl = config.publicUrl ? `${config.publicUrl}/webhooks/wyzecash` : `porta ${config.serverPort} /webhooks/wyzecash`;
     console.log(`Webhook da WyzeCash em ${webhookUrl}.`);
+    if (config.publicUrl) console.log(`API de revendedor em ${config.publicUrl}/api/reseller/v1.`);
   }
   app.store.expireReservations();
   const expired = await app.store.expireClients();

@@ -1,5 +1,6 @@
 import { ChannelType, InteractionContextType, SlashCommandBuilder } from "discord.js";
 import { EMOJI_KEYS } from "../../services/emojis.js";
+import { resellerCommand } from "../../reseller/commands.js";
 
 const guild = (builder) => builder.setContexts(InteractionContextType.Guild);
 
@@ -47,6 +48,7 @@ export function adminCommands() {
     guild(new SlashCommandBuilder().setName("buscar-cliente").setDescription("Busca clientes por nome, máquina ou IP.").addStringOption((option) => option.setName("termo").setDescription("Nome, máquina ou IP").setRequired(true).setMaxLength(40))),
     guild(new SlashCommandBuilder().setName("listar-clientes").setDescription("Lista os clientes deste servidor.")),
     guild(new SlashCommandBuilder().setName("listar-vms").setDescription("Lista as VMs da assinatura Azure.")),
+    guild(resellerCommand()),
     guild(new SlashCommandBuilder().setName("assinatura").setDescription("Mostra a assinatura Azure, o custo e a cota Spot.")),
     guild(new SlashCommandBuilder()
       .setName("renovar-plano")

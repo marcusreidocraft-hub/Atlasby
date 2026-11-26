@@ -5,6 +5,7 @@ import { attachStore } from "../loja/db.js";
 import { attachTickets } from "../tickets/db.js";
 import { attachAnnouncements } from "../announce/db.js";
 import { attachInvites } from "../invites/db.js";
+import { attachResellers } from "../reseller/db.js";
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS clients (
@@ -171,11 +172,13 @@ export function openDatabase(dataDir) {
   const tickets = attachTickets(db);
   const announcements = attachAnnouncements(db);
   const invites = attachInvites(db);
+  const resellers = attachResellers(db);
   return {
     ...store,
     ...tickets,
     ...announcements,
     ...invites,
+    ...resellers,
     file,
     close() {
       db.close();

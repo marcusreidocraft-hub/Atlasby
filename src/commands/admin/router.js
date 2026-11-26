@@ -13,6 +13,7 @@ import { adminCommands } from "./commands.js";
 import { storeCommands } from "../../loja/commands.js";
 import { handleStoreCommand } from "../../loja/router.js";
 import { renderAttendance } from "../../loja/attendance.js";
+import { routeResellerCommand } from "../../reseller/router.js";
 
 const UUID = "([0-9a-f-]{36})";
 const SNOWFLAKE = "(\\d{17,20})";
@@ -130,6 +131,10 @@ export async function routeCommand(interaction, app) {
   }
   if (name === "listar-vms") {
     await present(interaction, await app.admin.listAzureVms(interaction.guildId, actor, 0));
+    return;
+  }
+  if (name === "revendedor") {
+    await routeResellerCommand(interaction, app, actor);
     return;
   }
   if (name === "renovar-plano") {

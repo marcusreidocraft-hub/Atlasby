@@ -79,6 +79,7 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
 | `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
+| `/revendedor` | cria, lista, revoga, gira a chave e atribui VMs a um revendedor. Exige a permissão Administrador |
 | `/assinatura` | mostra a assinatura, o custo do mês e a cota Spot |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
 | `/configurar suporte` | grava a URL do botão de suporte |
@@ -221,6 +222,38 @@ O webhook é cadastrado em Integrações e API › Webhooks. A URL é `https://<
 O ticket de compra mostra o valor, a oferta quando houver, o QR Code, o Copia e Cola e os botões Copiar código e Já paguei. Já paguei consulta a cobrança uma vez. Enquanto o pedido está pendente, o bot consulta de novo no mesmo intervalo da loja, entre 2 e 5 minutos. Pago, o painel passa a Pagamento confirmado e a VM segue o provisionamento, o cargo e a mensagem privada. Expirar ou cancelar antes da entrega devolve a unidade da oferta. A unidade sai na hora da compra, para duas pessoas não levarem a última.
 
 Antes da primeira venda, publique a loja, defina cargo e rede (`/configurar-azure`, grupo, vnet, subnet e NSG). A imagem padrão da galeria é specialized e Trusted Launch. `/configurar-imagem` troca essa origem; a definição sem versão usa a última. A máquina só é marcada como entregue depois do `GET /health` na porta 7474. Se o agente não responder, o pedido fica em acompanhamento e o alerta vai ao canal de logs.
+
+## API de revendedor
+
+Um administrador do servidor (permissão Administrador, não só o cargo de `ADMIN_ROLE_IDS`) cria o revendedor com `/revendedor criar nome:`. A chave `ignx_rs_…` aparece uma vez, na resposta privada. O banco guarda só o SHA-256. `/revendedor listar` mostra nome, quantidade de VMs e se está ativo. `/revendedor revogar` invalida a chave na hora. `/revendedor girar-chave` troca a chave e mostra a nova uma vez. `/revendedor atribuir-vm` entrega uma VM livre: ela sai da lista de disponíveis, ganha a tag `ignix-reseller` e não pode ficar ao mesmo tempo com um cliente. `/revendedor remover-vm` devolve a VM à lista. A VM na Azure não é apagada.
+
+O bot externo autentica com `Authorization: Bearer ignx_rs_…`. A comparação é o hash, em tempo constante. Cada chave tem cerca de 30 pedidos por minuto. Uma VM só aceita uma ação por vez. O log administrativo registra revendedor, VM e ação, sem a chave e sem a senha. Não há CORS. O corpo é pequeno. O erro não traz pilha nem detalhe da Azure. O `:id` é o identificador opaco do bot. Uma VM que não é dele responde 404.
+
+Base: `https://yo5dkf394y.apps.bot-hosting.cloud`
+
+```bash
+curl -sS https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms \
+  -H "Authorization: Bearer ignx_rs_…"
+
+curl -sS https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms/ID \
+  -H "Authorization: Bearer ignx_rs_…"
+
+curl -sS -X POST https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms/ID/start \
+  -H "Authorization: Bearer ignx_rs_…"
+
+curl -sS -X POST https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms/ID/stop \
+  -H "Authorization: Bearer ignx_rs_…"
+
+curl -sS -X POST https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms/ID/restart \
+  -H "Authorization: Bearer ignx_rs_…"
+
+curl -sS -X POST https://yo5dkf394y.apps.bot-hosting.cloud/api/reseller/v1/vms/ID/password \
+  -H "Authorization: Bearer ignx_rs_…" \
+  -H "Content-Type: application/json" \
+  -d '{"password":"…","confirm":"…"}'
+```
+
+`GET /api/reseller/v1/vms` e `GET /api/reseller/v1/vms/:id` devolvem `id`, `name`, `state`, `publicIp` e `size`. `POST …/start`, `…/stop`, `…/restart` e `…/password` respondem 202 e seguem em segundo plano. O próximo GET mostra `iniciando`, `parando`, `reiniciando` ou `alterando senha`. Não há rota para criar, apagar, redimensionar ou ler a assinatura.
 
 ## Limitações
 
