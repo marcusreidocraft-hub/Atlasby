@@ -122,6 +122,7 @@ export function openDatabase(dataDir) {
     clientsByGuild: db.prepare("SELECT * FROM clients WHERE guild_id = ?"),
     allClients: db.prepare("SELECT * FROM clients"),
     setInfra: db.prepare("UPDATE clients SET infra_id = ?, updated_at = ? WHERE guild_id = ? AND id = ?"),
+    setPublicIp: db.prepare("UPDATE clients SET public_ip = ?, updated_at = ? WHERE guild_id = ? AND id = ?"),
     infraLinks: db.prepare("SELECT user_id, client_name, infra_id FROM clients WHERE guild_id = ? AND infra_id IS NOT NULL AND infra_id != ''"),
     insert: db.prepare(`INSERT INTO clients (
       id, guild_id, user_id, client_name, machine_name, gpu, vcpus, ram, public_ip, rdp_user,
@@ -201,6 +202,9 @@ export function openDatabase(dataDir) {
     },
     setInfraId(guildId, id, infraId, now) {
       statements.setInfra.run(infraId, now, guildId, id);
+    },
+    setPublicIp(guildId, id, publicIp, now) {
+      statements.setPublicIp.run(publicIp || null, now, guildId, id);
     },
     listInfraLinks(guildId) {
       return statements.infraLinks.all(guildId).map((row) => ({

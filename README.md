@@ -78,7 +78,7 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/remover-cliente` | pede confirmação e apaga o cadastro, não a VM |
 | `/buscar-cliente` | busca por nome, máquina, ID ou IP |
 | `/listar-clientes` | lista paginada |
-| `/listar-vms` | lista as VMs da assinatura Azure, com estado e cliente vinculado |
+| `/listar-vms` | lista as VMs da assinatura, com IP, estado, dono, filtros e VMs repetidas |
 | `/revendedor` | cria, lista, revoga, gira a chave e atribui VMs a um revendedor. Exige a permissão Administrador |
 | `/assinatura` | mostra a assinatura, o custo do mês e a cota Spot |
 | `/renovar-plano` | escolhe semanal, quinzenal ou mensal; o vencimento é calculado e pode ser informado |
@@ -88,6 +88,8 @@ Todos exigem a permissão Administrador ou um cargo de `ADMIN_ROLE_IDS`. A respo
 | `/configurar emoji` | substitui um emoji deste servidor |
 
 O cadastro pede nome do cliente, nome da máquina, IP de reserva, usuário RDP, senha RDP e plano. Depois, um seletor lista as VMs da assinatura. A escolha preenche o Resource ID e lê GPU, vCPU e RAM do tamanho da VM. **Nenhuma VM agora** deixa o hardware para o administrador informar, inclusive NVIDIA A10, e o Resource ID manual continua opcional. **Salvar** é o único passo que grava. `/listar-vms` mostra todas, inclusive as já vinculadas.
+
+`/listar-vms` é um painel privado. O topo soma o total, as ligadas, as desligadas, as que têm cliente, as livres e as de revendedor. Cada VM ocupa uma linha: nome, estado, IP público, tamanho, vCPU e dono. O dono é a menção do cliente, o revendedor ou Livre. Há páginas de quatro VMs, com Anterior e Próxima, e um filtro: Todas, Ligadas, Livres, Com cliente e Repetidas. O IP sai de uma consulta em lote das interfaces e dos IPs do grupo, com cache curto. Uma VM ligada a dois clientes, pelo resource ID normalizado ou pelo mesmo IP público, entra com ⚠️ Repetida e lista todo mundo. Resolver pergunta quem fica com a VM, pede confirmação e só então tira o vínculo dos outros. A VM na Azure não é apagada. Quantas estão repetidas só aparece quando o comando roda na assinatura real.
 
 O IP público da VM, quando ela tem Resource ID, vem da interface de rede na Azure e substitui o IP digitado. Se a nuvem não tiver IP, fica o valor manual.
 

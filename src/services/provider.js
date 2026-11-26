@@ -67,6 +67,7 @@ function summarizeVm(vm, power) {
     id: vm.id,
     power: power ?? null,
     tags: vm.tags || {},
+    nicId: vm.networkProfile?.networkInterfaces?.[0]?.id || "",
   };
 }
 
@@ -99,6 +100,8 @@ export function createInfrastructure(config, deps = {}) {
   let computeClient;
   let networkClient;
   let vmCache = null;
+  let ipCache = null;
+  const ipCacheMs = deps.ipCacheMs ?? 45_000;
   const machineCache = new Map();
   const missingUntil = new Map();
   const missingLogged = new Set();
@@ -204,6 +207,37 @@ export function createInfrastructure(config, deps = {}) {
         const code = failureCode(error);
         console.warn(`Lista de VMs: ${code}. ${String(error?.message || "").split("\n")[0].slice(0, 180)}`);
         throw Object.assign(new Error(code === "missing" ? MISSING_VM : "azure"), { code });
+      }
+    },
+    async listVmIps(vms) {
+      const map = new Map();
+      if (!config.azure.configured || !Array.isArray(vms) || !vms.length) return map;
+      const groups = [...new Set(vms.map((vm) => vm.resourceGroup).filter(Boolean))];
+      const key = groups.slice().sort().join("|");
+      if (ipCache && ipCache.key === key && clock() - ipCache.at < ipCacheMs) return ipCache.map;
+      try {
+        const net = await network();
+        const nicById = new Map();
+        const pipById = new Map();
+        for (const group of groups) {
+          for (const nic of await collectVms(net.networkInterfaces.list(group))) {
+            if (nic?.id) nicById.set(String(nic.id).toLowerCase(), nic);
+          }
+          for (const pip of await collectVms(net.publicIPAddresses.list(group))) {
+            if (pip?.id) pipById.set(String(pip.id).toLowerCase(), pip.ipAddress || "");
+          }
+        }
+        for (const vm of vms) {
+          const nic = nicById.get(String(vm.nicId || "").toLowerCase());
+          const pipId = nic?.ipConfigurations?.find((item) => item.publicIPAddress?.id)?.publicIPAddress?.id;
+          const ip = pipId ? pipById.get(String(pipId).toLowerCase()) || "" : "";
+          if (ip && vm.id) map.set(String(vm.id).trim().toLowerCase(), ip);
+        }
+        ipCache = { at: clock(), key, map };
+        return map;
+      } catch (error) {
+        logAzure("IPs públicos não consultados", error);
+        return map;
       }
     },
     async readMachine(infraId) {

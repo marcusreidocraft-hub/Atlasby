@@ -101,7 +101,7 @@ test("resource ID com caixa diferente, nome e tag deixam de parecer VM livre", a
   free.app.infra.listVms = async () => [{ id: listed, name: "vm1", resourceGroup: "reido7", size: "Standard_NC4as_T4_v3", location: "brazilsouth", power: "ligada", tags: {} }];
   assert.equal((await free.app.admin.vmChoices(GUILD, OTHER)).some((vm) => vm.name === "vm1"), true);
   const open = await free.app.admin.listAzureVms(GUILD, { id: "100000000000000009", permissions: 8n, roleIds: [], owner: true }, 0);
-  assert.match(JSON.stringify(open), /sem cliente/);
+  assert.match(JSON.stringify(open), /Livre/);
   free.close();
   tagged.close();
 });

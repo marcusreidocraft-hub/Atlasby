@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, specsModal, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
+import { renderAddPicker, renderAzureVmList, renderClientList, renderContinue, renderDuplicateConfirm, renderDuplicatePick, renderRemoveConfirm, renderRenewReview, renderReview, renderVmPicker, specsModal, step1Modal, step2Modal, step3Modal } from "../panels/admin.js";
 import { notice } from "../panels/ui.js";
 import { logInteractionError } from "../components/reply.js";
 import { vmOptionValue } from "./provider.js";
-import { normalizeVmId, resolveOwner } from "./vm-link.js";
+import { normalizeVmId, resolveOwner, vmNameKey, vmParts } from "./vm-link.js";
 import { assignmentFor } from "../reseller/match.js";
+import { buildInventory } from "./vm-inventory.js";
 import { validateAccess, validateIdentity, validateSchedule, validateSpecs } from "./fields.js";
 import { specsFromSize } from "./vm-size.js";
 import { expiryFrom, formatDate, startOfToday } from "./plans.js";
@@ -208,26 +209,78 @@ export function createAdmin({ config, repo, audit, sealer, emojis, now, infra })
       storeDraft(draft);
       return this.vmPicker(guildId, actor, draftId, 0);
     },
-    async listAzureVms(guildId, actor, page = 0) {
-      const blocked = gate(actor);
-      if (blocked) return blocked;
-      const size = 8;
-      if (!infra.configured) return notice("A Azure não está configurada. Nada foi listado.", config.panelColor);
+    async inventory(guildId) {
+      if (!infra.configured) return { error: notice("A Azure não está configurada. Nada foi listado.", config.panelColor) };
+      let vms = [];
       try {
-        const vms = infra.listVms ? await infra.listVms() : [];
-        const clients = repo.listClients(guildId);
-        const rows = vms.map((vm) => {
-          const owner = resolveOwner(vm, clients);
-          const clientName = owner?.clientName || (owner?.userId ? `<@${owner.userId}>` : "");
-          return { ...vm, clientName };
-        });
-        const pages = Math.max(1, Math.ceil(rows.length / size));
-        const safePage = Math.min(Math.max(0, page), pages - 1);
-        return renderAzureVmList({ accent: config.panelColor, rows: rows.slice(safePage * size, safePage * size + size), page: safePage, pages });
+        vms = infra.listVms ? await infra.listVms() : [];
       } catch (error) {
         if (error?.code !== "missing") logInteractionError(error);
-        return notice(error?.code === "missing" ? error.message : "Não foi possível listar as VMs na Azure.", config.panelColor);
+        return { error: notice(error?.code === "missing" ? error.message : "Não foi possível listar as VMs na Azure.", config.panelColor) };
       }
+      let ips = new Map();
+      if (infra.listVmIps) {
+        try { ips = await infra.listVmIps(vms); } catch (error) { logInteractionError(error); }
+      }
+      const clients = repo.listClients(guildId);
+      const assignments = repo.resellerVmsByGuild?.(guildId) || [];
+      const resellerNames = new Map((repo.resellers?.(guildId) || []).map((item) => [item.id, item.name]));
+      return { view: buildInventory({ vms, clients, ips, assignments, resellerNames }) };
+    },
+    async listAzureVms(guildId, actor, page = 0, filter = "todas", note = "") {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const loaded = await this.inventory(guildId);
+      if (loaded.error) return loaded.error;
+      return renderAzureVmList({ accent: config.panelColor, view: loaded.view, page, filter, note });
+    },
+    async openDuplicate(guildId, actor, token) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const loaded = await this.inventory(guildId);
+      if (loaded.error) return loaded.error;
+      const row = loaded.view.rows.find((item) => vmOptionValue(item.id) === token);
+      if (!row?.repeated) return notice("Essa VM não está repetida.", config.panelColor);
+      return renderDuplicatePick({ accent: config.panelColor, row });
+    },
+    async confirmDuplicate(guildId, actor, token, clientId) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const loaded = await this.inventory(guildId);
+      if (loaded.error) return loaded.error;
+      const row = loaded.view.rows.find((item) => vmOptionValue(item.id) === token);
+      const keeper = row?.owners.find((client) => client.id === clientId);
+      if (!row?.repeated || !keeper) return notice("Escolha um dos clientes vinculados.", config.panelColor);
+      return renderDuplicateConfirm({ accent: config.panelColor, row, keeper });
+    },
+    async resolveDuplicate(guildId, actor, token, clientId) {
+      const blocked = gate(actor);
+      if (blocked) return blocked;
+      const loaded = await this.inventory(guildId);
+      if (loaded.error) return loaded.error;
+      const row = loaded.view.rows.find((item) => vmOptionValue(item.id) === token);
+      const keeper = row?.owners.find((client) => client.id === clientId);
+      if (!row?.repeated || !keeper) return notice("Essa VM não está repetida.", config.panelColor);
+      const canonical = normalizeVmId(row.id);
+      const removed = [];
+      const pointsAt = (client) => {
+        const parts = vmParts(client.infraId);
+        const key = vmNameKey(row.name, row.resourceGroup);
+        return Boolean((canonical && parts?.id === canonical) || (key && parts?.key === key && key !== "/"));
+      };
+      for (const client of row.owners) {
+        if (client.id === keeper.id) {
+          repo.setInfraId(guildId, client.id, canonical, now());
+          continue;
+        }
+        if (pointsAt(client) || !normalizeVmId(client.infraId)) {
+          repo.setInfraId(guildId, client.id, "", now());
+          if (row.ip && client.publicIp === row.ip && repo.setPublicIp) repo.setPublicIp(guildId, client.id, "", now());
+          removed.push(client.clientName);
+        }
+      }
+      await logged(actor, "vm_repetida", keeper.userId, row.name, `Vínculo repetido de ${row.name}: ficou ${keeper.clientName}. Saíram ${removed.join(", ") || "ninguém"}. A VM na Azure não foi apagada.`);
+      return this.listAzureVms(guildId, actor, 0, "todas", `${keeper.clientName} ficou com ${row.name}. A VM na Azure não foi apagada.`);
     },
     applyStep3({ guildId, actor, draftId, fields }) {
       const blocked = gate(actor);

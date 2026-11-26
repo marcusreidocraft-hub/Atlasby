@@ -10,7 +10,8 @@ import {
 } from "discord.js";
 import { vmOptionValue } from "../services/provider.js";
 import { GPUS, PLAN_LABEL, formatDate } from "../services/plans.js";
-import { container, heading, mark, press, text } from "./ui.js";
+import { VM_FILTERS, VM_PAGE_SIZE, filterInventory, vmLine } from "../services/vm-inventory.js";
+import { container, heading, mark, press, section, text } from "./ui.js";
 
 function clip(value, max) {
   return String(value ?? "").trim().slice(0, max);
@@ -230,21 +231,94 @@ export function renderVmPicker({ accent, draftId, vms, page, notice: note, chose
   });
 }
 
-export function renderAzureVmList({ accent, rows, page, pages }) {
-  const lines = [
-    `## VMs da assinatura · página ${page + 1} de ${pages}`,
-    rows.length
-      ? rows.map((vm) => `**${vm.name}** · ${vm.resourceGroup} · ${vm.size || "tamanho não informado"} · ${vm.location || "região não informada"} · ${vm.power || "estado não consultado"} · ${vm.clientName || "sem cliente"}`).join("\n")
-      : "A assinatura não devolveu máquinas virtuais.",
-  ];
+export function renderAzureVmList({ accent, view, page = 0, filter = "todas", note = "" }) {
+  const chosen = VM_FILTERS.some(([value]) => value === filter) ? filter : "todas";
+  const filtered = filterInventory(view.rows, chosen);
+  const pages = Math.max(1, Math.ceil(filtered.length / VM_PAGE_SIZE));
+  const safePage = Math.min(Math.max(0, page), pages - 1);
+  const visible = filtered.slice(safePage * VM_PAGE_SIZE, safePage * VM_PAGE_SIZE + VM_PAGE_SIZE);
+  const totals = view.totals;
+  const header = [
+    "## IGNIX CLOUD",
+    `**${totals.total}** no total · **${totals.on}** ligadas · **${totals.off}** desligadas · **${totals.clients}** com cliente · **${totals.free}** livres · **${totals.resellers}** de revendedor`,
+    totals.repeated ? `⚠️ ${totals.repeated} ${totals.repeated === 1 ? "VM repetida" : "VMs repetidas"}.` : "",
+    note,
+    filtered.length ? "" : (view.rows.length ? "Nenhuma VM neste filtro." : "A assinatura não devolveu máquinas virtuais."),
+  ].filter(Boolean).join("\n");
   return container(accent, (root) => {
-    root.addTextDisplayComponents(text(lines.join("\n")));
-    if (pages > 1) {
-      root.addActionRowComponents(new ActionRowBuilder().addComponents(
-        press(`atlas:admin:azurepage:${page}:prev`, "Anterior", ButtonStyle.Secondary).setDisabled(page === 0),
-        press(`atlas:admin:azurepage:${page}:next`, "Próxima", ButtonStyle.Secondary).setDisabled(page + 1 >= pages),
-      ));
+    root.addTextDisplayComponents(text(header));
+    let pending = [];
+    const flush = () => {
+      if (!pending.length) return;
+      root.addTextDisplayComponents(text(pending.join("\n")));
+      pending = [];
+    };
+    for (const row of visible) {
+      const line = vmLine(row);
+      if (row.repeated) {
+        flush();
+        root.addSectionComponents(section(line, {
+          button: press(`atlas:admin:azurefix:${vmOptionValue(row.id)}`, "Resolver", ButtonStyle.Secondary),
+        }));
+      } else {
+        pending.push(line);
+      }
     }
+    flush();
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("atlas:admin:azurefilter")
+        .setPlaceholder("Filtrar")
+        .setMinValues(1)
+        .setMaxValues(1)
+        .addOptions(VM_FILTERS.map(([value, label]) => ({ label, value, default: value === chosen ? true : undefined })).map((option) => {
+          if (!option.default) delete option.default;
+          return option;
+        })),
+    ));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press(`atlas:admin:azurepage:${safePage}:${chosen}:prev`, "Anterior", ButtonStyle.Secondary).setDisabled(safePage === 0),
+      press(`atlas:admin:azurepage:${safePage}:${chosen}:next`, "Próxima", ButtonStyle.Secondary).setDisabled(safePage + 1 >= pages),
+    ));
+  });
+}
+
+export function renderDuplicatePick({ accent, row }) {
+  const token = vmOptionValue(row.id);
+  const options = row.owners.slice(0, 25).map((client) => ({
+    label: String(client.clientName || "Cliente").slice(0, 100),
+    value: client.id,
+    description: `Fica com ${row.name}`.slice(0, 100),
+  }));
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text([
+      `## Quem fica com ${row.name}?`,
+      row.owners.map((client) => `<@${client.userId}> · ${client.clientName}`).join("\n"),
+      "Os outros deixam de apontar para esta VM. A VM na Azure não é apagada.",
+    ].join("\n")));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId(`atlas:admin:azurepick:${token}`).setPlaceholder("Escolha quem fica").setMinValues(1).setMaxValues(1).addOptions(options),
+    ));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press("atlas:admin:azureback", "Voltar", ButtonStyle.Secondary),
+    ));
+  });
+}
+
+export function renderDuplicateConfirm({ accent, row, keeper }) {
+  const token = vmOptionValue(row.id);
+  const others = row.owners.filter((client) => client.id !== keeper.id).map((client) => client.clientName).join(", ");
+  return container(accent, (root) => {
+    root.addTextDisplayComponents(text([
+      "## Confirmar",
+      `${keeper.clientName} fica com **${row.name}**.`,
+      `Saem: ${others || "ninguém"}.`,
+      "A VM na Azure não é apagada.",
+    ].join("\n")));
+    root.addActionRowComponents(new ActionRowBuilder().addComponents(
+      press(`atlas:admin:azurekeep:yes:${token}:${keeper.id}`, "Confirmar", ButtonStyle.Danger),
+      press("atlas:admin:azureback", "Cancelar", ButtonStyle.Secondary),
+    ));
   });
 }
 

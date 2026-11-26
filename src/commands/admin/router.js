@@ -328,11 +328,47 @@ export async function routeAdminComponent(interaction, app) {
     await interaction.showModal(opened.modal);
     return true;
   }
-  const azurePage = /^atlas:admin:azurepage:(\d+):(prev|next)$/.exec(id);
+  if (id === "atlas:admin:azurefilter") {
+    await ack(interaction, true);
+    const filter = interaction.values?.[0] || "todas";
+    await present(interaction, await app.admin.listAzureVms(guildId, actor, 0, filter));
+    return true;
+  }
+  const azurePage = /^atlas:admin:azurepage:(\d+):(todas|ligadas|livres|cliente|repetidas):(prev|next)$/.exec(id);
   if (azurePage) {
     await ack(interaction, true);
-    const next = azurePage[2] === "next" ? Number(azurePage[1]) + 1 : Number(azurePage[1]) - 1;
+    const next = azurePage[3] === "next" ? Number(azurePage[1]) + 1 : Number(azurePage[1]) - 1;
+    await present(interaction, await app.admin.listAzureVms(guildId, actor, next, azurePage[2]));
+    return true;
+  }
+  const legacyAzurePage = /^atlas:admin:azurepage:(\d+):(prev|next)$/.exec(id);
+  if (legacyAzurePage) {
+    await ack(interaction, true);
+    const next = legacyAzurePage[2] === "next" ? Number(legacyAzurePage[1]) + 1 : Number(legacyAzurePage[1]) - 1;
     await present(interaction, await app.admin.listAzureVms(guildId, actor, next));
+    return true;
+  }
+  const azureFix = /^atlas:admin:azurefix:([0-9a-f]{32})$/.exec(id);
+  if (azureFix) {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.openDuplicate(guildId, actor, azureFix[1]));
+    return true;
+  }
+  const azurePick = /^atlas:admin:azurepick:([0-9a-f]{32})$/.exec(id);
+  if (azurePick) {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.confirmDuplicate(guildId, actor, azurePick[1], interaction.values?.[0] || ""));
+    return true;
+  }
+  const azureKeep = /^atlas:admin:azurekeep:yes:([0-9a-f]{32}):([0-9a-f-]{36})$/.exec(id);
+  if (azureKeep) {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.resolveDuplicate(guildId, actor, azureKeep[1], azureKeep[2]));
+    return true;
+  }
+  if (id === "atlas:admin:azureback") {
+    await ack(interaction, true);
+    await present(interaction, await app.admin.listAzureVms(guildId, actor, 0, "todas"));
     return true;
   }
   const save = new RegExp(`^atlas:admin:save:${UUID}$`).exec(id);
